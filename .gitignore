@@ -1,0 +1,44 @@
+# Настройки конкретной машины: пути, выбранная модель, порог спикеров.
+# У каждого свои, в репозитории им делать нечего.
+config.json
+
+# Модели (сотни мегабайт) скачиваются установщиком
+models/
+*.onnx
+*.gguf
+
+# Результаты расшифровок — это чужие разговоры, им тем более здесь не место
+output/
+.work/
+*.wav
+*.srt
+
+# Собранное: помощник захвата собирается из capture/main.swift,
+# образ — из packaging/make-dmg.sh
+bin/
+dist/
+build/
+*.dmg
+*.app/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Редакторы
+.idea/
+.vscode/
+*.swp
+
+# Временные архивы обновлений
+*.tgz
+*.tar.gz

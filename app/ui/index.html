@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Расшифровка записей</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --line:#2a2f3a;
+    --text:#e8eaee; --muted:#9aa3b2; --accent:#5b8cff; --accent-soft:#1d2740;
+    --ok:#3fbf7f; --warn:#e0a33e; --err:#e2626b;
+    --radius:12px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f1f3f7; --line:#e2e5ec;
+           --text:#1a1d23; --muted:#69707d; --accent:#3563e9; --accent-soft:#e7edfe; }
+  }
+  *{box-sizing:border-box}
+  /* Выделять имеет смысл только текст записи. Кнопки, вкладки и список слева
+     от выделения только мешают: тянешь мышью и «красишь» пол-окна. */
+  body{-webkit-user-select:none; user-select:none}
+  .pane, .turn, .rec-line, .note-item, .job-title, .rec-title, .lib-prev, .md,
+  input, textarea{-webkit-user-select:text; user-select:text}
+  .pane, .turn, .rec-line{cursor:auto}
+  ::selection{background:var(--accent-soft); color:var(--text)}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  button{font:inherit; color:inherit; cursor:pointer; border:none; background:none}
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:8px 14px;
+    border-radius:9px; background:var(--panel-2); border:1px solid var(--line);
+    transition:.15s; white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--accent); background:var(--accent-soft)}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.ghost{background:none}
+  .btn:disabled{opacity:.45; cursor:default; border-color:var(--line); background:var(--panel-2)}
+  .btn.sm{padding:5px 10px; font-size:12.5px}
+
+  /* ---------- каркас ---------- */
+  #app{display:flex; flex-direction:column; height:100vh}
+  header{
+    display:flex; align-items:center; gap:14px; padding:12px 20px;
+    border-bottom:1px solid var(--line); background:var(--panel); flex:0 0 auto;
+  }
+  header h1{font-size:15px; margin:0; font-weight:650; letter-spacing:-.01em}
+  .chips{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto; cursor:pointer}
+  .chip{
+    display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted);
+    background:var(--panel-2); border:1px solid var(--line); padding:3px 9px; border-radius:20px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--muted); flex:0 0 auto}
+  .dot.ok{background:var(--ok)} .dot.err{background:var(--err)} .dot.warn{background:var(--warn)}
+  .stage{display:flex; flex:1; min-height:0}
+  main{flex:1; overflow:auto; padding:22px; min-width:0}
+  .wrap{max-width:1020px; margin:0 auto}
+
+  /* ---------- архив записей ---------- */
+  .side{
+    width:272px; flex:0 0 272px; display:flex; flex-direction:column;
+    border-right:1px solid var(--line); background:var(--panel); min-height:0;
+  }
+  body.no-side .side{display:none}
+  .side-head{padding:12px 12px 10px; border-bottom:1px solid var(--line)}
+  .side-head input{width:100%}
+  .side-count{font-size:11.5px; color:var(--muted); margin-top:7px; display:block}
+  .side-list{flex:1; overflow:auto; padding:8px}
+  .side-foot{padding:8px 12px 12px; border-top:1px solid var(--line)}
+  .lib-item{
+    position:relative; display:block; width:100%; text-align:left; padding:9px 26px 9px 10px;
+    border-radius:10px; border:1px solid transparent; margin-bottom:2px; cursor:pointer;
+  }
+  .lib-item:hover{background:var(--panel-2)}
+  .lib-item.active{background:var(--accent-soft); border-color:var(--accent)}
+  .lib-top{display:flex; gap:8px; align-items:baseline}
+  .lib-name{
+    font-size:13px; font-weight:600; flex:1; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .lib-dur{font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; flex:0 0 auto}
+  .lib-sub{font-size:11px; color:var(--muted); margin-top:2px; display:block}
+  .lib-prev{
+    font-size:11.5px; color:var(--muted); margin-top:4px; display:-webkit-box;
+    -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.4;
+  }
+  .lib-hit{color:var(--accent)}
+  .lib-del{
+    position:absolute; top:6px; right:5px; width:20px; height:20px; border-radius:6px;
+    font-size:15px; line-height:1; color:var(--muted); opacity:0; transition:.12s;
+  }
+  .lib-item:hover .lib-del{opacity:1}
+  .lib-del:hover{background:var(--panel); color:var(--err)}
+  .lib-del.ask{opacity:1; width:auto; padding:0 7px; font-size:11px; color:var(--err);
+    border:1px solid var(--err)}
+  .side-empty{padding:22px 12px; text-align:center; font-size:12.5px; color:var(--muted)}
+  @media (max-width:880px){ .side{display:none} }
+
+  /* ---------- зона загрузки ---------- */
+  .drop{
+    border:1.5px dashed var(--line); border-radius:18px; padding:46px 26px; text-align:center;
+    background:var(--panel); transition:.18s;
+  }
+  .drop.over{border-color:var(--accent); background:var(--accent-soft)}
+  .drop h2{margin:0 0 6px; font-size:17px; font-weight:620}
+  .drop p{margin:0 0 20px; color:var(--muted); font-size:13px}
+  .formats{margin-top:16px; font-size:12px; color:var(--muted); font-family:var(--mono)}
+
+  /* ---------- задания ---------- */
+  .jobs{display:flex; flex-direction:column; gap:12px; margin-top:18px}
+  .job{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+  .job-head{display:flex; align-items:center; gap:12px; padding:13px 16px}
+  .job-title{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .job-sub{font-size:12px; color:var(--muted); margin-top:2px}
+  .job-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
+  .bar{height:4px; background:var(--panel-2); overflow:hidden}
+  .bar i{display:block; height:100%; background:var(--accent); width:0; transition:width .35s ease}
+  .job.err .bar i{background:var(--err)}
+  .job.done .bar i{background:var(--ok)}
+  .pct{font-family:var(--mono); font-size:12px; color:var(--muted); min-width:46px; text-align:right}
+  .warn-line{padding:9px 16px; font-size:12.5px; color:var(--warn); border-top:1px solid var(--line)}
+  .err-line{padding:11px 16px; font-size:13px; color:var(--err); border-top:1px solid var(--line)}
+
+  /* ---------- результат ---------- */
+  .tab-copy{margin-left:auto; align-self:center}
+  .tabs{display:flex; gap:2px; padding:0 12px; border-bottom:1px solid var(--line); overflow-x:auto}
+  .tab{padding:10px 13px; font-size:13px; color:var(--muted); border-bottom:2px solid transparent; white-space:nowrap}
+  .tab.active{color:var(--text); border-bottom-color:var(--accent); font-weight:600}
+  .tab .count{font-size:11px; opacity:.6; margin-left:3px}
+  .pane{padding:18px 20px; max-height:52vh; overflow:auto}
+  .pane.empty{color:var(--muted); font-size:13px}
+
+  .md h1,.md h2,.md h3{margin:18px 0 8px; line-height:1.3}
+  .md h1{font-size:18px} .md h2{font-size:16px} .md h3{font-size:14px; color:var(--muted)}
+  .md > :first-child{margin-top:0}
+  .md p{margin:0 0 10px}
+  .md ul,.md ol{margin:0 0 12px; padding-left:22px}
+  .md li{margin:3px 0}
+  .md table{border-collapse:collapse; width:100%; margin:6px 0 14px; font-size:13px}
+  .md th,.md td{border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top}
+  .md th{background:var(--panel-2); font-weight:600}
+  .md code{font-family:var(--mono); font-size:12.5px; background:var(--panel-2); padding:1px 5px; border-radius:4px}
+  .md hr{border:none; border-top:1px solid var(--line); margin:16px 0}
+
+  .turn{display:grid; grid-template-columns:74px 130px 1fr; gap:10px; padding:7px 0; border-bottom:1px solid var(--line)}
+  .turn:last-child{border-bottom:none}
+  .turn .t{font-family:var(--mono); font-size:12px; color:var(--muted)}
+  .turn .s{font-size:12.5px; font-weight:600; color:var(--accent); overflow:hidden; text-overflow:ellipsis}
+  .turn .x{font-size:13.5px}
+
+  .speakers{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line); background:var(--panel-2)}
+  .speakers .lbl{font-size:12px; color:var(--muted); align-self:center; margin-right:2px}
+  .spk{display:flex; align-items:center; gap:6px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:4px 8px}
+  .spk input{
+    border:none; background:none; color:var(--text); font:inherit; font-size:12.5px;
+    width:104px; outline:none; border-bottom:1px dashed var(--line); padding:1px 0;
+  }
+  .spk input:focus{border-bottom-color:var(--accent)}
+  .spk .m{font-size:11px; color:var(--muted); font-family:var(--mono)}
+
+  .files{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line)}
+
+  /* ---------- настройки ---------- */
+  .backdrop{position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:40}
+  .backdrop.show{display:block}
+  .picker{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:10px 14px; margin-bottom:12px; border:1px solid var(--line);
+    border-radius:12px; background:var(--panel)}
+  .picker label{font-size:13px; color:var(--muted); white-space:nowrap}
+  .picker select{width:auto; padding:6px 10px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel-2); color:var(--text); font:inherit; font-size:13px; max-width:100%}
+  .picker .why{font-size:12px; color:var(--muted); flex:1 1 200px; min-width:0}
+  .picker .acts{display:flex; gap:8px; margin-left:auto; flex:0 0 auto}
+  .drawer{
+    position:fixed; top:0; right:0; bottom:0; width:min(420px,90vw); background:var(--panel);
+    border-left:1px solid var(--line); transform:translateX(100%); transition:.22s ease;
+    z-index:41; display:flex; flex-direction:column;
+  }
+  .drawer.show{transform:none}
+  .drawer header{background:none}
+  .drawer .body{padding:16px 20px 32px; overflow:auto; flex:1}
+  .drawer .foot{padding:14px 20px; border-top:1px solid var(--line); display:flex; gap:8px}
+  .field{margin-bottom:15px}
+  .field label{display:block; font-size:12.5px; color:var(--muted); margin-bottom:5px}
+  .field .hint{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.45}
+  select,input[type=text],input[type=number],textarea{
+    width:100%; padding:8px 10px; border-radius:8px; background:var(--panel-2);
+    border:1px solid var(--line); color:var(--text); font:inherit; font-size:13px; outline:none;
+  }
+  textarea{resize:vertical; line-height:1.5; min-height:64px}
+  select:focus,input:focus,textarea:focus{border-color:var(--accent)}
+  .row{display:flex; align-items:center; gap:9px; margin-bottom:11px; font-size:13px}
+  .row input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
+  .group{border-top:1px solid var(--line); margin:18px 0 14px; padding-top:14px}
+  .group:first-child{border-top:none; margin-top:0; padding-top:0}
+  .group h3{font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 12px}
+
+
+  /* ---------- стенографист ---------- */
+  .banner{display:flex; align-items:center; gap:12px; padding:12px 16px; font-size:13.5px;
+          background:var(--accent-soft); border:1px solid var(--accent);
+          border-radius:var(--radius); margin-bottom:14px}
+  .banner .sp{margin-left:auto; display:flex; gap:8px}
+  .rec-card{background:var(--panel); border:1px solid var(--line);
+            border-radius:var(--radius); overflow:hidden; margin-bottom:18px}
+  .rec-card.live{border-color:var(--err)}
+  .rec-head{display:flex; align-items:center; gap:13px; padding:15px 16px}
+  .rec-dot{width:9px; height:9px; border-radius:50%; background:var(--err);
+           animation:pulse 1.7s ease-in-out infinite; flex:0 0 auto}
+  @keyframes pulse{50%{opacity:.2}}
+  .rec-timer{font-family:var(--mono); font-size:19px; font-variant-numeric:tabular-nums;
+             letter-spacing:-.02em}
+  .rec-title{font-weight:600}
+  .rec-sub{font-size:12px; color:var(--muted); margin-top:2px}
+  .rec-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
+  .rec-body{display:grid; grid-template-columns:1fr 290px; border-top:1px solid var(--line)}
+  @media (max-width:860px){ .rec-body{grid-template-columns:1fr} }
+  .rec-live{padding:12px 18px; max-height:42vh; overflow:auto}
+  .rec-notes{padding:14px 18px; border-left:1px solid var(--line);
+             background:var(--panel-2); max-height:42vh; overflow:auto}
+  @media (max-width:860px){ .rec-notes{border-left:none; border-top:1px solid var(--line)} }
+  .rec-notes h4{margin:0 0 10px; font-size:11px; letter-spacing:.08em;
+                text-transform:uppercase; color:var(--muted); font-weight:500}
+  .rec-line{display:grid; grid-template-columns:56px 92px 1fr; gap:9px; padding:5px 0;
+            font-size:13.5px; line-height:1.5}
+  .rec-line .t{font-family:var(--mono); font-size:11.5px; color:var(--muted); padding-top:2px}
+  .rec-line .w{font-size:12px; font-weight:600; padding-top:1px}
+  .rec-line.me .w{color:var(--accent)}
+  .rec-line.them .w{color:var(--ok)}
+  .note-item{margin-bottom:15px; font-size:12.5px; line-height:1.55; color:var(--muted)}
+  .note-item .at{font-family:var(--mono); font-size:11px; color:var(--accent);
+                 display:block; margin-bottom:4px}
+  .rec-empty{color:var(--muted); font-size:13px; padding:8px 0}
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translate(-50%,20px); opacity:0;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:10px 16px; font-size:13px; z-index:50; transition:.2s; pointer-events:none;
+    box-shadow:0 8px 30px rgba(0,0,0,.28);
+  }
+  .toast.show{opacity:1; transform:translate(-50%,0)}
+  .spin{width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Расшифровка записей</h1>
+    <div class="chips" id="chips"></div>
+    <button class="btn ghost sm" id="btn-side" title="Показать или скрыть архив">Архив</button>
+    <button class="btn ghost sm" id="btn-settings">Настройки</button>
+  </header>
+
+  <div class="stage">
+  <aside class="side" id="side">
+    <div class="side-head">
+      <input type="text" id="lib-search" placeholder="Поиск по записям и тексту">
+      <span class="side-count" id="lib-count"></span>
+    </div>
+    <div class="side-list" id="lib-list"></div>
+    <div class="side-foot">
+      <button class="btn sm ghost" id="btn-lib-folder" style="width:100%">Открыть папку с файлами</button>
+    </div>
+  </aside>
+  <main>
+    <div class="wrap">
+      <div class="picker" id="picker"></div>
+      <div id="rec"></div>
+      <div class="drop" id="drop">
+        <h2>Перетащите запись сюда</h2>
+        <p>Или выберите файл — приложение сделает транскрипт, саммари и бриф</p>
+        <button class="btn primary" id="btn-pick">Выбрать запись</button>
+        <div class="formats">mp4 · mov · webm · mkv · mp3 · m4a · wav</div>
+      </div>
+      <div class="jobs" id="jobs"></div>
+    </div>
+  </main>
+  </div>
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer">
+  <header><h1>Настройки</h1><button class="btn ghost sm" id="btn-close" style="margin-left:auto">Закрыть</button></header>
+  <div class="body" id="settings-body"></div>
+  <div class="foot">
+    <button class="btn primary" id="btn-save">Сохранить</button>
+    <button class="btn" id="btn-models">Скачать модели спикеров</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ========== мини-рендер markdown ========== */
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function inline(s){
+  return esc(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/(^|[\s(])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+}
+function md(src){
+  if(!src) return '';
+  const lines = src.replace(/\r/g,'').split('\n');
+  let out='', list=null, para=[], i=0;
+  const flushP=()=>{ if(para.length){ out+='<p>'+inline(para.join(' '))+'</p>'; para=[]; } };
+  const flushL=()=>{ if(list){ out+='</'+list+'>'; list=null; } };
+  const flush=()=>{ flushP(); flushL(); };
+  while(i<lines.length){
+    const line=lines[i];
+    const h=line.match(/^(#{1,4})\s+(.*)$/);
+    const li=line.match(/^\s*[-*+]\s+(.*)$/);
+    const oli=line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if(/^\s*$/.test(line)){ flush(); i++; continue; }
+    if(/^\s*(-{3,}|\*{3,})\s*$/.test(line)){ flush(); out+='<hr>'; i++; continue; }
+    if(h){ flush(); const l=Math.min(3,h[1].length); out+=`<h${l}>${inline(h[2])}</h${l}>`; i++; continue; }
+    if(line.trim().startsWith('|') && (lines[i+1]||'').match(/^\s*\|[\s:|-]+\|\s*$/)){
+      flush();
+      const row=r=>r.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+      const head=row(line); i+=2;
+      let body='';
+      while(i<lines.length && lines[i].trim().startsWith('|')){
+        body+='<tr>'+row(lines[i]).map(c=>`<td>${inline(c)}</td>`).join('')+'</tr>'; i++;
+      }
+      out+='<table><thead><tr>'+head.map(c=>`<th>${inline(c)}</th>`).join('')+'</tr></thead><tbody>'+body+'</tbody></table>';
+      continue;
+    }
+    if(li||oli){
+      flushP();
+      const want = li?'ul':'ol';
+      if(list!==want){ flushL(); out+='<'+want+'>'; list=want; }
+      out+='<li>'+inline((li?li[1]:oli[2]))+'</li>'; i++; continue;
+    }
+    flushL(); para.push(line.trim()); i++;
+  }
+  flush();
+  return out;
+}
+
+/* ========== утилиты ========== */
+const $=s=>document.querySelector(s);
+const api=()=>window.pywebview.api;
+let toastTimer=null;
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600);
+}
+function hhmmss(sec){
+  sec=Math.max(0,Math.round(sec||0));
+  const h=String(Math.floor(sec/3600)).padStart(2,'0');
+  const m=String(Math.floor(sec%3600/60)).padStart(2,'0');
+  const s=String(sec%60).padStart(2,'0');
+  return `${h}:${m}:${s}`;
+}
+
+/* ========== буфер обмена ==========
+   В окне WKWebView без строки меню ни Cmd+C, ни navigator.clipboard не работают
+   стабильно, поэтому путей три: живое выделение, clipboard API и pbcopy на
+   стороне Python. Какой-нибудь да сработает. */
+async function copyText(text){
+  text=String(text||'').trim();
+  if(!text){ toast('Нечего копировать'); return false; }
+  try{ await navigator.clipboard.writeText(text); toast('Скопировано'); return true; }catch(e){}
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=text;
+    ta.style.cssText='position:fixed;top:-1000px;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok=document.execCommand('copy');
+    ta.remove();
+    if(ok){ toast('Скопировано'); return true; }
+  }catch(e){}
+  try{ if(await api().copy(text)){ toast('Скопировано'); return true; } }catch(e){}
+  toast('Не удалось скопировать');
+  return false;
+}
+
+async function copySelection(){
+  const text=String(window.getSelection()||'').trim();
+  if(!text) return false;
+  // Выделение уже живое — сначала пробуем скопировать именно его, не подменяя.
+  try{ if(document.execCommand('copy')){ toast('Скопировано'); return true; } }catch(e){}
+  return copyText(text);
+}
+
+/* ========== состояние ========== */
+const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
+  presets:{items:[],current:'meeting',example:''}, preset:'',
+  lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null };
+
+/* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
+   Python присылает их вместе с саммари; список ниже — запасной вариант. */
+const TABS=[
+  ['summary','Саммари'], ['brief','Бриф'], ['tasks','Задачи'],
+  ['decisions','Решения'], ['risks','Риски'], ['transcript','Транскрипт'],
+];
+
+function tabsOf(j, withTranscript){
+  const own=(j.summary_tabs||[]).filter(x=>x&&x.length===2);
+  const list=own.length ? own.map(([k,label])=>[k,label]) : TABS.filter(([k])=>k!=='transcript');
+  return withTranscript ? list.concat([['transcript','Транскрипт']]) : list;
+}
+
+/* ========== отрисовка ========== */
+function renderChips(){
+  const e=state.env, c=[];
+  const add=(ok,label,title)=>c.push(
+    `<span class="chip" title="${esc(title||'')}"><span class="dot ${ok}"></span>${esc(label)}</span>`);
+  add(e.ffmpeg?'ok':'err','ffmpeg', e.ffmpeg?'Найден':'Не найден: brew install ffmpeg');
+  const asr = e.mlx ? 'Whisper (MLX)' : (e.faster ? 'Whisper (CPU)' : 'Whisper');
+  add((e.mlx||e.faster)?'ok':'err', asr, e.mlx?'Ускорение Apple Silicon':'');
+  add(e.sherpa ? (e.diar_models?'ok':'warn') : 'err', 'Спикеры',
+      e.diar_models?'Модели на месте':'Модели ещё не скачаны — скачаются при первом запуске');
+  const ollama=e.ollama_models||[], api=e.openai_models||[];
+  let label='Модель', ok='err', title='';
+  if(e.gguf_path_ok && e.llama_cpp){ label='Модель · файл'; ok='ok'; title=`${e.gguf_size_gb} ГБ`; }
+  else if(ollama.length){ label=`Модель · Ollama ${ollama.length}`; ok='ok'; title=ollama.join(', '); }
+  else if(api.length){ label='Модель · API'; ok='ok'; title=api.join(', '); }
+  else { title=e.ollama_error||'Не подключена ни одна языковая модель'; }
+  add(ok,label,title);
+  $('#chips').innerHTML=c.join('');
+  $('#chips').title='Нажмите, чтобы проверить заново';
+}
+
+function jobCard(j){
+  const running = j.status==='pending'||j.status==='running';
+  const cls = j.status==='error'?'err':(j.status==='done'?'done':'');
+  const spk = Object.keys(j.speakers||{}).length;
+  const sub = j.status==='done'
+    ? `${hhmmss((j.meta||{}).duration)} · ${spk?spk+' спикер(ов)':'без разделения'} · ${esc((j.meta||{}).language||'')}`
+    : esc(j.message||'В очереди');
+
+  let body='';
+  if(j.status==='done'){
+    const active = state.tabs.get(j.id) || firstTab(j);
+    const tabs = tabsOf(j,true).filter(([k])=>hasTab(j,k)).map(([k,label])=>
+      `<button class="tab ${k===active?'active':''}" data-tab="${k}" data-job="${j.id}">${label}${
+        k==='transcript'?`<span class="count">${(j.turns||[]).length}</span>`:''}</button>`).join('');
+    const copy = `<button class="btn sm ghost tab-copy" data-copytab="${j.id}"
+      title="Скопировать текст этой вкладки">Копировать</button>`;
+    body = `<div class="tabs">${tabs}${copy}</div>` +
+           `<div class="pane md" id="pane-${j.id}">${paneHTML(j,active)}</div>`;
+    if(spk){
+      body += `<div class="speakers"><span class="lbl">Кто есть кто:</span>` +
+        Object.entries(j.speakers).map(([key,v])=>
+          `<span class="spk"><input data-job="${j.id}" data-spk="${key}" value="${esc(v.label)}"
+            placeholder="Имя"><span class="m">${Math.round((v.seconds||0)/60)} мин</span></span>`).join('') +
+        `<button class="btn sm" data-rename="${j.id}">Применить имена</button></div>`;
+    }
+    const files = Object.entries(j.files||{});
+    if(files.length){
+      body += `<div class="files">` +
+        `<button class="btn sm" data-reveal="${esc(files[0][1])}">Показать в Finder</button>` +
+        files.map(([k,p])=>{
+          const name=p.split('/').pop().split('.').slice(-2).join('.');
+          return `<button class="btn sm ghost" data-open="${esc(p)}" title="${esc(p)}">${esc(name)}</button>`;
+        }).join('') +
+        `<button class="btn sm ghost" data-copy="${j.id}">Скопировать саммари</button></div>`;
+    }
+  }
+
+  return `<div class="job ${cls}" data-id="${j.id}">
+    <div class="job-head">
+      ${running?'<div class="spin"></div>':''}
+      <div style="min-width:0">
+        <div class="job-title">${esc(j.title)}</div>
+        <div class="job-sub">${sub}</div>
+      </div>
+      <div class="job-actions">
+        ${running?`<span class="pct">${Math.round(j.progress*100)}%</span>
+          <button class="btn sm ghost" data-cancel="${j.id}">Отменить</button>`:''}
+        ${j.status==='done'?'<span class="pct" style="color:var(--ok)">готово</span>':''}
+        ${j.status==='cancelled'?'<span class="pct">отменено</span>':''}
+        ${j.status!=='running'&&j.status!=='pending'?`<button class="btn sm ghost" data-remove="${j.id}">×</button>`:''}
+      </div>
+    </div>
+    <div class="bar"><i style="width:${(j.progress*100).toFixed(1)}%"></i></div>
+    ${(j.warnings||[]).map(w=>`<div class="warn-line">${esc(w)}</div>`).join('')}
+    ${j.error?`<div class="err-line">${esc(j.error)}</div>`:''}
+    ${body}
+  </div>`;
+}
+
+function hasTab(j,key){
+  if(key==='transcript') return (j.turns||[]).length>0;
+  return !!((j.summary_sections||{})[key]||'').trim();
+}
+function firstTab(j){ const t=tabsOf(j,true).find(([k])=>hasTab(j,k)); return t?t[0]:'transcript'; }
+
+function paneText(j,key){
+  if(key==='transcript'){
+    const labels={};
+    Object.entries(j.speakers||{}).forEach(([k,v])=>labels[k]=v.label);
+    return (j.turns||[]).map(t=>
+      `[${hhmmss(t.start)}] ${labels[t.speaker]||t.speaker||''}: ${t.text}`).join('\n');
+  }
+  return ((j.summary_sections||{})[key]||'').trim();
+}
+
+function paneHTML(j,key){
+  if(key==='transcript'){
+    const labels={};
+    Object.entries(j.speakers||{}).forEach(([k,v])=>labels[k]=v.label);
+    if(!(j.turns||[]).length) return '<div class="pane empty">Транскрипт пуст</div>';
+    return j.turns.map(t=>`<div class="turn">
+        <span class="t">${hhmmss(t.start)}</span>
+        <span class="s">${esc(labels[t.speaker]|| (t.speaker==='unknown'?'Неизвестный':t.speaker))}</span>
+        <span class="x">${esc(t.text)}</span></div>`).join('');
+  }
+  const text=((j.summary_sections||{})[key]||'').trim();
+  return text ? md(text) : '<div class="pane empty">Раздел пуст</div>';
+}
+
+/* ========== архив записей ========== */
+function libSub(it){
+  // Длительность уже стоит справа от названия — здесь её повторять незачем.
+  const bits=[it.when];
+  if(it.kind==='call') bits.push('созвон');
+  else if(it.preset==='estimate') bits.push('смета');
+  if(it.speakers>1) bits.push(it.speakers+' голоса');
+  return bits.join(' · ');
+}
+
+function renderLib(){
+  const list=$('#lib-list'), count=$('#lib-count');
+  const items=state.lib||[];
+  count.textContent = state.libQuery
+    ? (items.length ? `нашлось: ${items.length}` : 'ничего не нашлось')
+    : (items.length ? `записей: ${items.length}` : '');
+  if(!items.length){
+    list.innerHTML=`<div class="side-empty">${state.libQuery
+      ? 'По этому запросу ничего нет'
+      : 'Здесь появятся разобранные записи — и файлы, и созвоны.'}</div>`;
+    return;
+  }
+  list.innerHTML=items.map(it=>{
+    const ask=state.libAsk===it.id;
+    return `<div class="lib-item ${state.libOpen===it.id?'active':''}" data-lib="${it.id}">
+      <div class="lib-top"><span class="lib-name">${esc(it.title)}</span>
+        ${it.duration?`<span class="lib-dur">${hhmmss(it.duration).replace(/^00:/,'')}</span>`:''}</div>
+      <span class="lib-sub">${esc(libSub(it))}</span>
+      ${it.preview?`<span class="lib-prev">${esc(it.preview)}${
+        it.matched?` <span class="lib-hit">· найдено ${esc(it.matched)}</span>`:''}</span>`:''}
+      <button class="lib-del ${ask?'ask':''}" data-libdel="${it.id}"
+        title="Убрать запись в Корзину">${ask?'удалить?':'×'}</button>
+    </div>`;
+  }).join('');
+}
+
+let libTimer=null;
+async function loadLib(){
+  try{
+    const r=await api().library(state.libQuery);
+    state.lib=r.items||[]; state.libDir=r.dir||'';
+  }catch(e){ state.lib=[]; }
+  renderLib();
+}
+
+function loadLibSoon(delay){
+  clearTimeout(libTimer);
+  libTimer=setTimeout(loadLib, delay||250);
+}
+
+async function openLib(id){
+  const snap=await api().library_open(id);
+  if(!snap){ toast('Файлы этой записи не найдены'); loadLib(); return; }
+  state.libOpen=id;
+  state.jobs.set(snap.id, snap);
+  render();
+  const card=document.querySelector(`.job[data-id="${snap.id}"]`);
+  if(card) card.scrollIntoView({block:'start', behavior:'smooth'});
+}
+
+async function deleteLib(id){
+  // Первый клик спрашивает, второй удаляет: диалоги в pywebview блокируют окно.
+  if(state.libAsk!==id){ state.libAsk=id; renderLib(); setTimeout(()=>{
+    if(state.libAsk===id){ state.libAsk=null; renderLib(); }
+  }, 4000); return; }
+  state.libAsk=null;
+  const r=await api().library_delete(id);
+  if(r && r.ok){
+    state.jobs.delete(id);                  // id записи и id карточки совпадают
+    if(state.libOpen===id) state.libOpen=null;
+    toast('Запись убрана в Корзину');
+  } else toast((r&&r.error)||'Не удалось удалить');
+  await loadLib();
+  render();
+}
+
+function currentPreset(){
+  return state.preset || state.settings.preset || state.presets.current || 'meeting';
+}
+
+function renderPicker(){
+  const el=$('#picker'); const items=state.presets.items||[];
+  if(!items.length){ el.style.display='none'; return; }
+  const cur=currentPreset();
+  const chosen=items.find(i=>i.key===cur)||items[0];
+  el.style.display='';
+  el.innerHTML=`<label for="preset-pick">Что готовить из записи</label>
+    <select id="preset-pick">${items.map(i=>
+      `<option value="${esc(i.key)}" ${i.key===cur?'selected':''}>${esc(i.title)}</option>`).join('')}</select>
+    <span class="why">${esc(chosen?chosen.hint:'')}</span>
+    <span class="acts">
+      ${cur==='custom'?'<button class="btn sm ghost" id="preset-edit">Изменить правила</button>':''}
+      <button class="btn sm primary" id="btn-pick-top">Выбрать запись</button>
+    </span>`;
+  $('#preset-pick').onchange=async e=>{
+    state.preset=e.target.value;
+    try{ state.settings=await api().save_settings({preset:state.preset}); }catch(err){}
+    renderPicker();
+    // Свои правила без правил бессмысленны — сразу открываем, где их писать.
+    if(state.preset==='custom' && !((state.settings.custom_rules||'').trim())) openSettings();
+  };
+  const edit=$('#preset-edit'); if(edit) edit.onclick=()=>openSettings();
+  // Кнопка выбора файла нужна всегда: зона перетаскивания прячется, как только
+  // на экране появляется хоть одна карточка — в том числе открытая из архива.
+  const top=$('#btn-pick-top'); if(top) top.onclick=pick;
+}
+
+function render(){
+  renderPicker();
+  renderLib();
+  const jobs=[...state.jobs.values()].reverse();
+  $('#jobs').innerHTML=jobs.map(jobCard).join('');
+  $('#drop').style.display = jobs.length ? 'none' : '';
+  renderRec();
+}
+
+function patchJob(j){
+  const prev=state.jobs.get(j.id);
+  state.jobs.set(j.id,j);
+  // Пока задание идёт — двигаем только полоску, чтобы не мигал весь список.
+  const node=document.querySelector(`.job[data-id="${j.id}"]`);
+  if(node && prev && prev.status===j.status && (j.status==='running'||j.status==='pending')){
+    node.querySelector('.bar i').style.width=(j.progress*100).toFixed(1)+'%';
+    node.querySelector('.job-sub').textContent=j.message||'';
+    const pct=node.querySelector('.pct'); if(pct) pct.textContent=Math.round(j.progress*100)+'%';
+    return;
+  }
+  render();
+}
+
+/* ========== настройки ========== */
+function settingsHTML(){
+  const s=state.settings, e=state.env;
+  const opt=(list,val)=>list.map(v=>`<option value="${esc(String(v))}" ${String(v)===String(val)?'selected':''}>${esc(String(v))}</option>`).join('');
+  const models=['auto',...(e.ollama_models||[])];
+  return `
+  <div class="group"><h3>Распознавание</h3>
+    <div class="field"><label>Язык записи</label>
+      <select data-k="language">${opt(['auto','ru','en','de','fr','es','it','uk','kk'],s.language)}</select>
+      <div class="hint">«auto» определяет язык сам. Если язык известен — укажите его, так точнее.</div>
+    </div>
+    <div class="field"><label>Модель Whisper</label>
+      <select data-k="whisper_model">${opt(e.whisper_models||[],s.whisper_model)}</select>
+      <div class="hint">large-v3-turbo — лучший баланс скорости и качества. small/base быстрее, но с ошибками.</div>
+    </div>
+    <div class="field"><label>Движок</label>
+      <select data-k="asr_backend">${opt(['auto','mlx','faster'],s.asr_backend)}</select>
+      <div class="hint">${e.mlx?'MLX доступен — используется ускорение Apple Silicon.':'MLX не установлен, работает CPU-движок.'}</div>
+    </div>
+  </div>
+  <div class="group"><h3>Спикеры</h3>
+    <div class="row"><input type="checkbox" data-k="diarization_enabled" ${s.diarization_enabled?'checked':''}><span>Разделять по спикерам</span></div>
+    <div class="field"><label>Сколько спикеров ожидается</label>
+      <input type="number" min="0" max="20" data-k="num_speakers" value="${s.num_speakers}">
+      <div class="hint">0 — определить автоматически по порогу ниже. Любое другое число задаёт количество жёстко,
+        и порог тогда не работает: ставьте его, только если точно знаете, сколько человек говорит.</div>
+    </div>
+    <div class="field"><label>Порог разделения — ${s.cluster_threshold}</label>
+      <input type="number" step="0.05" min="0.2" max="0.95" data-k="cluster_threshold" value="${s.cluster_threshold}">
+      <div class="hint">Меньше — больше спикеров. Если голоса склеились, уменьшите до 0.5; если один человек разбился на нескольких — поднимите до 0.7.</div>
+    </div>
+  </div>
+  <div class="group"><h3>Что готовить из записи</h3>
+    <div class="field"><label>Профиль</label>
+      <select data-k="preset" id="preset-select">${(state.presets.items||[]).map(i=>
+        `<option value="${esc(i.key)}" ${i.key===currentPreset()?'selected':''}>${esc(i.title)}</option>`).join('')}</select>
+      <div class="hint">${(state.presets.items||[]).map(i=>
+        `<div style="margin-top:4px"><b>${esc(i.title)}</b> — ${esc(i.hint)}</div>`).join('')}</div>
+    </div>
+    <div id="custom-block">
+      <div class="field"><label>Правила для модели</label>
+        <textarea data-k="custom_rules" rows="5" placeholder="Например: собери из записи список работ, ставки бери из слов заказчика, ничего не придумывай.">${esc(s.custom_rules||'')}</textarea>
+        <div class="hint">Напишите обычными словами, что нужно получить и чего делать нельзя.</div>
+      </div>
+      <div class="field"><label>Шаблон документа</label>
+        <textarea data-k="custom_template" rows="10" placeholder="${esc(state.presets.example||'')}">${esc(s.custom_template||'')}</textarea>
+        <div class="hint">Заголовки <code>##</code> становятся вкладками и разделами файла. Оставьте пустым — возьмётся пример.
+          Колонки «Количество» и «Ставка» приложение перемножит само и добавит строку «Итого»:
+          модель считает плохо, поэтому арифметику она не делает.
+          <button class="btn sm" id="btn-example" style="margin-top:6px">Подставить пример</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="group"><h3>Языковая модель для саммари</h3>
+    <div class="row"><input type="checkbox" data-k="summary_enabled" ${s.summary_enabled?'checked':''}><span>Составлять саммари и бриф</span></div>
+
+    <div class="field"><label>Как подключена модель</label>
+      <select data-k="llm_backend" id="llm-backend">
+        <option value="auto" ${s.llm_backend==='auto'?'selected':''}>Автоматически</option>
+        <option value="ollama" ${s.llm_backend==='ollama'?'selected':''}>Ollama</option>
+        <option value="gguf" ${s.llm_backend==='gguf'?'selected':''}>Файл .gguf на диске</option>
+        <option value="openai" ${s.llm_backend==='openai'?'selected':''}>Сервер с OpenAI API</option>
+      </select>
+      <div class="hint">Автоматически — сначала файл .gguf, если он указан, затем Ollama, затем сервер.</div>
+    </div>
+
+    <div class="llm-block" data-for="ollama">
+      <div class="field"><label>Модель Ollama</label>
+        <select data-k="ollama_model">${opt(models,s.ollama_model)}</select>
+        <div class="hint">${(e.ollama_models||[]).length
+          ?'«auto» выберет лучшую из установленных.'
+          :esc(e.ollama_error||'Ollama не запущена.')}</div>
+      </div>
+      <div class="field"><label>Адрес Ollama</label>
+        <input type="text" data-k="ollama_url" value="${esc(s.ollama_url)}">
+      </div>
+    </div>
+
+    <div class="llm-block" data-for="gguf">
+      <div class="field"><label>Файл модели (.gguf)</label>
+        <input type="text" data-k="gguf_path" id="gguf-path" value="${esc(s.gguf_path||'')}"
+               placeholder="например ~/Models/gemma-4-12b-Q4_K_M.gguf">
+        <div class="hint">
+          <button class="btn sm" id="btn-gguf" style="margin-top:6px">Выбрать файл…</button>
+          ${e.gguf_path_ok?` <span style="color:var(--ok)">файл на месте, ${e.gguf_size_gb} ГБ</span>`:''}
+          <div style="margin-top:6px">${e.llama_cpp
+            ? 'Библиотека для чтения .gguf установлена.'
+            : 'Понадобится библиотека llama-cpp-python — установите её командой из README.'}</div>
+        </div>
+      </div>
+      <div class="field"><label>Слоёв на видеоядро</label>
+        <input type="number" data-k="gguf_gpu_layers" value="${s.gguf_gpu_layers}">
+        <div class="hint">−1 — вся модель на GPU (для Apple Silicon это правильный выбор). Уменьшайте, если не хватает памяти.</div>
+      </div>
+    </div>
+
+    <div class="llm-block" data-for="openai">
+      <div class="field"><label>Адрес сервера</label>
+        <input type="text" data-k="openai_base_url" value="${esc(s.openai_base_url||'')}"
+               placeholder="http://127.0.0.1:1234/v1">
+        <div class="hint">LM Studio — порт 1234, llama-server — 8080. Адрес должен заканчиваться на /v1.
+          ${(e.openai_models||[]).length?`Сервер отвечает, моделей: ${e.openai_models.length}.`:''}</div>
+      </div>
+      <div class="field"><label>Модель</label>
+        <select data-k="openai_model">${opt(['auto',...(e.openai_models||[])],s.openai_model)}</select>
+      </div>
+      <div class="field"><label>Ключ доступа</label>
+        <input type="text" data-k="openai_api_key" value="${esc(s.openai_api_key||'')}"
+               placeholder="для локального сервера не нужен">
+      </div>
+    </div>
+
+    <div class="field"><label>Размер контекста</label>
+      <input type="number" step="4096" data-k="llm_num_ctx" value="${s.llm_num_ctx}">
+      <div class="hint">Сколько текста модель держит за раз. Больше — качественнее свод, но нужнее память.</div>
+    </div>
+
+    <button class="btn sm" id="btn-test-llm">Проверить связь</button>
+    <div class="hint" id="llm-test-result" style="margin-top:8px"></div>
+  </div>
+  <div class="group"><h3>Транскрипт</h3>
+    <div class="row"><input type="checkbox" data-k="transcript_cleanup" ${s.transcript_cleanup?'checked':''}><span>Убирать эканье и слова-паразиты</span></div>
+    <div class="field"><div class="hint" style="margin-top:-4px">Вычищает «э-э», «ну», «вот», «как бы», «типа» и повторы слов. Осмысленные обороты вроде «вот здесь» и «ну и что» остаются. Дословный текст сохраняется в файле .result.json.</div></div>
+  </div>
+  <div class="group"><h3>Запись созвонов</h3>
+    <div class="row"><input type="checkbox" data-k="record_autodetect" ${s.record_autodetect?'checked':''}><span>Предлагать запись, когда начинается созвон</span></div>
+    <div class="row"><input type="checkbox" data-k="record_split_speakers" ${s.record_split_speakers?'checked':''}><span>Различать собеседников по голосам</span></div>
+    <div class="field"><div class="hint" style="margin-top:-4px">Во время разговора все, кроме вас, подписаны просто «Собеседник»: дорожка знает только «я / не я». После звонка их голоса разбираются отдельно, и в готовом транскрипте появляются «Собеседник 1», «Собеседник 2». Занимает около двух минут на час разговора.</div></div>
+    <div class="row"><input type="checkbox" data-k="record_dedupe" ${s.record_dedupe?'checked':''}><span>Убирать эхо между дорожками</span></div>
+    <div class="field"><div class="hint" style="margin-top:-4px">Один и тот же голос попадает и в микрофон, и в системный звук. Приложение оставляет ту дорожку, где он громче, — иначе каждая фраза показывалась бы дважды.</div></div>
+    <div class="field"><label>Заметки по ходу, раз в N минут</label>
+      <input type="number" min="0" max="60" data-k="record_notes_minutes" value="${s.record_notes_minutes}">
+      <div class="hint">0 — не делать промежуточных сводок. Итоговый бриф собирается в любом случае.</div>
+    </div>
+    <div class="field"><label>Разбирать звук кусками по N секунд</label>
+      <input type="number" min="10" max="120" data-k="record_chunk_seconds" value="${s.record_chunk_seconds}">
+      <div class="hint">Меньше — текст появляется быстрее, но машина работает чаще.</div>
+    </div>
+  </div>
+  <div class="group"><h3>Файлы</h3>
+    <div class="field"><label>Папка результатов</label>
+      <input type="text" data-k="output_dir" value="${esc(s.output_dir||e.output_dir||'')}" placeholder="по умолчанию — output рядом с приложением">
+      <div class="hint"><button class="btn sm" id="btn-outdir" style="margin-top:6px">Выбрать папку…</button></div>
+    </div>
+    <div class="row"><input type="checkbox" data-k="keep_wav" ${s.keep_wav?'checked':''}><span>Сохранять извлечённый WAV</span></div>
+  </div>`;
+}
+
+function formValues(){
+  const values={};
+  $('#settings-body').querySelectorAll('[data-k]').forEach(el=>{
+    values[el.dataset.k] = el.type==='checkbox' ? el.checked : el.value;
+  });
+  return values;
+}
+
+function syncCustomBlock(){
+  const sel=$('#preset-select'); const block=$('#custom-block');
+  if(sel&&block) block.style.display = sel.value==='custom' ? '' : 'none';
+}
+
+function syncLlmBlocks(){
+  const chosen=$('#llm-backend').value;
+  $('#settings-body').querySelectorAll('.llm-block').forEach(b=>{
+    b.style.display = (chosen==='auto' || b.dataset.for===chosen) ? '' : 'none';
+  });
+}
+
+function openSettings(){
+  $('#settings-body').innerHTML=settingsHTML();
+  $('#drawer').classList.add('show'); $('#backdrop').classList.add('show');
+  syncLlmBlocks();
+  $('#llm-backend').onchange=syncLlmBlocks;
+  syncCustomBlock();
+  const preset=$('#preset-select');
+  if(preset) preset.onchange=()=>{ state.preset=preset.value; syncCustomBlock(); };
+  const example=$('#btn-example');
+  if(example) example.onclick=()=>{
+    const box=$('#settings-body').querySelector('[data-k=custom_template]');
+    if(box && !box.value.trim()) box.value=state.presets.example||'';
+  };
+
+  const outdir=$('#btn-outdir');
+  if(outdir) outdir.onclick=async()=>{
+    const d=await api().choose_output_dir();
+    if(d) $('#settings-body').querySelector('[data-k=output_dir]').value=d;
+  };
+  const gguf=$('#btn-gguf');
+  if(gguf) gguf.onclick=async()=>{
+    const f=await api().choose_gguf_file();
+    if(f) $('#gguf-path').value=f;
+  };
+  const test=$('#btn-test-llm');
+  if(test) test.onclick=async()=>{
+    const out=$('#llm-test-result');
+    out.innerHTML='<span class="spin" style="display:inline-block;vertical-align:-2px"></span> проверяю…';
+    const r=await api().test_llm(formValues());
+    out.innerHTML = r.ok
+      ? `<span style="color:var(--ok)">✓ ${esc(r.backend)} отвечает: «${esc(r.answer||'')}»</span>`
+      : `<span style="color:var(--err)">✗ ${esc(r.error||'не отвечает')}</span>`;
+  };
+}
+function closeSettings(){ $('#drawer').classList.remove('show'); $('#backdrop').classList.remove('show'); }
+
+async function saveSettings(){
+  const values=formValues();
+  state.settings = await api().save_settings(values);
+  state.preset = state.settings.preset || state.preset;
+  state.env = await api().environment();
+  renderChips(); renderPicker(); closeSettings(); loadLib(); toast('Настройки сохранены');
+}
+
+/* ========== действия ========== */
+async function pick(){
+  const paths = await api().choose_files();
+  if(paths && paths.length) startJobs(paths);
+}
+async function startJobs(paths){
+  const jobs = await api().start(paths, currentPreset());
+  jobs.forEach(j=>state.jobs.set(j.id,j));
+  render();
+}
+
+document.addEventListener('click', async ev=>{
+  const t=ev.target.closest('[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel]');
+  if(!t) return;
+  if(t.dataset.copytab){
+    const j=state.jobs.get(t.dataset.copytab);
+    if(j) await copyText(paneText(j, state.tabs.get(j.id) || firstTab(j)));
+    return;
+  }
+  if(t.dataset.reccopy){
+    const r=state.rec||{};
+    await copyText(((r.summary_sections||{})[t.dataset.reccopy]||''));
+    return;
+  }
+  if(t.dataset.libdel){ ev.stopPropagation(); await deleteLib(t.dataset.libdel); return; }
+  if(t.dataset.lib){ await openLib(t.dataset.lib); return; }
+  if(t.dataset.rec){ await recAction(t.dataset.rec); return; }
+  if(t.dataset.rectab){ state.recTab=t.dataset.rectab; renderRec(); return; }
+  if(t.dataset.tab){ state.tabs.set(t.dataset.job,t.dataset.tab); render(); return; }
+  if(t.dataset.cancel){ await api().cancel(t.dataset.cancel); return; }
+  if(t.dataset.remove){ state.jobs.delete(t.dataset.remove); render(); return; }
+  if(t.dataset.reveal){ await api().reveal(t.dataset.reveal); return; }
+  if(t.dataset.open){ await api().open_file(t.dataset.open); return; }
+  if(t.dataset.copy){
+    const j=state.jobs.get(t.dataset.copy);
+    if(j) await copyText(j.summary_md || paneText(j,'transcript'));
+    return;
+  }
+  if(t.dataset.rename){
+    const id=t.dataset.rename, names={};
+    document.querySelectorAll(`input[data-job="${id}"][data-spk]`).forEach(i=>names[i.dataset.spk]=i.value);
+    const card=state.jobs.get(id);
+    const j = card && card.archived
+      ? await api().library_rename(id,names)
+      : await api().rename_speakers(id,names);
+    if(j){ state.jobs.set(j.id,j); loadLib(); render(); toast('Имена применены, файлы обновлены'); }
+    else toast('Не удалось обновить имена');
+  }
+});
+
+/* Cmd+C и Cmd+A. Без строки меню macOS сама их не обрабатывает, а привычка
+   копировать выделенное клавишами никуда не девается. */
+document.addEventListener('keydown', async ev=>{
+  if(!(ev.metaKey||ev.ctrlKey) || ev.altKey) return;
+  const key=(ev.key||'').toLowerCase();
+  const inField=/^(input|textarea)$/i.test((ev.target.tagName||''));
+  if(key==='c' && !inField){
+    if(await copySelection()) ev.preventDefault();
+    return;
+  }
+  if(key==='a' && !inField){
+    // Выделяем текст открытой вкладки, а не всё окно вместе с кнопками.
+    const pane=document.querySelector('.pane:hover') || document.querySelector('.pane');
+    if(pane){
+      const range=document.createRange();
+      range.selectNodeContents(pane);
+      const sel=window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      ev.preventDefault();
+    }
+  }
+});
+
+/* перетаскивание */
+const drop=$('#drop');
+['dragenter','dragover'].forEach(e=>document.addEventListener(e,ev=>{ev.preventDefault(); drop.classList.add('over');}));
+['dragleave','drop'].forEach(e=>document.addEventListener(e,ev=>{ev.preventDefault(); if(e==='drop'||ev.target===drop) drop.classList.remove('over');}));
+document.addEventListener('drop', ev=>{
+  ev.preventDefault();
+  const files=[...(ev.dataTransfer?.files||[])];
+  const paths=files.map(f=>f.path).filter(Boolean);
+  if(paths.length) startJobs(paths);
+  else if(files.length) toast('Перетаскивание не сработало — нажмите «Выбрать запись»');
+});
+
+$('#btn-pick').onclick=pick;
+$('#btn-side').onclick=()=>document.body.classList.toggle('no-side');
+$('#btn-lib-folder').onclick=async()=>{
+  if(!(await api().open_file(state.libDir))) toast('Папка ещё не создана');
+};
+let searchTimer=null;
+$('#lib-search').oninput=ev=>{
+  state.libQuery=ev.target.value.trim();
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(loadLib, 220);
+};
+$('#btn-settings').onclick=openSettings;
+$('#btn-close').onclick=closeSettings;
+$('#backdrop').onclick=closeSettings;
+$('#btn-save').onclick=saveSettings;
+$('#btn-models').onclick=async()=>{
+  toast('Скачиваю модели…');
+  const r=await api().prepare_models();
+  state.env=await api().environment(); renderChips();
+  toast(r.ok?'Модели готовы':'Ошибка: '+r.error);
+};
+
+
+/* ========== стенографист ========== */
+state.rec=null; state.recPerms={}; state.callPrompt=false; state.recTab='live'; state.recError='';
+let recTicker=null;
+
+function recTime(){
+  if(!state.rec) return '00:00:00';
+  const base=state.rec.duration||0;
+  const extra=(state.rec.state==='recording'&&state.rec._t)?(Date.now()-state.rec._t)/1000:0;
+  return hhmmss(base+extra);
+}
+
+function renderRec(){
+  const el=$('#rec'); const r=state.rec; const p=state.recPerms||{};
+  let html='';
+
+  if(state.callPrompt && (!r || r.state==='done')){
+    html+=`<div class="banner"><span>Похоже, начался созвон — записать его?</span>
+      <span class="sp"><button class="btn sm" data-rec="dismiss">Не сейчас</button>
+      <button class="btn sm primary" data-rec="start">Записывать</button></span></div>`;
+  }
+
+  if(!r || r.state==='done'){
+    const blocked = p.helper===false || p.screen===false;
+    if(state.recError){
+      html+=`<div class="banner" style="background:var(--panel);border-color:var(--err)">
+        <span>${esc(state.recError)}</span>
+        <span class="sp"><button class="btn sm primary" data-rec="privacy">Открыть настройки</button></span></div>`;
+    }
+    html+=`<div class="rec-card"><div class="rec-head">
+        <div style="min-width:0">
+          <div class="rec-title">Стенографист</div>
+          <div class="rec-sub">${blocked
+            ? 'Нужно разрешение на запись экрана — без него не слышно собеседников'
+            : 'Записывает созвон и расшифровывает его прямо по ходу разговора'}</div>
+        </div>
+        <div class="rec-actions">
+          ${blocked
+            ? `<button class="btn sm ghost" data-rec="recheck">Проверить снова</button>
+               <button class="btn primary" data-rec="privacy">Открыть настройки</button>`
+            : `<button class="btn primary" data-rec="start">Начать запись созвона</button>`}
+        </div>
+      </div>`;
+    if(r && r.state==='done' && r.line_count) html+=recResult(r);
+    html+=`</div>`;
+    el.innerHTML=html; return;
+  }
+
+  const live = r.state==='recording';
+  html+=`<div class="rec-card live"><div class="rec-head">
+      ${live?'<span class="rec-dot"></span>':'<div class="spin"></div>'}
+      <div style="min-width:0">
+        <div class="rec-title">${esc(r.title)}</div>
+        <div class="rec-sub">${esc(r.message||'')}</div>
+      </div>
+      <div class="rec-actions">
+        <span class="rec-timer" id="rec-timer">${recTime()}</span>
+        ${live?`<button class="btn sm ghost" data-rec="cancel">Отменить</button>
+                <button class="btn primary" data-rec="stop">Остановить</button>`:''}
+      </div>
+    </div>`;
+
+  html+=`<div class="rec-body"><div class="rec-live" id="rec-live">`;
+  if(!(r.lines||[]).length){
+    html+=`<div class="rec-empty">Речь появится здесь через полминуты после начала разговора.</div>`;
+  } else {
+    html+=r.lines.map(l=>`<div class="rec-line ${l.who}">
+        <span class="t">${hhmmss(l.start)}</span>
+        <span class="w">${esc(l.label)}</span>
+        <span class="x">${esc(l.text)}</span></div>`).join('');
+  }
+  html+=`</div><div class="rec-notes"><h4>Заметки по ходу</h4>`;
+  html+=(r.notes||[]).length
+    ? r.notes.map(n=>`<div class="note-item"><span class="at">${hhmmss(n.at)}</span>${md(n.text)}</div>`).join('')
+    : `<div class="rec-empty">Первая сводка появится через несколько минут.</div>`;
+  html+=`</div></div>`;
+  if(r.error) html+=`<div class="err-line">${esc(r.error)}</div>`;
+  html+=`</div>`;
+  el.innerHTML=html;
+
+  const pane=$('#rec-live'); if(pane) pane.scrollTop=pane.scrollHeight;
+}
+
+function recResult(r){
+  const tabs=tabsOf(r,false).filter(([k])=>((r.summary_sections||{})[k]||'').trim());
+  const active=state.recTab!=='live'&&tabs.some(([k])=>k===state.recTab)?state.recTab:(tabs[0]?tabs[0][0]:null);
+  let h='';
+  if(active){
+    h+=`<div class="tabs">`+tabs.map(([k,label])=>
+      `<button class="tab ${k===active?'active':''}" data-rectab="${k}">${label}</button>`).join('')+
+      `<button class="btn sm ghost tab-copy" data-reccopy="${active}"
+        title="Скопировать текст этой вкладки">Копировать</button></div>`;
+    h+=`<div class="pane md">${md((r.summary_sections||{})[active]||'')}</div>`;
+  }
+  const files=Object.entries(r.files||{});
+  if(files.length){
+    h+=`<div class="files"><button class="btn sm" data-reveal="${esc(files[0][1])}">Показать в Finder</button>`+
+      files.map(([k,f])=>{const n=f.split('/').pop().split('.').slice(-2).join('.');
+        return `<button class="btn sm ghost" data-open="${esc(f)}" title="${esc(f)}">${esc(n)}</button>`;}).join('')+
+      `</div>`;
+  }
+  return h;
+}
+
+async function recAction(what){
+  if(what==='dismiss'){ state.callPrompt=false; renderRec(); return; }
+  if(what==='privacy'){
+    const ok=await api().open_privacy('screen');
+    toast(ok ? 'Включите «Расшифровка» в списке и перезапустите приложение'
+             : 'Не удалось открыть настройки — откройте их вручную');
+    return;
+  }
+  if(what==='recheck'){
+    state.recPerms=await api().rec_permissions();
+    state.recError='';
+    renderRec();
+    toast(state.recPerms.screen ? 'Разрешение на месте' : 'Разрешения пока нет');
+    return;
+  }
+  if(what==='perms'){
+    toast('Открываю системный запрос…');
+    state.recPerms=await api().rec_request();
+    renderRec();
+    toast(state.recPerms.screen
+      ? 'Разрешение выдано'
+      : 'Разрешите «Запись экрана» в настройках и перезапустите приложение');
+    return;
+  }
+  if(what==='start'){
+    state.callPrompt=false;
+    const res=await api().rec_start('', currentPreset());
+    if(!res.ok){
+      state.recError=res.error||'Не удалось начать';
+      state.recPerms=await api().rec_permissions();
+      renderRec(); toast(state.recError.slice(0,90));
+      return;
+    }
+    state.recError='';
+    state.rec=res.session; state.rec._t=Date.now(); renderRec();
+    clearInterval(recTicker);
+    recTicker=setInterval(()=>{ const el=$('#rec-timer'); if(el) el.textContent=recTime(); },1000);
+    return;
+  }
+  if(what==='stop'){ await api().rec_stop(); return; }
+  if(what==='cancel'){ await api().rec_cancel(); state.rec=null; renderRec(); return; }
+}
+
+/* мост из Python */
+window.__bridge=function(msg){
+  if(!msg || !msg.event) return;
+  if(msg.event==='job'){
+    patchJob(msg.data);
+    if(msg.data && msg.data.status==='done') loadLibSoon(600);
+  }
+  if(msg.event==='record'){
+    const keep=state.rec&&state.rec._t;
+    state.rec=msg.data; if(keep&&state.rec.state==='recording') state.rec._t=keep;
+    if(state.rec.state!=='recording'){ clearInterval(recTicker); recTicker=null; }
+    if(state.rec.state==='done') loadLibSoon(600);
+    renderRec();
+  }
+  if(msg.event==='call-detected'){ state.callPrompt=true; renderRec(); }
+  if(msg.event==='models') toast(msg.data.message+' — '+Math.round((msg.data.progress||0)*100)+'%');
+};
+
+/* Состояние окружения меняется, пока окно открыто: человек запускает Ollama,
+   докачивает модель, ставит ffmpeg. Поэтому перепроверяем, а не спрашиваем один
+   раз при запуске. */
+let envBusy=false;
+async function refreshEnv(){
+  if(envBusy) return;
+  envBusy=true;
+  try{ state.env=await api().environment(); renderChips(); }
+  catch(e){}
+  finally{ envBusy=false; }
+}
+$('#chips').onclick=async()=>{ await refreshEnv(); toast('Проверено'); };
+window.addEventListener('focus', refreshEnv);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refreshEnv(); });
+setInterval(()=>{ if(!document.hidden) refreshEnv(); }, 30000);
+
+window.addEventListener('pywebviewready', async()=>{
+  state.settings=await api().get_settings();
+  try{ state.presets=await api().presets(); }catch(e){}
+  state.preset=state.settings.preset||state.presets.current||'meeting';
+  state.env=await api().environment();
+  state.recPerms=await api().rec_permissions();
+  state.rec=await api().rec_state();
+  renderChips(); render();
+  loadLib();
+});
+</script>
+</body>
+</html>

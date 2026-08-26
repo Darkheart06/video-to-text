@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and import check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install what the library code needs
+        # Whisper, sherpa-onnx и pywebview тянуть незачем: они нужны только на
+        # самом маке во время работы, а импортируются лениво.
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy ruff
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Byte-compile everything
+        run: python -m compileall -q app tools
+
+      - name: Import the modules that must work anywhere
+        run: |
+          python - <<'PY'
+          import importlib
+
+          for name in ("app.settings", "app.presets", "app.compute",
+                       "app.summarize", "app.render", "app.cleanup",
+                       "app.merge", "app.library"):
+              importlib.import_module(name)
+          print("imports ok")
+          PY
+
+      - name: Check the parts that never touch the model
+        # Арифметика в сметах и разбор разделов — чистые функции, их можно
+        # проверить без звука, моделей и мака.
+        run: |
+          python - <<'PY'
+          from app import compute, presets, summarize
+
+          answer = "\n".join([
+              "## Работы",
+              "| Работа | Количество | Единица | Ставка | Стоимость |",
+              "|---|---|---|---|---|",
+              "| Демонтаж | 12 | час | 3 000 | |",
+              "| Вывоз мусора | | рейс | 7 500 | |",
+          ])
+
+          result = compute.process(answer, "Смета")
+          table = result.tables[0]
+          assert table.total == 12 * 3000 + 7500, table.total
+          assert "**Итого**" in result.markdown
+          assert ";3000;36000" in compute.to_csv(result.tables)
+
+          sections = summarize.parse_sections(result.markdown, presets.ESTIMATE.sections)
+          assert "works" in sections, sections
+
+          custom = presets.build_custom("правила", "")
+          assert len(custom.sections) >= 2
+
+          print("checks ok")
+          PY
+
+  shellcheck:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          ignore_paths: models output

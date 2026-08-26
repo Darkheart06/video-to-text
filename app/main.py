@@ -1,0 +1,331 @@
+"""Точка входа приложения: нативное окно (pywebview) + мост в Python."""
+
+from __future__ import annotations
+
+import json
+import platform
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+from . import diarize, library, llm, media, presets, record
+from .pipeline import Runner
+from .settings import WHISPER_MODELS, Settings
+
+UI_FILE = Path(__file__).resolve().parent / "ui" / "index.html"
+
+_window = None
+_window_ready = threading.Event()
+
+
+def _push(event: str, payload: dict) -> None:
+    """Отправляет событие в интерфейс. Молча пропускает, если окно ещё не готово."""
+    if _window is None or not _window_ready.is_set():
+        return
+    try:
+        data = json.dumps({"event": event, "data": payload}, ensure_ascii=False)
+        _window.evaluate_js(f"window.__bridge && window.__bridge({data})")
+    except Exception:
+        pass
+
+
+class Api:
+    def __init__(self) -> None:
+        self.settings = Settings.load()
+        self.runner = Runner(self.settings, listener=lambda job: _push("job", job.snapshot()))
+        self.steno = record.Stenographer(self.settings, listener=_push)
+        threading.Thread(target=self._watch_for_calls, daemon=True).start()
+
+    # --- запись созвонов --------------------------------------------------
+
+    def _watch_for_calls(self) -> None:
+        """Замечает, что микрофон кем-то занят, и предлагает записать разговор.
+        Спрашивает один раз за созвон и не пристаёт после отказа."""
+        was_busy = False
+        muted_until = 0.0
+        while True:
+            time.sleep(5)
+            if not self.settings.get("record_autodetect", True):
+                continue
+            try:
+                busy = record.mic_busy()
+            except Exception:
+                continue
+            if (busy and not was_busy and not self.steno.is_active()
+                    and time.time() >= muted_until):
+                _push("call-detected", {})
+                muted_until = time.time() + 900
+            was_busy = busy
+
+    def rec_state(self) -> dict | None:
+        return self.steno.session.snapshot() if self.steno.session else None
+
+    def rec_permissions(self) -> dict:
+        return {**record.permissions(), "helper": record.helper_ready()}
+
+    def rec_request(self) -> dict:
+        return record.request_permissions()
+
+    def rec_start(self, title: str = "", preset: str = "") -> dict:
+        try:
+            return {"ok": True, "session": self.steno.start(title or "", preset or "")}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def rec_stop(self) -> dict | None:
+        threading.Thread(target=self.steno.stop, daemon=True).start()
+        return self.rec_state()
+
+    def rec_cancel(self) -> bool:
+        self.steno.cancel()
+        return True
+
+    def rec_snooze(self) -> bool:
+        return True
+
+    def open_privacy(self, pane: str = "screen") -> bool:
+        """Открывает нужный раздел системных настроек и выводит окно вперёд.
+
+        Ссылок две: у свежих macOS свой адрес, у прежних — старый. Пробуем по
+        очереди, чтобы клик срабатывал с первого раза на любой системе.
+        """
+        anchor = {"screen": "Privacy_ScreenCapture",
+                  "microphone": "Privacy_Microphone"}.get(pane, "Privacy_ScreenCapture")
+        urls = [
+            f"x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?{anchor}",
+            f"x-apple.systempreferences:com.apple.preference.security?{anchor}",
+        ]
+        for url in urls:
+            try:
+                if subprocess.run(["open", url], check=False,
+                                  capture_output=True, timeout=10).returncode == 0:
+                    # Окно настроек любит открыться за нашим — поднимаем его.
+                    subprocess.run(
+                        ["osascript", "-e",
+                         'tell application "System Settings" to activate'],
+                        check=False, capture_output=True, timeout=10)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    # --- окружение --------------------------------------------------------
+
+    def environment(self) -> dict:
+        import importlib.util
+
+        def has(mod: str) -> bool:
+            return importlib.util.find_spec(mod) is not None
+
+        return {
+            # Именно media.tool, а не PATH: у установленной копии ffmpeg лежит
+            # внутри приложения и в PATH его нет.
+            "ffmpeg": bool(media.tool("ffmpeg")),
+            "mlx": has("mlx_whisper"),
+            "faster": has("faster_whisper"),
+            "sherpa": has("sherpa_onnx"),
+            "diar_models": diarize.models_ready(),
+            "platform": f"{platform.system()} {platform.machine()}",
+            "whisper_models": list(WHISPER_MODELS),
+            "output_dir": str(self.settings.output_path),
+            **llm.probe(self.settings),
+        }
+
+    def test_llm(self, values: dict | None = None) -> dict:
+        """Кнопка «Проверить связь»: пробует настройки, не сохраняя их."""
+        probe_settings = dict(self.settings)
+        probe_settings.update(values or {})
+        return llm.self_test(probe_settings)
+
+    def get_settings(self) -> dict:
+        return dict(self.settings)
+
+    def save_settings(self, values: dict) -> dict:
+        for key, value in (values or {}).items():
+            if key in self.settings:
+                current = self.settings[key]
+                if isinstance(current, bool):
+                    value = bool(value)
+                elif isinstance(current, int) and not isinstance(current, bool):
+                    value = int(value)
+                elif isinstance(current, float):
+                    value = float(value)
+                self.settings[key] = value
+        self.settings.save()
+        return dict(self.settings)
+
+    def prepare_models(self) -> dict:
+        """Догружает модели диаризации по кнопке из интерфейса."""
+        try:
+            diarize.download_models(
+                lambda frac, msg: _push("models", {"progress": frac, "message": msg})
+            )
+            return {"ok": True}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    # --- работа с файлами -------------------------------------------------
+
+    def choose_files(self) -> list[str]:
+        import webview
+
+        from .media import SUPPORTED_EXT
+
+        patterns = ";".join(f"*{e}" for e in sorted(SUPPORTED_EXT))
+        result = _window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=True,
+            file_types=(f"Видео и аудио ({patterns})", "Все файлы (*.*)"),
+        )
+        return list(result or [])
+
+    def choose_gguf_file(self) -> str:
+        import webview
+
+        result = _window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=False,
+            file_types=("Файл модели (*.gguf)", "Все файлы (*.*)"),
+        )
+        return str(result[0]) if result else ""
+
+    def choose_output_dir(self) -> str:
+        import webview
+
+        result = _window.create_file_dialog(webview.FOLDER_DIALOG)
+        if result:
+            self.settings["output_dir"] = str(result[0])
+            self.settings.save()
+            return str(result[0])
+        return ""
+
+    def start(self, paths: list[str], preset: str = "") -> list[dict]:
+        return [self.runner.submit(p, preset).snapshot() for p in (paths or [])]
+
+    # --- архив разобранных записей ---------------------------------------
+
+    def library(self, query: str = "") -> dict:
+        """Список всего, что уже разобрано, — для панели слева."""
+        try:
+            items = library.entries(self.settings.output_path, query or "")
+        except Exception as exc:
+            return {"items": [], "error": str(exc)}
+        return {"items": items, "dir": str(self.settings.output_path)}
+
+    def library_open(self, entry_id: str) -> dict | None:
+        return library.snapshot(self.settings.output_path, entry_id)
+
+    def library_rename(self, entry_id: str, names: dict) -> dict | None:
+        try:
+            return library.rename(self.settings.output_path, entry_id, names or {})
+        except Exception:
+            return None
+
+    def library_delete(self, entry_id: str) -> dict:
+        try:
+            return library.delete(self.settings.output_path, entry_id)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def presets(self) -> dict:
+        """Профили для интерфейса плюс пример шаблона для своих правил."""
+        return {"items": presets.catalogue(),
+                "current": self.settings.get("preset", presets.DEFAULT),
+                "example": presets.CUSTOM_EXAMPLE}
+
+    def job(self, job_id: str) -> dict | None:
+        job = self.runner.get(job_id)
+        return job.snapshot() if job else None
+
+    def cancel(self, job_id: str) -> bool:
+        return self.runner.cancel(job_id)
+
+    def rename_speakers(self, job_id: str, names: dict) -> dict | None:
+        return self.runner.rename_speakers(job_id, names or {})
+
+    def reveal(self, path: str) -> bool:
+        target = Path(path)
+        if not target.exists():
+            return False
+        system = platform.system()
+        try:
+            if system == "Darwin":
+                subprocess.run(["open", "-R", str(target)], check=False)
+            elif system == "Windows":
+                subprocess.run(["explorer", "/select,", str(target)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(target.parent)], check=False)
+            return True
+        except Exception:
+            return False
+
+    def copy(self, text: str) -> bool:
+        """Запасной путь в буфер обмена.
+
+        В окне WKWebView без строки меню Cmd+C и navigator.clipboard срабатывают
+        не всегда, а pbcopy — всегда.
+        """
+        if not text:
+            return False
+        try:
+            if platform.system() == "Darwin":
+                done = subprocess.run(["pbcopy"], input=text.encode("utf-8"), timeout=10)
+                return done.returncode == 0
+            if platform.system() == "Windows":
+                done = subprocess.run(["clip"], input=text.encode("utf-16-le"), timeout=10)
+                return done.returncode == 0
+            done = subprocess.run(["xclip", "-selection", "clipboard"],
+                                  input=text.encode("utf-8"), timeout=10)
+            return done.returncode == 0
+        except Exception:
+            return False
+
+    def open_file(self, path: str) -> bool:
+        target = Path(path)
+        if not target.exists():
+            return False
+        try:
+            opener = {"Darwin": "open", "Windows": "start"}.get(platform.system(), "xdg-open")
+            subprocess.run([opener, str(target)], check=False, shell=(opener == "start"))
+            return True
+        except Exception:
+            return False
+
+
+def run() -> int:
+    global _window
+    try:
+        import webview
+    except ImportError:
+        print(
+            "Не установлен pywebview — окно не открыть.\n"
+            "Установите: pip install pywebview\n"
+            "Или пользуйтесь консольной версией: python -m app.cli <файл>",
+            file=sys.stderr,
+        )
+        return 1
+
+    api = Api()
+    _window = webview.create_window(
+        "Расшифровка записей",
+        str(UI_FILE),
+        js_api=api,
+        width=1180,
+        height=820,
+        min_size=(940, 640),
+        # Без этого pywebview сам вставляет user-select: none, и текст в окне
+        # нельзя ни выделить, ни скопировать. Что выделяется, а что нет,
+        # решает уже наш css.
+        text_select=True,
+    )
+
+    def on_loaded() -> None:
+        _window_ready.set()
+
+    _window.events.loaded += on_loaded
+    webview.start()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())

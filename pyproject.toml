@@ -1,0 +1,43 @@
+[project]
+name = "video-to-text"
+version = "1.0.0"
+description = "Local transcription, speaker separation and summaries for macOS"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Darkheart06" }]
+keywords = ["whisper", "transcription", "diarization", "macos", "offline", "llm"]
+
+[project.urls]
+Homepage = "https://github.com/Darkheart06/video-to-text"
+Issues = "https://github.com/Darkheart06/video-to-text/issues"
+
+# Приложение запускается из исходников (run.sh / install.sh), в пакет не
+# собирается: у него есть нативный помощник на Swift и установщик DMG.
+# Этот файл нужен ради настроек линтера и метаданных.
+
+[tool.ruff]
+line-length = 96
+target-version = "py39"
+exclude = [".venv", "models", "output", ".work", "dist", "bin"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    # Строки чуть длиннее лимита встречаются в промптах и подсказках,
+    # переносить их по слогам вредно для читаемости.
+    "E501",
+    # Приложение однопоточное по природе интерфейса; лишние абстракции
+    # вокруг исключений только запутывают.
+    "B008",
+    # try/except/pass здесь осознанный: «не смогли — и ладно, идём дальше».
+    # contextlib.suppress прячет это намерение за импортом и лишним отступом.
+    "SIM105",
+    # Тернарник вместо if/else не всегда короче для чтения — оставляем на
+    # усмотрение автора строки.
+    "SIM108",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# В инструментах проверки допустимы длинные литералы и импорты после sys.path
+"tools/*.py" = ["E402"]
