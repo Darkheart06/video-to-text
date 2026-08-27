@@ -40,17 +40,23 @@ jobs:
 
           for name in ("app.settings", "app.presets", "app.compute",
                        "app.summarize", "app.render", "app.cleanup",
-                       "app.merge", "app.library"):
+                       "app.merge", "app.library", "app.i18n", "app.dates",
+                       "app.edits"):
               importlib.import_module(name)
           print("imports ok")
           PY
 
       - name: Check the parts that never touch the model
-        # Арифметика в сметах и разбор разделов — чистые функции, их можно
-        # проверить без звука, моделей и мака.
+        # Арифметика в сметах, разбор разделов и перевод — чистые функции, их
+        # можно проверить без звука, моделей и мака. Язык задаём явно: на
+        # сборочной машине системный язык английский, и без этого проверка
+        # ловила бы не поломку, а перевод.
         run: |
           python - <<'PY'
-          from app import compute, presets, summarize
+          from app import compute, dates, i18n, presets, summarize
+          from datetime import date
+
+          i18n.use("ru")
 
           answer = "\n".join([
               "## Работы",
@@ -60,17 +66,32 @@ jobs:
               "| Вывоз мусора | | рейс | 7 500 | |",
           ])
 
-          result = compute.process(answer, "Смета")
+          result = compute.process(answer, "Смета", "ru")
           table = result.tables[0]
           assert table.total == 12 * 3000 + 7500, table.total
           assert "**Итого**" in result.markdown
-          assert ";3000;36000" in compute.to_csv(result.tables)
+          assert ";3000;36000" in compute.to_csv(result.tables, "ru")
 
-          sections = summarize.parse_sections(result.markdown, presets.ESTIMATE.sections)
+          sections = summarize.parse_sections(result.markdown, presets.RU["estimate"].sections)
           assert "works" in sections, sections
 
-          custom = presets.build_custom("правила", "")
+          custom = presets.build_custom("правила", "", "ru")
           assert len(custom.sections) >= 2
+
+          # Английская сторона: те же функции, другой язык.
+          english = compute.process(
+              "| Job | Quantity | Rate | Amount |\n|---|---|---|---|\n| Demo | 4 | 25 | |\n",
+              "Estimate", "en")
+          assert "**Total**" in english.markdown
+          assert english.tables[0].total == 100, english.tables[0].total
+          assert presets.builtin("en")["meeting"].sections[0][1] == "Summary"
+          assert "(August 28)" in dates.process(
+              "| Task | Deadline |\n|---|---|\n| Ship | tomorrow |\n", date(2026, 8, 27), "en")
+
+          # Словарь полон: пустой перевод — это забытая строка.
+          missing = [key for key, row in {**i18n.MESSAGES, **i18n.DOCUMENT}.items()
+                     if not row.get("ru") or not row.get("en")]
+          assert not missing, missing
 
           print("checks ok")
           PY
