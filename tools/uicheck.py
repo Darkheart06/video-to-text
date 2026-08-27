@@ -108,13 +108,15 @@ REC = {
     "notes": [{"at": 300, "text": "- Обсудили сроки релиза\n- Ирина берёт макеты"}],
     "people": ["Ирина", "Дмитрий"],
     "mode": "call",
+    # Голоса, различённые по ходу разговора: у реплик уже есть подпись.
+    "voices": [{"key": "V1", "name": "Собеседник 1", "lines": 1}],
     "lines": [
         {"start": 12.0, "who": "me", "label": "Я", "index": 0, "tagged": False,
-         "text": "Давайте начнём с релиза."},
-        {"start": 19.5, "who": "them", "label": "Собеседник", "index": 1, "tagged": False,
-         "text": "Успеваем всё, кроме онбординга."},
+         "voice": "", "text": "Давайте начнём с релиза."},
+        {"start": 19.5, "who": "them", "label": "Собеседник 1", "index": 1,
+         "tagged": False, "voice": "V1", "text": "Успеваем всё, кроме онбординга."},
         {"start": 31.0, "who": "me", "label": "Я", "index": 2, "tagged": False,
-         "text": "Тогда режем до трёх экранов."},
+         "voice": "", "text": "Тогда режем до трёх экранов."},
     ],
 }
 
@@ -252,6 +254,8 @@ window.pywebview = {api: {
   prepare_models: async () => ({ok: true}),
   rec_permissions: async () => ({helper: true, screen: true, microphone: true}),
   rec_state: async () => null,
+  rec_name_voice: async (key, name) => { window.__voiceNamed = {key: key, name: name};
+                                         return null; },
   rec_request: async () => ({screen: true, microphone: true}),
   rec_start: async (title, preset, mode) => {
     window.__recMode = mode;
@@ -487,6 +491,23 @@ def main() -> int:
             if not page.locator(".rec-dot").count():
                 errors.append(f"{scheme}: нет индикатора идущей записи")
             docs_shot(page, scheme, "light", "main.ru.png")
+
+            # --- голоса, узнанные по ходу ---
+            if not page.locator('[data-voice="V1"]').count():
+                errors.append(f"{scheme}: голос из записи не показан в строке голосов")
+            if "Собеседник 1" not in (page.text_content("#rec") or ""):
+                errors.append(f"{scheme}: реплика собеседника без номера голоса")
+            page.click('[data-voice="V1"]')
+            page.wait_for_timeout(150)
+            if not page.locator("#voice-rename").count():
+                errors.append(f"{scheme}: голос нельзя переименовать по клику")
+            else:
+                page.fill("#voice-rename", "Ирина")
+                page.press("#voice-rename", "Enter")
+                page.wait_for_timeout(250)
+                named = page.evaluate("window.__voiceNamed || null")
+                if not named or named["key"] != "V1" or named["name"] != "Ирина":
+                    errors.append(f"{scheme}: имя голоса не ушло в Python: {named}")
 
             # --- разметка голосов по ходу ---
             if page.locator(".person").count() < 2:

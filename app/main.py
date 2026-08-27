@@ -85,6 +85,13 @@ class Api:
         except Exception:
             return None
 
+    def rec_name_voice(self, key: str, name: str = "") -> dict | None:
+        """Имя голосу, который приложение различило по ходу разговора."""
+        try:
+            return self.steno.rename_voice(str(key or ""), name or "")
+        except Exception:
+            return None
+
     def rec_stop(self) -> dict | None:
         threading.Thread(target=self.steno.stop, daemon=True).start()
         return self.rec_state()

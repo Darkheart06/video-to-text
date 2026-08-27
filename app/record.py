@@ -63,6 +63,9 @@ class Line:
     # После звонка системная дорожка разбирается по голосам, и здесь
     # появляется «Собеседник 2» вместо общего «Собеседник».
     speaker: str = ""
+    # Какой голос узнан по ходу записи: «V1», «V2»… Имя может смениться, голос
+    # остаётся — переименовав одну реплику, человек переименовывает весь голос.
+    voice: str = ""
     # Подпись поставил человек прямо во время записи — такую не перебиваем
     # догадками диаризации, наоборот, по ней и узнаём голос.
     tagged: bool = False
@@ -96,6 +99,10 @@ class Session:
     preset: str = ""
     mode: str = "call"       # call — созвон двумя дорожками, room — встреча в комнате
     people: list[str] = field(default_factory=list)   # кого отмечаем по ходу
+    # Голоса, узнанные по ходу: ключ -> несколько отпечатков (сравниваем с
+    # лучшим из них, а не со средним: усреднение смазывает короткие реплики).
+    voices: dict = field(default_factory=dict)
+    voice_names: dict = field(default_factory=dict)   # «V2» -> «Спикер 2» или имя
     stamp: str = ""          # «2026-08-27 13-32» — дата и время начала
     renamed: bool = False    # название уже подобрано по теме разговора
 
@@ -115,10 +122,15 @@ class Session:
             "preset": self.preset,
             "mode": self.mode,
             "people": list(self.people),
+            # Голоса, которые приложение уже различило по ходу разговора:
+            # человеку остаётся поправить имя, а не расставлять всё с нуля.
+            "voices": [{"key": key, "name": self.voice_names.get(key, key),
+                        "lines": sum(1 for line in self.lines if line.voice == key)}
+                       for key in sorted(self.voices)],
             "lines": [
                 {"start": round(line.start, 1), "who": line.who,
                  "label": line.label, "text": line.text,
-                 "tagged": line.tagged, "index": i}
+                 "tagged": line.tagged, "voice": line.voice, "index": i}
                 for i, line in enumerate(self.lines)
             ][-tail:],
             "line_count": len(self.lines),
@@ -246,6 +258,21 @@ def assign_others(lines: list[Line], spans: list,
     return keys, names
 
 
+# Сколько отпечатков помним на голос: больше — устойчивее узнавание, но и
+# дольше сравнение. Восьми хватает, чтобы захватить и спокойную речь, и смех.
+VOICE_PRINTS = 8
+
+
+def _print_of(extractor, piece: np.ndarray):
+    """Голосовой отпечаток одного куска речи, готовый к сравнению."""
+    stream = extractor.create_stream()
+    stream.accept_waveform(sample_rate=SAMPLE_RATE, waveform=piece)
+    stream.input_finished()
+    vector = np.array(extractor.compute(stream), dtype=np.float32)
+    norm = float(np.linalg.norm(vector))
+    return vector / norm if norm else None
+
+
 def _write_wav(path: Path, audio: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = np.clip(audio, -1.0, 1.0)
@@ -338,6 +365,7 @@ class Stenographer:
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._voice_model = None
 
     # --- события ---------------------------------------------------------
 
@@ -526,12 +554,88 @@ class Stenographer:
         if not room and self.settings.get("record_dedupe", True):
             fresh = drop_echo(fresh, mic, spk, base)
         cleanup.clean_turns(fresh, bool(self.settings.get("transcript_cleanup", True)))
+        self._live_voices(fresh, mic, spk, base, room)
 
         session.lines.extend(fresh)
         session.lines.sort(key=lambda item: item.start)
         self._say(i18n.t("rec.counted", minutes=int(session.duration // 60),
                          lines=len(session.lines)))
         return offset + length
+
+
+    # --- голоса по ходу разговора -----------------------------------------
+
+    def _extractor(self):
+        """Модель голосовых отпечатков — одна на всю запись, грузится лениво."""
+        if self._voice_model is None:
+            self._voice_model = diarize.embedder(int(self.settings["num_threads"]))
+        return self._voice_model
+
+    def _live_voices(self, fresh: list[Line], mic: np.ndarray, spk: np.ndarray,
+                     base: float, room: bool) -> None:
+        """Раздаёт свежим репликам номера голосов прямо во время записи.
+
+        Раньше номера появлялись только после остановки, и всю запись человек
+        видел безликое «Собеседник». Теперь каждая реплика сразу сравнивается с
+        уже услышанными голосами: похоже — тот же «Спикер 2», не похоже — новый.
+        Разбор после остановки всё равно будет точнее (там видно запись
+        целиком), но по ходу разговора важнее не точность, а то, что есть за
+        что зацепиться: поправить имя проще, чем расставить его с нуля.
+        """
+        session = self.session
+        if not session or not self.settings.get("live_speakers", True):
+            return
+        floor = float(self.settings.get("live_voice_floor", 0.5))
+        limit = int(self.settings.get("live_voice_limit", 9))
+        try:
+            extractor = self._extractor()
+        except Exception:
+            return
+
+        for line in fresh:
+            if line.tagged or (line.who == "me" and not room):
+                continue                      # своя дорожка — это я, и так ясно
+            audio = mic if (room or line.who == "me") else spk
+            a = int(max(0.0, line.start - base) * SAMPLE_RATE)
+            b = int(max(0.0, line.end - base) * SAMPLE_RATE)
+            piece = audio[a:b]
+            if piece.size < SAMPLE_RATE * 1.5:
+                continue                      # на короткой реплике отпечаток врёт
+            try:
+                print_ = _print_of(extractor, piece)
+            except Exception:
+                return
+            if print_ is None:
+                continue
+
+            best, score = "", 0.0
+            for key, prints in session.voices.items():
+                near = max(float(print_ @ other) for other in prints)
+                if near > score:
+                    best, score = key, near
+
+            if score < floor and len(session.voices) < limit:
+                best = f"V{len(session.voices) + 1}"
+                session.voices[best] = [print_]
+                session.voice_names[best] = self._voice_title(len(session.voices), room)
+            elif not best:
+                continue
+            else:
+                prints = session.voices[best]
+                prints.append(print_)
+                # Держим несколько отпечатков, а не среднее: человек звучит
+                # по-разному, когда говорит быстро, тихо или смеётся.
+                del prints[:-VOICE_PRINTS]
+
+            line.voice = best
+            line.speaker = session.voice_names.get(best, "")
+
+    def _voice_title(self, number: int, room: bool) -> str:
+        """Как назвать только что услышанный голос."""
+        lang = i18n.current()
+        if room:
+            return i18n.d("speaker", lang, n=number)
+        return i18n.d("them_numbered", lang, n=number)
 
     def _transcribe(self, audio: np.ndarray, base: float, who: str) -> list[Line]:
         session = self.session
@@ -605,11 +709,56 @@ class Stenographer:
         value = str(name or "").strip()[:40]
         line = session.lines[index]
         if not value:
-            line.speaker, line.tagged = "", False
+            # Снимаем имя, но не голос: реплика возвращается к «Спикеру 2»,
+            # а не становится безымянной.
+            line.tagged = False
+            line.speaker = session.voice_names.get(line.voice, "") if line.voice else ""
+            if line.voice:
+                session.voice_names[line.voice] = self._voice_title(
+                    int(line.voice[1:]) if line.voice[1:].isdigit() else 1,
+                    session.mode == "room")
+                for other in session.lines:
+                    if other.voice == line.voice and not other.tagged:
+                        other.speaker = session.voice_names[line.voice]
         else:
             line.speaker, line.tagged = value, True
             if value not in session.people:
                 session.people.append(value)
+            # Имя дают одной реплике, а относится оно к голосу: раз этот голос
+            # уже узнан, подписываем им всё, что этот человек сказал раньше и
+            # скажет дальше.
+            if line.voice:
+                session.voice_names[line.voice] = value
+                for other in session.lines:
+                    if other.voice == line.voice:
+                        other.speaker, other.tagged = value, True
+        self._emit()
+        return session.snapshot()
+
+    def rename_voice(self, key: str, name: str) -> dict | None:
+        """Даёт имя целому голосу — всем его репликам сразу.
+
+        Приложение само пронумеровало голоса по ходу разговора, и человеку
+        остаётся только сказать, кто есть кто: одно имя вместо десятка отметок.
+        """
+        session = self.session
+        if not session or key not in session.voices:
+            return None
+        value = str(name or "").strip()[:40]
+        if not value:
+            number = int(key[1:]) if key[1:].isdigit() else 1
+            value = self._voice_title(number, session.mode == "room")
+            session.voice_names[key] = value
+            for line in session.lines:
+                if line.voice == key:
+                    line.speaker, line.tagged = value, False
+        else:
+            session.voice_names[key] = value
+            if value not in session.people:
+                session.people.append(value)
+            for line in session.lines:
+                if line.voice == key:
+                    line.speaker, line.tagged = value, True
         self._emit()
         return session.snapshot()
 

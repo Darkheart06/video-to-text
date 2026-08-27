@@ -189,12 +189,25 @@ everyone on the other side is simply “Them”; when you stop, the system
 track is separated by voice and the finished transcript has “Person 1”,
 “Person 2” and so on (or «Собеседник 1» in Russian).
 
-### Naming voices while you record
+### Voices while you record
 
-A row of participants appears above the live transcript. Type names into the
-“+ name” field, then mark who is speaking with one click — press a name to tag the
-latest line, or click a line and pick the person. Keys 1–9 do the same without
-reaching for the mouse.
+Voices are told apart **as the conversation goes**, not afterwards: every line
+long enough to leave a voice print is compared against the ones heard so far and
+gets a number right away — “Speaker 1”, “Person 2”. The row above the transcript
+shows them, and clicking one renames the whole voice: one name instead of a dozen
+tags, and every line that person said — before and after — takes it.
+
+The threshold errs towards one voice too many rather than one too few. Two chips
+with the same name merge with a single click; two people fused into one voice
+cannot be separated at all. Measured on a public four-speaker sample with 2–5
+second lines: at 0.50 it found two voices and merged different people 22 times,
+at the default 0.62 it found five and merged four times. When the recording
+stops, the whole file is separated properly anyway, which is more accurate than
+anything possible live.
+
+Names can also be tagged by hand: type them into the “+ name” field and press a
+name to tag the latest line, or click a line and pick the person. Keys 1–9 do the
+same without reaching for the mouse.
 
 One tagged line per person is enough. When the recording stops, the app compares
 the tagged speech against everything else and labels the whole transcript with

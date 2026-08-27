@@ -413,6 +413,53 @@ def main() -> int:
                           not steno.session.lines[1].tagged
                           and steno.session.lines[1].label == "Собеседник")
 
+    # --- голоса по ходу разговора: на настоящем звуке ---
+    # Берём два самых длинных куска разных голосов из тестовой записи и
+    # скармливаем их так, как это делает запись созвона.
+    voiced = diarize.diarize(str(wav), settings)
+    by_voice: dict[int, list] = {}
+    for span in voiced:
+        by_voice.setdefault(span.speaker, []).append(span)
+    picked = sorted(by_voice, key=lambda k: -sum(s.end - s.start for s in by_voice[k]))[:2]
+    live = record.Stenographer(settings)
+    live.session = record.Session(id="live", started_at=time.time(),
+                                  directory=Path("/tmp/selftest-rec"), title="Живая",
+                                  mode="room")
+    whole = media.read_wav(wav)
+    fresh = []
+    for number, voice in enumerate(picked):
+        for span in [s for s in by_voice[voice] if s.end - s.start >= 1.5][:2]:
+            fresh.append(record.Line(span.start, span.end, "room", f"речь {number}"))
+    live.session.lines = list(fresh)
+    live._live_voices(fresh, whole, whole[:0], 0.0, room=True)
+    named = [line for line in fresh if line.voice]
+    failures += not check("голоса получают номер прямо во время записи",
+                          len(named) >= 2 and all(line.speaker for line in named),
+                          ", ".join(f"{line.voice}:{line.speaker}" for line in fresh))
+    # Сколько голосов найдётся на коротких репликах — вопрос к самой записи,
+    # а не к механизму. Проверяем то, что обязано выполняться всегда: один и
+    # тот же кусок речи должен опознаться как тот же голос.
+    twice = [record.Line(fresh[0].start, fresh[0].end, "room", "повтор")]
+    live.session.lines += twice
+    live._live_voices(twice, whole, whole[:0], 0.0, room=True)
+    failures += not check("тот же голос узнаётся снова, а не заводится заново",
+                          twice[0].voice == fresh[0].voice,
+                          f"{fresh[0].voice} → {twice[0].voice}")
+    failures += not check("голосов не больше разрешённого",
+                          len({line.voice for line in live.session.lines if line.voice})
+                          <= int(settings.get("live_voice_limit", 9)))
+    if named:
+        key = named[0].voice
+        live.rename_voice(key, "Ирина")
+        failures += not check("имя голоса расходится по всем его репликам",
+                              all(line.speaker == "Ирина" and line.tagged
+                                  for line in fresh if line.voice == key))
+        live.rename_voice(key, "")
+        failures += not check("имя можно снять — остаётся номер",
+                              all(not line.tagged and line.speaker.startswith("Спикер")
+                                  for line in fresh if line.voice == key),
+                              next(line.speaker for line in fresh if line.voice == key))
+
     # Узнавание голоса на настоящем звуке: берём куски двух разных голосов,
     # один кусок каждого помечаем именем и смотрим, разойдутся ли имена верно.
     voiced = diarize.diarize(str(wav), settings)

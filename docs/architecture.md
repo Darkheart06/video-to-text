@@ -155,6 +155,27 @@ Clusters with under 12 seconds of speech are left out of the measurement: half
 of a short cluster is too little audio for a print worth comparing. When nothing
 can be measured, the configured number is used unchanged.
 
+
+### Voices during the recording, not after it
+
+Separation after the fact is more accurate — it sees the whole file — but it
+arrives too late to be useful while people are still talking. So the same voice
+prints are computed live: each new line long enough for a print (1.5 s) is
+compared against the prints kept per voice, best-of rather than an average,
+because averaging smears the short lines that dominate a live conversation.
+
+Above the merge threshold the line joins that voice; below it, a new voice
+appears. The threshold sits deliberately high (0.62 by default): the two failure
+modes are not symmetrical. An extra voice costs one click — name two chips the
+same and they merge. Two people fused into one voice cannot be undone by any
+amount of naming. Measured on sherpa-onnx's four-speaker sample, whose 2–5
+second lines are the worst case for prints: 0.50 found two voices and merged
+different people 22 times, 0.62 found five and merged four times.
+
+Names given live are treated as tags, which is what the post-recording pass
+already knows how to use: the whole file is separated properly when the
+recording stops, and the tagged speech decides which cluster carries which name.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three
