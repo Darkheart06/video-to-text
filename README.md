@@ -110,6 +110,27 @@ and the app itself.
 On Apple Silicon, models with an `-mlx` suffix are built for Metal and are
 noticeably faster.
 
+**Count occupied memory, not file size.** At a 32K context `gemma4:12b-mlx`
+occupies **16 GB** while weighing 7.7 GB — the rest is the context cache. On a
+24 GB Mac that is already tight, and a 27B model does not fit at all, whatever
+the reviews about 24 GB graphics cards say.
+
+**Measured on a real call** (51 minutes, 40 000 characters of transcript,
+M4 Pro / 24 GB, `tools/modeltest.py`):
+
+| Model | Memory | Time | Result |
+|---|---|---|---|
+| `gemma4:12b-mlx` | 16 GB | 186 s | even summary, but deadlines in tasks mostly “—” |
+| `qwen3.5:9b-mlx` | 9.3 GB | 182 s | a quarter more detail, picked up deadlines and conditions |
+
+For 24 GB: `qwen3.5:9b-mlx` — same speed, more specifics, seven gigabytes less
+memory. Check it on your own recording:
+
+```bash
+python tools/modeltest.py "~/Documents/Расшифровка записей/Созвон.result.json" \
+    gemma4:12b-mlx qwen3.5:9b-mlx
+```
+
 ## Using it
 
 Drop a file into the window, or press **Выбрать запись**. Pick at the top what
