@@ -150,6 +150,48 @@ everyone on the other side is simply “Собеседник”; when you stop, 
 track is separated by voice and the finished transcript has “Собеседник 1”,
 “Собеседник 2” and so on.
 
+### Naming voices while you record
+
+A row of participants appears above the live transcript. Type names into the
+“+ имя” field, then mark who is speaking with one click — press a name to tag the
+latest line, or click a line and pick the person. Keys 1–9 do the same without
+reaching for the mouse.
+
+One tagged line per person is enough. When the recording stops, the app compares
+the tagged speech against everything else and labels the whole transcript with
+real names instead of “Спикер 2”.
+
+The comparison runs per line rather than against an averaged cluster voice, and
+what decides it is the gap between the best and second-best match, not the
+absolute similarity: on a real recording a speech fragment matched its own
+cluster's average at 0.52 while a different person scored 0.40. No gap, no name —
+“Спикер 2” beats someone else's name on someone else's words.
+
+### Recording a room meeting
+
+“Записать встречу” sits next to the call button. It captures the microphone only
+and needs no Screen Recording permission — around a table every voice reaches the
+same microphone anyway. When it stops, the recording is separated by voice like
+any other file, and names tagged during the meeting are applied throughout.
+
+### Editing the summary
+
+Models sometimes drag in things that were not discussed, or an action item nobody
+assigned. The **«Править»** button above the text turns on pointwise editing:
+a cross removes a bullet or a table row, and the text itself is editable in place.
+Saving rewrites the summary and the tables, and totals in estimates are
+recalculated.
+
+**The transcript is never touched.** What was said stays as it was said — only the
+derived document changes.
+
+### Recording titles
+
+Recordings are named after what was discussed rather than «Созвон 2026-08-27
+13-32». The same model that writes the summary suggests the title, and it goes in
+front of the timestamp — «Логика геймификации 2026-08-27 13-32» — so recordings
+still sort by time. If the model does not answer, the old name stays.
+
 ### Archive
 
 The panel on the left lists everything already processed — files and recorded

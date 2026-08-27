@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import threading
 import time
@@ -15,7 +16,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import asr, compute, diarize, library, media, pipeline, presets, record, summarize
+from app import (  # noqa: E402
+    asr,
+    compute,
+    diarize,
+    edits,
+    library,
+    media,
+    pipeline,
+    presets,
+    record,
+    summarize,
+)
 from app.settings import Settings  # noqa: E402
 
 WORDS = ["так", "давайте", "зафиксируем", "по", "срокам", "мы", "договорились", "что", "макет", "будет", "готов", "во", "вторник", "а", "тексты", "присылает", "отдел", "маркетинга", "до", "конца", "недели", "и", "тогда", "запускаем", "сборку", "версии", "для", "тестирования"]
@@ -289,11 +301,20 @@ def main() -> int:
             and "Ирина" in (out_dir / (Path(entry["path"]).name[:-len(library.RESULT_SUFFIX)]
                                        + ".transcript.txt")).read_text("utf-8"))
 
-        gone = library.delete(out_dir, entry["id"])
-        left = [i["id"] for i in library.entries(out_dir)]
-        failures += not check("запись удаляется целиком",
-                              gone.get("ok") and entry["id"] not in left,
-                              f"файлов убрано: {gone.get('removed')}, осталось записей: {len(left)}")
+        # Удаляем копию, а не саму запись: она ещё нужна следующим проверкам.
+        stem = Path(entry["path"]).name[: -len(library.RESULT_SUFFIX)]
+        for src_file in out_dir.glob(f"{stem}.*"):
+            shutil.copy2(src_file, out_dir / src_file.name.replace(stem, f"{stem} копия"))
+        copy = next((i for i in library.entries(out_dir) if "копия" in i["title"]
+                     or "копия" in Path(i["path"]).name), None)
+        failures += not check("копия записи появилась в архиве", copy is not None)
+        if copy:
+            gone = library.delete(out_dir, copy["id"])
+            left = [i["id"] for i in library.entries(out_dir)]
+            failures += not check("запись удаляется целиком",
+                                  gone.get("ok") and copy["id"] not in left,
+                                  f"файлов убрано: {gone.get('removed')}, "
+                                  f"осталось записей: {len(left)}")
 
     print("\n9. Созвон: кто из собеседников говорил")
     lines = [
@@ -319,12 +340,151 @@ def main() -> int:
     failures += not check("подписи попадают в реплики",
                           record.Line(0, 1, "them", "x", speaker="Собеседник 2").label
                           == "Собеседник 2")
+    room_lines = [record.Line(0, 4, "room", "раз"), record.Line(4, 9, "room", "два"),
+                  record.Line(9, 14, "room", "три"), record.Line(14, 20, "room", "четыре")]
+    room_spans = [diarize.SpeakerSpan(0, 4, 2), diarize.SpeakerSpan(4, 9, 0),
+                  diarize.SpeakerSpan(9, 14, 2), diarize.SpeakerSpan(14, 20, 1)]
+    room_keys, room_names = record.assign_room(room_lines, room_spans)
+    failures += not check("встреча: голоса пронумерованы по первому появлению",
+                          [room_keys[i] for i in range(4)] == ["S1", "S2", "S1", "S3"]
+                          and room_names["S2"] == "Спикер 2",
+                          " ".join(room_keys[i] for i in range(4)))
+    empty_keys, empty_names = record.assign_room(room_lines, [])
+    failures += not check("встреча без диаризации — один спикер",
+                          set(empty_keys.values()) == {"S1"} and len(empty_names) == 1)
+    failures += not check("подпись реплики на встрече пустая, пока не назвали",
+                          record.Line(0, 1, "room", "x").label == ""
+                          and record.Line(0, 1, "room", "x", speaker="Ирина").label == "Ирина")
+
     one, one_names = record.assign_others(lines, [diarize.SpeakerSpan(4, 31, 0)])
     failures += not check("один голос — остаётся просто «Собеседник»",
                           one_names == {"S1": "Я", "S2": "Собеседник"}
                           and one[5] == "S2")
 
-    print("\n10. Ошибки на плохом входе")
+    print("\n10. Имена участников по ходу записи")
+    steno = record.Stenographer(settings)
+    steno.session = record.Session(id="x", started_at=time.time(),
+                                   directory=Path("/tmp/selftest-rec"), title="Проверка")
+    steno.session.lines = [record.Line(0, 4, "them", "раз"),
+                           record.Line(4, 9, "them", "два")]
+    steno.set_people(["Ирина", " ирина ", "Дмитрий", ""])
+    failures += not check("список участников без повторов и пустых",
+                          steno.session.people == ["Ирина", "Дмитрий"],
+                          ", ".join(steno.session.people))
+    steno.tag(1, "Сергей")
+    failures += not check("реплика отмечена именем",
+                          steno.session.lines[1].speaker == "Сергей"
+                          and steno.session.lines[1].tagged
+                          and "Сергей" in steno.session.people)
+    steno.tag(1, "")
+    failures += not check("отметку можно снять",
+                          not steno.session.lines[1].tagged
+                          and steno.session.lines[1].label == "Собеседник")
+
+    # Узнавание голоса на настоящем звуке: берём куски двух разных голосов,
+    # один кусок каждого помечаем именем и смотрим, разойдутся ли имена верно.
+    voiced = diarize.diarize(str(wav), settings)
+    by_voice: dict[int, list] = {}
+    for span in voiced:
+        by_voice.setdefault(span.speaker, []).append(span)
+    big = sorted(by_voice, key=lambda k: -sum(s.end - s.start for s in by_voice[k]))[:2]
+    if len(big) < 2:
+        failures += not check("в тестовой записи хватает голосов для проверки имён",
+                              False, "нужны два разных голоса")
+    else:
+        lines, keys = [], {}
+        for number, voice in enumerate(big):
+            for span in [s for s in by_voice[voice] if s.end - s.start >= 1.2][:3]:
+                keys[len(lines)] = f"S{number + 1}"
+                lines.append(record.Line(span.start, span.end, "them", "речь"))
+        steno.session.lines = lines
+        names = {"S1": "Спикер 1", "S2": "Спикер 2"}
+        # По одной отмеченной реплике на голос — как если бы человек кликнул
+        # по ходу разговора.
+        first = {key: i for i, key in sorted(keys.items(), reverse=True)}
+        steno.tag(first["S1"], "Ирина")
+        steno.tag(first["S2"], "Дмитрий")
+        fresh = steno.apply_names(media.read_wav(wav), keys, names)
+        failures += not check("имена разошлись по голосам верно",
+                              fresh.get("S1") == "Ирина" and fresh.get("S2") == "Дмитрий",
+                              f"S1={fresh.get('S1')}, S2={fresh.get('S2')}")
+        # Отмечен только один человек — второму чужое имя доставаться не должно
+        for line in lines:
+            line.speaker, line.tagged = "", False
+        steno.session.lines = lines
+        steno.tag(first["S1"], "Ирина")
+        alone = steno.apply_names(media.read_wav(wav), keys, dict(names))
+        failures += not check("чужому голосу имя не достаётся",
+                              alone.get("S1") == "Ирина" and alone.get("S2") == "Спикер 2",
+                              f"S1={alone.get('S1')}, S2={alone.get('S2')}")
+
+        for line in lines:
+            line.speaker, line.tagged = "", False
+        steno.session.lines = [record.Line(0, 4, "them", "раз")]
+        untouched = steno.apply_names(media.read_wav(wav), {0: "S1"}, dict(names))
+        failures += not check("без отметок имена не выдумываются",
+                              untouched == names)
+
+    print("\n11. Правка саммари вручную")
+    out_dir = Path(settings["output_dir"])
+    result_files = sorted(out_dir.glob("*.result.json"))
+    if not result_files:
+        failures += not check("есть что править", False)
+    else:
+        target = result_files[0]
+        before = json.loads(target.read_text("utf-8"))
+        sections = (before.get("summary") or {}).get("sections") or {}
+        key = "tasks" if "tasks" in sections else next(iter(sections), "")
+        transcript_file = target.with_name(target.name.replace(".result.json",
+                                                               ".transcript.txt"))
+        transcript_before = transcript_file.read_text("utf-8")
+
+        kept = [line for line in sections.get(key, "").split("\n")
+                if "Маркетинг" not in line]
+        fresh = edits.apply(target, key, "\n".join(kept))
+        failures += not check("мусорная строка убрана из раздела",
+                              "Маркетинг" not in fresh["sections"][key])
+        failures += not check("остальные разделы не тронуты",
+                              set(fresh["sections"]) == set(sections))
+        failures += not check("транскрипт остался как был",
+                              transcript_file.read_text("utf-8") == transcript_before)
+        summary_file = target.with_name(target.name.replace(".result.json", ".summary.md"))
+        failures += not check("summary.md перезаписан",
+                              "Маркетинг" not in summary_file.read_text("utf-8"))
+        saved = json.loads(target.read_text("utf-8"))
+        failures += not check("правка отмечена в json",
+                              saved["summary"].get("edited") is True)
+
+        # Смета: убрали строку — итог должен пересчитаться, а не остаться старым
+        works = ("| Работа | Количество | Ставка | Стоимость |\n|---|---|---|---|\n"
+                 "| Первая | 2 | 1000 | 2 000 |\n| Вторая | 3 | 1000 | 3 000 |")
+        saved["summary"]["sections"] = {"works": works}
+        saved["summary"]["tabs"] = [["works", "Работы"]]
+        target.write_text(json.dumps(saved, ensure_ascii=False), "utf-8")
+        edits.apply(target, "works", works)
+        single = edits.apply(target, "works",
+                             "\n".join(works.split("\n")[:3]))
+        total_ok = "2" in single["sections"]["works"] and "5" not in \
+            single["sections"]["works"].split("Итого")[-1].replace(" ", "")
+        failures += not check("итог пересчитан после удаления строки", total_ok,
+                              single["sections"]["works"].split("\n")[-1])
+
+    print("\n12. Названия записей по теме разговора")
+    for raw, want in [("Название: «Логика геймификации».", "Логика геймификации"),
+                      ('"Ошибки 403 при выкатке".', "Ошибки 403 при выкатке"),
+                      ("**Работа нейросетей**\nи ещё строка", "Работа нейросетей")]:
+        failures += not check(f"чистка: {raw[:28]!r}",
+                              summarize.clean_title(raw) == want,
+                              summarize.clean_title(raw))
+    failures += not check("слишком короткий ответ не берём",
+                          summarize.suggest_title("ага", settings) == "")
+    stemdir = Path("/tmp/selftest-stem")
+    stemdir.mkdir(exist_ok=True)
+    (stemdir / "Тема 2026.result.json").write_text("{}", "utf-8")
+    failures += not check("имя занято — берём соседнее",
+                          record.free_stem(stemdir, "Тема 2026") == "Тема 2026 (2)")
+
+    print("\n13. Ошибки на плохом входе")
     bad = runner.submit("/tmp/нет-такого-файла.mp4")
     for _ in range(40):
         if bad.status not in ("pending", "running"):

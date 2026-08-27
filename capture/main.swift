@@ -1,6 +1,8 @@
 // Помощник захвата звука для «Расшифровки записей».
 //
 //   v2t-capture record <папка>   — пишет mic.pcm и sys.pcm (16 кГц, моно, int16 LE)
+//   v2t-capture mic <папка>      — только mic.pcm: встреча в комнате, где все
+//                                  голоса и так идут в один микрофон
 //   v2t-capture mic-status       — «1», если микрофон кем-то занят (идёт созвон)
 //   v2t-capture check            — состояние разрешений, одной строкой JSON
 //
@@ -185,6 +187,55 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 }
 
+// MARK: - Только микрофон (встреча в комнате)
+
+/// Для встречи за столом системный звук не нужен: все голоса приходят в один
+/// микрофон. Поэтому здесь не ScreenCaptureKit, а обычный аудиодвижок — и
+/// разрешение нужно только на микрофон, без «записи экрана».
+@available(macOS 13.0, *)
+final class MicCapture {
+    private let writer: TrackWriter
+    private let engine = AVAudioEngine()
+
+    init(directory: String) throws {
+        writer = try TrackWriter(path: directory + "/mic.pcm")
+    }
+
+    func start() throws {
+        let input = engine.inputNode
+        let format = input.inputFormat(forBus: 0)
+        guard format.sampleRate > 0 else {
+            throw Failure("микрофон не отдаёт звук — проверьте устройство ввода")
+        }
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
+            self?.writer.append(buffer)
+        }
+        engine.prepare()
+        try engine.start()
+        note("mic started at \(Int(format.sampleRate)) Hz")
+    }
+
+    func stop() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        writer.close()
+        note("mic stopped frames=\(writer.frames)")
+    }
+}
+
+/// Спрашивает доступ к микрофону и ждёт ответа: без него движок стартует,
+/// но пишет тишину, и это выясняется только в конце встречи.
+func ensureMicrophone() -> Bool {
+    let status = AVCaptureDevice.authorizationStatus(for: .audio)
+    if status == .authorized { return true }
+    if status == .denied || status == .restricted { return false }
+    let done = DispatchSemaphore(value: 0)
+    var granted = false
+    AVCaptureDevice.requestAccess(for: .audio) { ok in granted = ok; done.signal() }
+    _ = done.wait(timeout: .now() + 60)
+    return granted
+}
+
 // MARK: - Занят ли микрофон
 
 /// Спрашивает у Core Audio, использует ли кто-нибудь устройство ввода.
@@ -255,6 +306,40 @@ case "check":
 case "request":
     requestPermissions()
     print(permissionsJSON())
+
+case "mic":
+    guard args.count > 2 else {
+        note("нужна папка для записи"); exit(2)
+    }
+    guard #available(macOS 13.0, *) else {
+        note("нужна macOS 13 или новее"); exit(2)
+    }
+    guard ensureMicrophone() else {
+        note("нет доступа к микрофону"); exit(4)
+    }
+    let micDirectory = args[2]
+    try? FileManager.default.createDirectory(atPath: micDirectory,
+                                             withIntermediateDirectories: true)
+    let micCapture: MicCapture
+    do { micCapture = try MicCapture(directory: micDirectory) }
+    catch { note("не начать запись: \(error)"); exit(2) }
+    do { try micCapture.start() }
+    catch { note("не начать запись с микрофона: \(error)"); exit(3) }
+
+    let micStopping = DispatchSemaphore(value: 0)
+    for sig in [SIGINT, SIGTERM] {
+        signal(sig, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+        source.setEventHandler { micStopping.signal() }
+        source.resume()
+        signalSources.append(source)
+    }
+    DispatchQueue.global().async {
+        micStopping.wait()
+        micCapture.stop()
+        exit(0)
+    }
+    RunLoop.main.run()
 
 case "record":
     guard args.count > 2 else {

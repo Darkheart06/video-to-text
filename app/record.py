@@ -67,10 +67,19 @@ class Line:
     # После звонка системная дорожка разбирается по голосам, и здесь
     # появляется «Собеседник 2» вместо общего «Собеседник».
     speaker: str = ""
+    # Подпись поставил человек прямо во время записи — такую не перебиваем
+    # догадками диаризации, наоборот, по ней и узнаём голос.
+    tagged: bool = False
 
     @property
     def label(self) -> str:
-        return self.speaker or ("Я" if self.who == "me" else "Собеседник")
+        if self.speaker:
+            return self.speaker
+        if self.who == "me":
+            return "Я"
+        # На встрече в комнате все голоса идут в один микрофон, и пока запись
+        # не разобрана, честнее не подписывать реплику вовсе, чем врать.
+        return "Собеседник" if self.who == "them" else ""
 
 
 @dataclass
@@ -89,6 +98,10 @@ class Session:
     summary_tabs: list = field(default_factory=list)
     summary_md: str = ""
     preset: str = ""
+    mode: str = "call"       # call — созвон двумя дорожками, room — встреча в комнате
+    people: list[str] = field(default_factory=list)   # кого отмечаем по ходу
+    stamp: str = ""          # «2026-08-27 13-32» — дата и время начала
+    renamed: bool = False    # название уже подобрано по теме разговора
 
     @property
     def duration(self) -> float:
@@ -104,11 +117,14 @@ class Session:
             "summary_sections": self.summary_sections,
             "summary_tabs": self.summary_tabs,
             "preset": self.preset,
+            "mode": self.mode,
+            "people": list(self.people),
             "lines": [
                 {"start": round(line.start, 1), "who": line.who,
-                 "label": line.label, "text": line.text}
-                for line in self.lines[-tail:]
-            ],
+                 "label": line.label, "text": line.text,
+                 "tagged": line.tagged, "index": i}
+                for i, line in enumerate(self.lines)
+            ][-tail:],
             "line_count": len(self.lines),
         }
 
@@ -176,6 +192,27 @@ def _to_float(raw: bytes) -> np.ndarray:
         return np.zeros(0, dtype=np.float32)
     usable = len(raw) - (len(raw) % 2)
     return np.frombuffer(raw[:usable], dtype=np.int16).astype(np.float32) / 32768.0
+
+
+def assign_room(lines: list[Line], spans: list) -> tuple[dict[int, str], dict[str, str]]:
+    """Раскладывает реплики встречи по найденным голосам.
+
+    Здесь нет «своей» дорожки: все, включая меня, говорят в один микрофон,
+    поэтому спикеры получаются такие же безымянные, как при разборе файла, —
+    пока их не назовут по имени.
+    """
+    keys = dict.fromkeys(range(len(lines)), "S1")
+    order: dict[int, int] = {}
+    for i, line in enumerate(lines):
+        found = merge._speaker_at(spans, line.start, line.end)
+        if found is None:
+            continue
+        if found not in order:
+            order[found] = len(order)
+        keys[i] = f"S{order[found] + 1}"
+    count = max(1, len(order))
+    names = {f"S{n + 1}": f"Спикер {n + 1}" for n in range(count)}
+    return keys, names
 
 
 def assign_others(lines: list[Line],
@@ -320,7 +357,7 @@ class Stenographer:
     def is_active(self) -> bool:
         return self.session is not None and self.session.state in ("recording", "finishing")
 
-    def start(self, title: str = "", preset: str = "") -> dict:
+    def start(self, title: str = "", preset: str = "", mode: str = "call") -> dict:
         with self._lock:
             if self.is_active():
                 raise RecordError("Запись уже идёт")
@@ -336,19 +373,22 @@ class Stenographer:
             directory = WORK_DIR / f"rec-{session_id}"
             directory.mkdir(parents=True, exist_ok=True)
             stamp = time.strftime("%Y-%m-%d %H-%M")
+            room = mode == "room"
             self.session = Session(
                 id=session_id, started_at=time.time(), directory=directory,
-                title=title.strip() or f"Созвон {stamp}",
+                mode="room" if room else "call",
+                title=title.strip() or (f"Встреча {stamp}" if room else f"Созвон {stamp}"),
                 preset=preset or self.settings.get("preset", presets.DEFAULT),
+                stamp=stamp,
             )
             self._stop.clear()
             self._process = subprocess.Popen(
-                [str(HELPER), "record", str(directory)],
+                [str(HELPER), "mic" if room else "record", str(directory)],
                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             )
             self._worker = threading.Thread(target=self._run, daemon=True)
             self._worker.start()
-            self._say("Идёт запись")
+            self._say("Идёт запись встречи" if room else "Идёт запись")
             return self.session.snapshot()
 
     def stop(self) -> dict | None:
@@ -413,8 +453,7 @@ class Stenographer:
                 raise RecordError(friendly_error(err))
 
             while not self._stop.is_set():
-                ready = min(mic_path.stat().st_size if mic_path.exists() else 0,
-                            sys_path.stat().st_size if sys_path.exists() else 0)
+                ready = self._ready(mic_path, sys_path)
                 if ready - offset >= chunk_bytes:
                     offset = self._consume(mic_path, sys_path, offset, ready)
                     if session.duration >= next_note:
@@ -425,8 +464,7 @@ class Stenographer:
             # Остановка: забираем хвост и собираем результат
             self._terminate_helper()
             time.sleep(0.6)
-            ready = min(mic_path.stat().st_size if mic_path.exists() else 0,
-                        sys_path.stat().st_size if sys_path.exists() else 0)
+            ready = self._ready(mic_path, sys_path)
             if ready > offset:
                 self._consume(mic_path, sys_path, offset, ready, final=True)
             self._finish()
@@ -437,6 +475,15 @@ class Stenographer:
             session.error = str(exc)
             session.message = "Ошибка"
             self._emit()
+
+    def _ready(self, mic_path: Path, sys_path: Path) -> int:
+        """Сколько байт можно разбирать: обе дорожки должны дописаться до
+        одного места, иначе реплики разъедутся. На встрече дорожка одна."""
+        mic = mic_path.stat().st_size if mic_path.exists() else 0
+        if self.session and self.session.mode == "room":
+            return mic
+        sys_size = sys_path.stat().st_size if sys_path.exists() else 0
+        return min(mic, sys_size)
 
     def _warm_model(self) -> None:
         try:
@@ -453,8 +500,10 @@ class Stenographer:
         if length < BYTES_PER_SECOND:
             return offset
 
+        room = session.mode == "room"
         mic = _to_float(_read_tail(mic_path, offset)[:length])
-        spk = _to_float(_read_tail(sys_path, offset)[:length])
+        spk = (np.zeros(0, dtype=np.float32) if room
+               else _to_float(_read_tail(sys_path, offset)[:length]))
         base = offset / BYTES_PER_SECOND
 
         # Режем не по счётчику, а по тишине — иначе слово рвётся пополам.
@@ -467,12 +516,14 @@ class Stenographer:
                 length = cut * 2
 
         fresh: list[Line] = []
-        for track, who in ((mic, "me"), (spk, "them")):
+        tracks = ((mic, "room"),) if room else ((mic, "me"), (spk, "them"))
+        for track, who in tracks:
             if not _has_speech(track):
                 continue
             fresh.extend(self._transcribe(track, base, who))
 
-        if self.settings.get("record_dedupe", True):
+        # Эхо бывает только там, где дорожки две.
+        if not room and self.settings.get("record_dedupe", True):
             fresh = drop_echo(fresh, mic, spk, base)
         cleanup.clean_turns(fresh, bool(self.settings.get("transcript_cleanup", True)))
 
@@ -527,6 +578,181 @@ class Stenographer:
             "covered": list(range(seen, len(session.lines))),
         })
         self._emit()
+
+    # --- разметка по ходу записи ------------------------------------------
+
+    def set_people(self, names: list[str]) -> dict | None:
+        """Список участников: кого можно отметить одним кликом."""
+        session = self.session
+        if not session:
+            return None
+        clean, seen = [], set()
+        for name in names or []:
+            value = str(name).strip()[:40]
+            if value and value.lower() not in seen:
+                seen.add(value.lower())
+                clean.append(value)
+        session.people = clean[:12]
+        self._emit()
+        return session.snapshot()
+
+    def tag(self, index: int, name: str) -> dict | None:
+        """Привязывает реплику к человеку прямо во время записи.
+
+        Это не только подпись: по отмеченным репликам приложение потом узнаёт
+        голос и подставит имя по всей записи — это надёжнее, чем разбирать
+        безымянные кластеры и переименовывать их постфактум.
+        """
+        session = self.session
+        if not session or not (0 <= index < len(session.lines)):
+            return None
+        value = str(name or "").strip()[:40]
+        line = session.lines[index]
+        if not value:
+            line.speaker, line.tagged = "", False
+        else:
+            line.speaker, line.tagged = value, True
+            if value not in session.people:
+                session.people.append(value)
+        self._emit()
+        return session.snapshot()
+
+    def _enrolled(self) -> dict[str, list[tuple[float, float]]]:
+        """Отмеченные вручную куски речи, по именам."""
+        session = self.session
+        assert session is not None
+        out: dict[str, list[tuple[float, float]]] = {}
+        for line in session.lines:
+            if line.tagged and line.speaker and line.end - line.start >= 0.8:
+                out.setdefault(line.speaker, []).append((line.start, line.end))
+        return out
+
+    def apply_names(self, audio: np.ndarray, keys: dict[int, str],
+                    names: dict[str, str], only: str | None = None) -> dict[str, str]:
+        """Подставляет имена, расставленные по ходу, всей записи целиком.
+
+        Сравниваем отмеченные куски речи с **каждой репликой отдельно**, а не с
+        усреднённым голосом кластера. Проверено на настоящей записи: кусок и
+        средний отпечаток своего же кластера сошлись всего на 0.52, тогда как
+        чужой голос дал 0.40 — по абсолютной величине не отличить. Значение
+        имеет разрыв между лучшим и вторым, а не само число.
+
+        Дальше голосуют реплики: имя достаётся кластеру, если за него набралось
+        больше половины узнанного времени. Так одна ошибка на реплике не
+        переименовывает всю запись.
+        """
+        session = self.session
+        assert session is not None
+        enrolled = self._enrolled()
+        if not enrolled:
+            return names
+        floor = float(self.settings.get("voice_match_floor", 0.35))
+        margin = float(self.settings.get("voice_match_margin", 0.07))
+
+        try:
+            extractor = diarize.embedder(int(self.settings["num_threads"]))
+
+            def print_of(ranges: list[tuple[float, float]]):
+                spans = [diarize.SpeakerSpan(a, b, 0) for a, b in ranges]
+                return diarize.voice_print(extractor, audio, spans)
+
+            people = {name: print_of(ranges) for name, ranges in enrolled.items()}
+            people = {k: v for k, v in people.items() if v is not None}
+            if not people:
+                return names
+
+            votes: dict[str, dict[str, float]] = {}
+            weight: dict[str, float] = {}
+            for i, line in enumerate(session.lines):
+                key = keys.get(i)
+                if not key or (only and line.who != only):
+                    continue
+                seconds = max(0.0, line.end - line.start)
+                weight[key] = weight.get(key, 0.0) + seconds
+                if line.tagged and line.speaker:
+                    votes.setdefault(key, {})[line.speaker] = \
+                        votes.setdefault(key, {}).get(line.speaker, 0.0) + seconds * 2
+                    continue
+                if seconds < 0.8:
+                    continue
+                voice = print_of([(line.start, line.end)])
+                if voice is None:
+                    continue
+                scored = sorted(((float(vector @ voice), name)
+                                 for name, vector in people.items()), reverse=True)
+                best, name = scored[0]
+                second = scored[1][0] if len(scored) > 1 else -1.0
+                if best < floor or best - second < margin:
+                    continue
+                votes.setdefault(key, {})[name] = \
+                    votes.setdefault(key, {}).get(name, 0.0) + seconds
+        except Exception:
+            return names
+        if not votes:
+            return names
+
+        # Имя получает тот кластер, где за него больше всего узнанного времени;
+        # одно имя — одному голосу.
+        claims = sorted(
+            ((seconds, name, key) for key, tally in votes.items()
+             for name, seconds in tally.items()),
+            reverse=True,
+        )
+        taken_names: set[str] = set()
+        taken_keys: set[str] = set()
+        fresh = dict(names)
+        for seconds, name, key in claims:
+            if name in taken_names or key in taken_keys:
+                continue
+            counted = sum(votes[key].values())
+            if counted <= 0 or seconds < counted * 0.5:
+                continue                       # голоса разделились — не гадаем
+            taken_names.add(name)
+            taken_keys.add(key)
+            fresh[key] = name
+        if taken_names:
+            self._say("Узнал по голосу: " + ", ".join(sorted(taken_names)))
+        return fresh
+
+    # --- кто говорил на встрече -------------------------------------------
+
+    def split_room(self, audio: np.ndarray) -> tuple[dict[int, str], dict[str, str]]:
+        """Разбирает запись встречи по голосам — так же, как обычный файл."""
+        session = self.session
+        assert session is not None
+        keys = dict.fromkeys(range(len(session.lines)), "S1")
+        names = {"S1": "Спикер 1"}
+        if not self.settings.get("record_split_speakers", True):
+            return keys, names
+        if len(session.lines) < 2 or audio.size < SAMPLE_RATE * 15:
+            return keys, names
+
+        path = session.directory / "room.wav"
+        ticking = threading.Event()
+        started = time.time()
+
+        def tick() -> None:
+            while not ticking.wait(3):
+                self._say("Разбираю, кто говорил на встрече — "
+                          f"{int(time.time() - started)} с")
+
+        try:
+            _write_wav(path, audio)
+            threading.Thread(target=tick, daemon=True).start()
+            spans = diarize.diarize(path, {
+                **self.settings,
+                "min_duration_off": min(0.25, float(self.settings["min_duration_off"])),
+            })
+        except Exception as exc:
+            self._say(f"Голоса не разобраны: {exc}")
+            return keys, names
+        finally:
+            ticking.set()
+            path.unlink(missing_ok=True)
+
+        keys, names = assign_room(session.lines, spans)
+        self._say(f"Голосов на встрече: {len(names)}")
+        return keys, names
 
     # --- кто именно говорил на той стороне --------------------------------
 
@@ -590,6 +816,21 @@ class Stenographer:
             self._say(f"Собеседников на звонке: {len(names) - 1}")
         return keys, names
 
+    def _retitle(self, session: Session, topic: str, out_dir: Path,
+                 audio_path: Path) -> tuple[str, Path]:
+        """Даёт записи осмысленное имя и переносит уже записанный звук."""
+        title = f"{topic} {session.stamp}".strip() if session.stamp else topic
+        stem = free_stem(out_dir, render.safe_stem(title))
+        fresh = out_dir / f"{stem}.wav"
+        if audio_path.exists() and fresh != audio_path:
+            try:
+                audio_path.replace(fresh)
+            except OSError:
+                return render.safe_stem(session.title), audio_path
+        session.title = title
+        session.renamed = True
+        return stem, fresh
+
     # --- завершение ------------------------------------------------------
 
     def _finish(self) -> None:
@@ -615,16 +856,35 @@ class Stenographer:
         audio_path = out_dir / f"{stem}.wav"
         _write_wav(audio_path, mixed)
 
-        keys, names = self.split_others(spk)
+        room = session.mode == "room"
+        keys, names = self.split_room(mixed) if room else self.split_others(spk)
+
+        # Имена, расставленные по ходу, распространяем на всю запись по голосу.
+        names = self.apply_names(mixed if room else spk, keys, names,
+                                 only=None if room else "them")
+        if not room:
+            # Своя дорожка — это я по определению, голос сверять не нужно.
+            mine = next((line.speaker for line in session.lines
+                         if line.tagged and line.who == "me" and line.speaker), "")
+            if mine:
+                names["S1"] = mine
+
         for i, line in enumerate(session.lines):
+            if line.tagged and line.speaker:
+                # Человек уже сказал, кто это. Переносим реплику к тому голосу,
+                # который получил это имя, а подпись не трогаем.
+                match = next((k for k, v in names.items() if v == line.speaker), None)
+                if match:
+                    keys[i] = match
+                continue
             line.speaker = names.get(keys.get(i, ""), "")
 
         transcript = asr.Transcript(
             segments=[asr.Segment(line.start, line.end, line.text, [],
-                                  keys.get(i, "S2"))
+                                  keys.get(i, "S1" if room else "S2"))
                       for i, line in enumerate(session.lines)],
             language=self.settings["language"], duration=size / SAMPLE_RATE,
-            backend="live", model="запись созвона",
+            backend="live", model="запись встречи" if room else "запись созвона",
         )
         turns = merge.build_turns(transcript)
         cleanup.clean_turns(turns, bool(self.settings.get("transcript_cleanup", True)))
@@ -634,9 +894,9 @@ class Stenographer:
             "source": str(audio_path),
             "duration": size / SAMPLE_RATE,
             "language": self.settings["language"],
-            "speakers": len({keys.get(i, "S2") for i in range(len(session.lines))}) or 2,
+            "speakers": len(set(keys.values())) or 1,
             "processed_at": render.now_stamp(),
-            "models": "запись созвона",
+            "models": "запись встречи" if room else "запись созвона",
         }
 
         summary = None
@@ -665,6 +925,17 @@ class Stenographer:
             finally:
                 ticking.set()
 
+        # «Созвон 2026-08-27 13-32» ничего не говорит через неделю. Спрашиваем
+        # у модели тему разговора и ставим её перед датой — дата остаётся,
+        # чтобы записи по-прежнему выстраивались по времени.
+        if summary and not session.renamed:
+            self._say("Придумываю название")
+            topic = summarize.suggest_title(summary.markdown, self.settings)
+            if topic:
+                stem, audio_path = self._retitle(session, topic, out_dir, audio_path)
+                meta["title"] = session.title
+                meta["source"] = str(audio_path)
+
         session.files = render.write_all(out_dir, stem, transcript, turns, [],
                                          summary, meta, names)
         session.files["audio"] = str(audio_path)
@@ -672,6 +943,17 @@ class Stenographer:
         session.message = "Готово"
         self._emit()
         shutil.rmtree(session.directory, ignore_errors=True)
+
+
+def free_stem(out_dir: Path, stem: str) -> str:
+    """Не затираем чужую запись, если название совпало."""
+    if not (out_dir / f"{stem}.result.json").exists() and not (out_dir / f"{stem}.wav").exists():
+        return stem
+    for n in range(2, 40):
+        candidate = f"{stem} ({n})"
+        if not (out_dir / f"{candidate}.result.json").exists():
+            return candidate
+    return stem
 
 
 def _quiet_point(energy: np.ndarray, tail_seconds: float = 6.0) -> int:

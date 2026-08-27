@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import diarize, library, llm, media, presets, record
+from . import diarize, edits, library, llm, media, presets, record
 from .pipeline import Runner
 from .settings import WHISPER_MODELS, Settings
 
@@ -68,11 +68,21 @@ class Api:
     def rec_request(self) -> dict:
         return record.request_permissions()
 
-    def rec_start(self, title: str = "", preset: str = "") -> dict:
+    def rec_start(self, title: str = "", preset: str = "", mode: str = "call") -> dict:
         try:
-            return {"ok": True, "session": self.steno.start(title or "", preset or "")}
+            return {"ok": True,
+                    "session": self.steno.start(title or "", preset or "", mode or "call")}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+
+    def rec_people(self, names: list) -> dict | None:
+        return self.steno.set_people([str(x) for x in (names or [])])
+
+    def rec_tag(self, index: int, name: str = "") -> dict | None:
+        try:
+            return self.steno.tag(int(index), name or "")
+        except Exception:
+            return None
 
     def rec_stop(self) -> dict | None:
         threading.Thread(target=self.steno.stop, daemon=True).start()
@@ -214,6 +224,37 @@ class Api:
 
     def library_open(self, entry_id: str) -> dict | None:
         return library.snapshot(self.settings.output_path, entry_id)
+
+    def edit_summary(self, job_id: str, key: str, markdown: str) -> dict:
+        """Заменяет раздел саммари — и в файлах, и в открытой карточке.
+
+        Работает одинаково для только что разобранной записи и для открытой из
+        архива: и там, и там правится один и тот же result.json.
+        """
+        job = self.runner.get(job_id)
+        result = (job.files or {}).get("result") if job else None
+        if not result:
+            snapshot = library.snapshot(self.settings.output_path, job_id)
+            result = (snapshot or {}).get("files", {}).get("result")
+        if not result:
+            return {"ok": False, "error": "Файл записи не найден"}
+
+        try:
+            fresh = edits.apply(result, key, markdown or "")
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+        if job:
+            job.summary_sections = fresh["sections"]
+            job.summary_md = fresh["markdown"]
+            if fresh["tables"]:
+                job.files.setdefault(
+                    "tables", str(Path(result).parent
+                                  / (Path(result).name.replace(".result.json",
+                                                               ".таблицы.csv"))))
+            elif "tables" in job.files:
+                job.files.pop("tables")
+        return {"ok": True, **fresh}
 
     def library_rename(self, entry_id: str, names: dict) -> dict | None:
         try:

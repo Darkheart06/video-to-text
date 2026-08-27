@@ -106,11 +106,15 @@ REC = {
     "duration": 372.0, "message": "Записано 6 мин, реплик 14", "error": "",
     "files": {}, "summary_md": "", "summary_sections": {}, "line_count": 3,
     "notes": [{"at": 300, "text": "- Обсудили сроки релиза\n- Ирина берёт макеты"}],
+    "people": ["Ирина", "Дмитрий"],
+    "mode": "call",
     "lines": [
-        {"start": 12.0, "who": "me", "label": "Я", "text": "Давайте начнём с релиза."},
-        {"start": 19.5, "who": "them", "label": "Собеседник",
+        {"start": 12.0, "who": "me", "label": "Я", "index": 0, "tagged": False,
+         "text": "Давайте начнём с релиза."},
+        {"start": 19.5, "who": "them", "label": "Собеседник", "index": 1, "tagged": False,
          "text": "Успеваем всё, кроме онбординга."},
-        {"start": 31.0, "who": "me", "label": "Я", "text": "Тогда режем до трёх экранов."},
+        {"start": 31.0, "who": "me", "label": "Я", "index": 2, "tagged": False,
+         "text": "Тогда режем до трёх экранов."},
     ],
 }
 
@@ -150,9 +154,25 @@ window.pywebview = {api: {
   rec_permissions: async () => ({helper: true, screen: true, microphone: true}),
   rec_state: async () => null,
   rec_request: async () => ({screen: true, microphone: true}),
-  rec_start: async () => ({ok: true, session: %(rec)s}),
+  rec_start: async (title, preset, mode) => {
+    window.__recMode = mode;
+    return {ok: true, session: Object.assign({}, %(rec)s, {mode: mode})};
+  },
   rec_stop: async () => (%(rec)s),
   rec_cancel: async () => true,
+  rec_people: async names => {
+    window.__people = names;
+    return Object.assign({}, %(rec)s, {people: names});
+  },
+  rec_tag: async (index, name) => {
+    window.__tag = {index: index, name: name};
+    const session = JSON.parse(JSON.stringify(%(rec)s));
+    if (name) {
+      session.lines[index].label = name;
+      session.lines[index].tagged = true;
+    }
+    return session;
+  },
   open_privacy: async () => true,
   presets: async () => (%(presets)s),
   library: async q => ({items: (%(lib)s).filter(
@@ -163,6 +183,12 @@ window.pywebview = {api: {
   library_delete: async () => ({ok: true, removed: 5}),
   library_rename: async () => (%(estimate)s),
   copy: async text => { window.__copied = text; return true; },
+  edit_summary: async (id, key, markdown) => {
+    window.__edited = {id: id, key: key, markdown: markdown};
+    const sections = Object.assign({}, %(sections)s);
+    sections[key] = markdown;
+    return {ok: true, sections: sections, markdown: markdown, tables: false};
+  },
 }};
 """
 
@@ -201,7 +227,8 @@ def main() -> int:
                  "example": presets_mod.CUSTOM_EXAMPLE}
     bridge = BRIDGE % {"settings": json.dumps(settings), "env": json.dumps(env),
                        "rec": json.dumps(REC), "presets": json.dumps(catalogue),
-                       "lib": json.dumps(LIB), "estimate": json.dumps(ESTIMATE_JOB)}
+                       "lib": json.dumps(LIB), "estimate": json.dumps(ESTIMATE_JOB),
+                       "sections": json.dumps(SUMMARY_SECTIONS)}
 
     errors: list[str] = []
     with sync_playwright() as pw:
@@ -235,6 +262,14 @@ def main() -> int:
             # --- панель стенографиста ---
             if not page.locator('[data-rec="start"]').count():
                 errors.append(f"{scheme}: нет кнопки начала записи")
+            if not page.locator('[data-rec="start-room"]').count():
+                errors.append(f"{scheme}: нет кнопки записи встречи")
+            page.click('[data-rec="start-room"]')
+            page.wait_for_timeout(250)
+            if page.evaluate("window.__recMode || ''") != "room":
+                errors.append(f"{scheme}: встреча запустилась не в своём режиме")
+            page.click('[data-rec="cancel"]')
+            page.wait_for_timeout(150)
             page.click('[data-rec="start"]')
             page.wait_for_timeout(250)
             # text_content, а не inner_text: заголовок заметок поднят в верхний
@@ -245,6 +280,34 @@ def main() -> int:
                     errors.append(f"{scheme}: в панели записи нет «{probe}»")
             if not page.locator(".rec-dot").count():
                 errors.append(f"{scheme}: нет индикатора идущей записи")
+
+            # --- разметка голосов по ходу ---
+            if page.locator(".person").count() < 2:
+                errors.append(f"{scheme}: список участников не отрисовался")
+            page.click('.rec-line[data-pick="1"]')
+            page.wait_for_timeout(150)
+            if not page.locator(".pickbar .person").count():
+                errors.append(f"{scheme}: по клику на реплику не предложили имена")
+            page.screenshot(path=str(out_dir / f"11-people-{scheme}.png"))
+            page.locator('.pickbar [data-name="Дмитрий"]').click()
+            page.wait_for_timeout(250)
+            tag = page.evaluate("window.__tag || null")
+            if not tag or tag["index"] != 1 or tag["name"] != "Дмитрий":
+                errors.append(f"{scheme}: реплика не привязалась к человеку: {tag}")
+            if not page.locator(".rec-line.tagged").count():
+                errors.append(f"{scheme}: отмеченная реплика не выделена")
+            # цифрой отмечается последняя реплика
+            page.keyboard.press("1")
+            page.wait_for_timeout(250)
+            tag = page.evaluate("window.__tag || null")
+            if not tag or tag["index"] != 2 or tag["name"] != "Ирина":
+                errors.append(f"{scheme}: цифра не отметила последнюю реплику: {tag}")
+            page.fill("#person-add", "Сергей")
+            page.press("#person-add", "Enter")
+            page.wait_for_timeout(250)
+            people = page.evaluate("window.__people || []")
+            if "Сергей" not in people:
+                errors.append(f"{scheme}: участник не добавился: {people}")
             page.screenshot(path=str(out_dir / f"6-record-{scheme}.png"))
             page.click('[data-rec="cancel"]')
             page.wait_for_timeout(150)
@@ -275,6 +338,55 @@ def main() -> int:
             page.wait_for_timeout(150)
             if "смет" not in (page.text_content("#picker") or "").lower():
                 errors.append(f"{scheme}: подсказка профиля не обновилась")
+
+            # --- правка саммари: вычеркнуть лишнее ---
+            page.click('.job[data-id="demo1234"] [data-tab="summary"]')
+            page.wait_for_timeout(150)
+            if not page.locator('[data-edittab="demo1234"]').count():
+                errors.append(f"{scheme}: нет кнопки правки саммари")
+            page.click('[data-edittab="demo1234"]')
+            page.wait_for_timeout(200)
+            items = page.locator("#pane-demo1234 .edit-item")
+            if items.count() != 3:
+                errors.append(f"{scheme}: пункты саммари не разобрались ({items.count()})")
+            page.locator("#pane-demo1234 .edit-item .kill").nth(1).click()
+            page.wait_for_timeout(120)
+            if not page.locator("#pane-demo1234 .edit-item.gone").count():
+                errors.append(f"{scheme}: пункт не вычеркнулся")
+            page.screenshot(path=str(out_dir / f"10-edit-{scheme}.png"))
+            page.click('[data-editsave="demo1234"]')
+            page.wait_for_timeout(300)
+            edited = page.evaluate("window.__edited || null")
+            if not edited:
+                errors.append(f"{scheme}: правка не отправилась в Python")
+            elif "740" in edited["markdown"] or edited["markdown"].count("\n") != 1:
+                errors.append(f"{scheme}: сохранился не тот текст: {edited['markdown'][:70]!r}")
+            if page.locator("#pane-demo1234 .edit-item").count():
+                errors.append(f"{scheme}: после сохранения режим правки не закрылся")
+
+            # --- правка таблицы: строка и пересчёт ---
+            page.click('.job[data-id="demo1234"] [data-tab="tasks"]')
+            page.wait_for_timeout(150)
+            page.click('[data-edittab="demo1234"]')
+            page.wait_for_timeout(200)
+            rows = page.locator("#pane-demo1234 .edit-table .row[data-row]")
+            if rows.count() != 3:
+                errors.append(f"{scheme}: строки таблицы не разобрались ({rows.count()})")
+            page.locator("#pane-demo1234 .edit-table .row[data-row] .kill").nth(0).click()
+            page.wait_for_timeout(120)
+            page.click('[data-editsave="demo1234"]')
+            page.wait_for_timeout(300)
+            edited = page.evaluate("window.__edited || null")
+            if not edited or "Ирина" in edited["markdown"] or "Дмитрий" not in edited["markdown"]:
+                errors.append(f"{scheme}: строка таблицы удалилась неверно")
+            elif "---" not in edited["markdown"].split("\n")[1]:
+                errors.append(f"{scheme}: разделитель таблицы потерялся: "
+                              f"{edited['markdown'][:120]!r}")
+
+            # Возвращаем исходные разделы: их проверяют следующие шаги.
+            page.evaluate("(s)=>{state.jobs.get('demo1234').summary_sections=s; render();}",
+                          SUMMARY_SECTIONS)
+            page.wait_for_timeout(150)
 
             # --- архив записей ---
             page.wait_for_timeout(200)
@@ -409,7 +521,8 @@ def main() -> int:
             page.click('.job[data-id="demo1234"] [data-tab="tasks"]')
             page.wait_for_timeout(120)
             if page.locator("#pane-demo1234 table tbody tr").count() != 3:
-                errors.append(f"{scheme}: таблица задач отрисована неверно")
+                errors.append(f"{scheme}: таблица задач отрисована неверно: "
+                              f"{(page.text_content('#pane-demo1234') or '')[:120]!r}")
             if page.locator(".chip").count() != 4:
                 errors.append(f"{scheme}: индикаторы состояния не отрисовались")
             page.close()

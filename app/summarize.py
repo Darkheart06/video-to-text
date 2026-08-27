@@ -128,6 +128,52 @@ def summarize(turns: list[Turn], settings: Settings, meta: dict | None = None,
     )
 
 
+TITLE_SYSTEM = (
+    "Ты придумываешь короткие названия для записей разговоров. Отвечай одной "
+    "строкой по-русски: 2–5 слов о сути разговора, без кавычек, без точки в "
+    "конце, без слов «саммари», «встреча», «созвон», «обсуждение». Не пиши "
+    "ничего, кроме самого названия."
+)
+
+
+def suggest_title(text: str, settings: Settings) -> str:
+    """Короткое название по сути разговора — вместо «Созвон 2026-08-27 13-32».
+
+    Даты в названии не просим: её подставляет вызывающий код, и модель бы всё
+    равно её выдумала. На вход идёт готовое саммари, а не вся расшифровка:
+    так дешевле и точнее.
+    """
+    source = (text or "").strip()
+    if len(source) < 40:
+        return ""
+    try:
+        backend = llm.build(settings)
+        answer = backend.chat(TITLE_SYSTEM, "Вот о чём была запись:\n\n"
+                              + source[:4000] + "\n\nНазвание:")
+    except Exception:
+        return ""
+    return clean_title(answer)
+
+
+def clean_title(answer: str) -> str:
+    """Модель любит добавить кавычки, «Название:» и точку — всё это убираем."""
+    line = (answer or "").strip().split("\n")[0]
+    line = re.sub(r"^\s*(название|title)\s*[:—-]\s*", "", line, flags=re.I)
+    # Порядок важен: сначала точка в конце, потом кавычки, потом точка снова —
+    # модель пишет и «Название».  и  "Название."
+    for _ in range(2):
+        line = re.sub(r"[.!?…]+$", "", line).strip()
+        line = line.strip("\"'«»`*_ ").strip()
+    # В имени файла косая черта и двоеточие ломают путь, а перевод строки —
+    # весь список записей.
+    line = re.sub(r"[\\/:*?\"<>|\n\r\t]+", " ", line)
+    line = re.sub(r"\s{2,}", " ", line).strip()
+    words = line.split()
+    if len(words) > 7:
+        line = " ".join(words[:7])
+    return line[:60]
+
+
 def _system(preset: Preset) -> str:
     return SYSTEM + ("\n\n" + preset.rules.strip() if preset.rules.strip() else "")
 

@@ -127,6 +127,49 @@
 
   /* ---------- результат ---------- */
   .tab-copy{margin-left:auto; align-self:center}
+  .tab-edit{align-self:center; margin-left:6px}
+  .tab-edit.on{border-color:var(--accent); background:var(--accent-soft)}
+
+  /* ---------- правка саммари ---------- */
+  .edit-item{
+    display:flex; align-items:flex-start; gap:8px; padding:4px 0;
+    border-bottom:1px dashed transparent;
+  }
+  .edit-item:hover{border-bottom-color:var(--line)}
+  .edit-item .body{
+    flex:1; min-width:0; padding:4px 7px; border-radius:7px; font-size:13.5px;
+    line-height:1.5; border:1px solid transparent; white-space:pre-wrap;
+  }
+  .edit-item .body:hover{background:var(--panel-2)}
+  .edit-item .body:focus{outline:none; border-color:var(--accent); background:var(--panel-2)}
+  .edit-item .kill{
+    flex:0 0 auto; width:22px; height:22px; border-radius:6px; font-size:15px;
+    line-height:1; color:var(--muted); border:1px solid transparent;
+  }
+  .edit-item .kill:hover{color:var(--err); border-color:var(--err)}
+  .edit-item.gone .body{opacity:.35; text-decoration:line-through}
+  .edit-item.gone .kill{color:var(--ok); border-color:var(--ok)}
+  .edit-head{font-weight:650; font-size:13px; margin:10px 0 2px}
+  .edit-table{border:1px solid var(--line); border-radius:9px; overflow:hidden; margin:8px 0}
+  .edit-table .row{display:flex; align-items:stretch; border-top:1px solid var(--line)}
+  .edit-table .row:first-child{border-top:none; background:var(--panel-2); font-weight:600}
+  .edit-table .cell{
+    flex:1; min-width:0; padding:7px 9px; font-size:13px; border-left:1px solid var(--line);
+    white-space:pre-wrap;
+  }
+  .edit-table .cell:first-child{border-left:none}
+  .edit-table .cell:focus{outline:none; background:var(--accent-soft)}
+  .edit-table .row.gone .cell{opacity:.35; text-decoration:line-through}
+  .edit-table .kill{
+    flex:0 0 auto; width:24px; align-self:center; font-size:15px; line-height:1;
+    color:var(--muted); border-radius:6px; border:1px solid transparent;
+  }
+  .edit-table .kill:hover{color:var(--err); border-color:var(--err)}
+  .edit-table .row.gone .kill{color:var(--ok); border-color:var(--ok)}
+  .edit-foot{
+    display:flex; gap:8px; align-items:center; padding:12px 0 2px; flex-wrap:wrap;
+  }
+  .edit-foot .note{font-size:11.5px; color:var(--muted); flex:1 1 200px}
   .tabs{display:flex; gap:2px; padding:0 12px; border-bottom:1px solid var(--line); overflow-x:auto}
   .tab{padding:10px 13px; font-size:13px; color:var(--muted); border-bottom:2px solid transparent; white-space:nowrap}
   .tab.active{color:var(--text); border-bottom-color:var(--accent); font-weight:600}
@@ -235,6 +278,33 @@
   .note-item .at{font-family:var(--mono); font-size:11px; color:var(--accent);
                  display:block; margin-bottom:4px}
   .rec-empty{color:var(--muted); font-size:13px; padding:8px 0}
+
+  /* ---------- кто говорит: разметка по ходу ---------- */
+  .people{
+    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+    padding:9px 18px; border-bottom:1px solid var(--line); background:var(--panel-2);
+  }
+  .people .lbl{font-size:11.5px; color:var(--muted); margin-right:2px}
+  .person{
+    display:inline-flex; align-items:center; gap:5px; padding:3px 9px; font-size:12.5px;
+    border-radius:20px; border:1px solid var(--line); background:var(--panel); cursor:pointer;
+  }
+  .person:hover{border-color:var(--accent); background:var(--accent-soft)}
+  .person.on{border-color:var(--accent); background:var(--accent-soft); font-weight:600}
+  .person .n{font-family:var(--mono); font-size:10px; color:var(--muted)}
+  .people input{
+    width:130px; padding:3px 9px; font-size:12.5px; border-radius:20px;
+    border:1px dashed var(--line); background:none;
+  }
+  .people .hint{font-size:11px; color:var(--muted); flex:1 1 100%; margin-top:2px}
+  .rec-line{cursor:pointer}
+  .rec-line:hover{background:var(--panel-2); border-radius:7px}
+  .rec-line.tagged .w{color:var(--accent); font-weight:700}
+  .rec-line.picking{background:var(--accent-soft); border-radius:7px}
+  .pickbar{
+    display:flex; gap:5px; flex-wrap:wrap; padding:6px 0 6px 65px;
+  }
+  .pickbar .person{font-size:12px}
 
   .toast{
     position:fixed; bottom:20px; left:50%; transform:translate(-50%,20px); opacity:0;
@@ -392,7 +462,8 @@ async function copySelection(){
 /* ========== состояние ========== */
 const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
   presets:{items:[],current:'meeting',example:''}, preset:'',
-  lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null };
+  lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null,
+  editing:new Map(), picking:null };
 
 /* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
    Python присылает их вместе с саммари; список ниже — запасной вариант. */
@@ -442,10 +513,15 @@ function jobCard(j){
     const tabs = tabsOf(j,true).filter(([k])=>hasTab(j,k)).map(([k,label])=>
       `<button class="tab ${k===active?'active':''}" data-tab="${k}" data-job="${j.id}">${label}${
         k==='transcript'?`<span class="count">${(j.turns||[]).length}</span>`:''}</button>`).join('');
+    const editable = active!=='transcript' && ((j.summary_sections||{})[active]||'').trim();
+    const editing = state.editing.get(j.id)===active;
     const copy = `<button class="btn sm ghost tab-copy" data-copytab="${j.id}"
-      title="Скопировать текст этой вкладки">Копировать</button>`;
+      title="Скопировать текст этой вкладки">Копировать</button>` + (editable
+      ? `<button class="btn sm ghost tab-edit ${editing?'on':''}" data-edittab="${j.id}"
+           title="Убрать лишнее или поправить формулировку">Править</button>` : '');
     body = `<div class="tabs">${tabs}${copy}</div>` +
-           `<div class="pane md" id="pane-${j.id}">${paneHTML(j,active)}</div>`;
+           `<div class="pane ${editing?'':'md'}" id="pane-${j.id}">${
+             editing ? editorHTML(j,active) : paneHTML(j,active)}</div>`;
     if(spk){
       body += `<div class="speakers"><span class="lbl">Кто есть кто:</span>` +
         Object.entries(j.speakers).map(([key,v])=>
@@ -515,6 +591,89 @@ function paneHTML(j,key){
   }
   const text=((j.summary_sections||{})[key]||'').trim();
   return text ? md(text) : '<div class="pane empty">Раздел пуст</div>';
+}
+
+/* ========== правка саммари ==========
+   Модель иногда приносит в бриф то, чего на встрече не было, или задачу,
+   которую никто не ставил. Пункт можно вычеркнуть или поправить прямо здесь;
+   транскрипт при этом не меняется — там остаётся сказанное как есть. */
+
+function isTableLine(line){ return line.trim().startsWith('|'); }
+function isSepLine(line){
+  const body=line.trim().replace(/^\||\|$/g,'');
+  return !!body && /^[-:\s|]+$/.test(body);
+}
+function cellsOf(line){
+  let s=line.trim();
+  if(s.startsWith('|')) s=s.slice(1);
+  if(s.endsWith('|')) s=s.slice(0,-1);
+  return s.split('|').map(c=>c.trim());
+}
+
+function parseSection(text){
+  const lines=String(text||'').split('\n');
+  const blocks=[]; let i=0;
+  while(i<lines.length){
+    if(isTableLine(lines[i]) && i+1<lines.length && isSepLine(lines[i+1])){
+      const rows=[];
+      while(i<lines.length && isTableLine(lines[i])){ rows.push(lines[i]); i++; }
+      blocks.push({type:'table', header:cellsOf(rows[0]), sep:rows[1],
+                   rows:rows.slice(2).map(cellsOf)});
+      continue;
+    }
+    if(lines[i].trim()) blocks.push({type:'line', text:lines[i]});
+    i++;
+  }
+  return blocks;
+}
+
+function editorHTML(j,key){
+  const blocks=parseSection((j.summary_sections||{})[key]||'');
+  if(!blocks.length) return '<div class="pane empty">Раздел пуст</div>';
+  const out=blocks.map(b=>{
+    if(b.type==='table'){
+      const head=`<div class="row">${b.header.map(c=>
+        `<span class="cell" contenteditable="true" data-head="1">${esc(c)}</span>`).join('')}
+        <button class="kill" style="visibility:hidden">×</button></div>`;
+      const rows=b.rows.map(cells=>`<div class="row" data-row="1">${
+        cells.map(c=>`<span class="cell" contenteditable="true">${esc(c)}</span>`).join('')}
+        <button class="kill" data-strike="1" title="Убрать строку">×</button></div>`).join('');
+      return `<div class="edit-table" data-sep="${esc(b.sep)}">${head}${rows}</div>`;
+    }
+    const heading=/^\s*#{2,4}\s/.test(b.text);
+    return `<div class="edit-item${heading?' head':''}" data-line="1">
+      <span class="body${heading?' edit-head':''}" contenteditable="true">${esc(b.text)}</span>
+      <button class="kill" data-strike="1" title="Убрать пункт">×</button></div>`;
+  }).join('');
+  return out + `<div class="edit-foot">
+      <button class="btn sm primary" data-editsave="${j.id}">Сохранить</button>
+      <button class="btn sm ghost" data-editcancel="${j.id}">Отмена</button>
+      <span class="note">Вычеркнутое исчезнет из саммари и файлов. В транскрипте
+        всё останется как было. Суммы в таблицах пересчитаются.</span>
+    </div>`;
+}
+
+function collectSection(pane){
+  const parts=[];
+  pane.querySelectorAll(':scope > .edit-item, :scope > .edit-table').forEach(node=>{
+    if(node.classList.contains('edit-table')){
+      const rows=[...node.querySelectorAll('.row[data-row]')].filter(r=>!r.classList.contains('gone'));
+      if(!rows.length) return;                       // таблицу вычеркнули целиком
+      const head=node.querySelector('.row');
+      const cell=c=>String(c.textContent||'').replace(/\|/g,'/').trim();
+      const line=cells=>'| '+cells.join(' | ')+' |';
+      parts.push('');
+      parts.push(line([...head.querySelectorAll('.cell')].map(cell)));
+      parts.push(node.dataset.sep || '|---|');
+      rows.forEach(r=>parts.push(line([...r.querySelectorAll('.cell')].map(cell))));
+      parts.push('');
+      return;
+    }
+    if(node.classList.contains('gone')) return;
+    const text=String(node.querySelector('.body').textContent||'').trim();
+    if(text) parts.push(text);
+  });
+  return parts.join('\n').replace(/\n{3,}/g,'\n\n').trim();
 }
 
 /* ========== архив записей ========== */
@@ -871,8 +1030,43 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel]');
+  const t=ev.target.closest('[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person]');
   if(!t) return;
+  if(t.dataset.edittab){
+    const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
+    if(state.editing.get(id)===key) state.editing.delete(id);
+    else state.editing.set(id,key);
+    render(); return;
+  }
+  if(t.dataset.strike){
+    // Не удаляем сразу: пока не нажато «Сохранить», всё можно вернуть.
+    const row=t.closest('.edit-item, .row');
+    if(row) row.classList.toggle('gone');
+    return;
+  }
+  if(t.dataset.editcancel){ state.editing.delete(t.dataset.editcancel); render(); return; }
+  if(t.dataset.editsave){
+    const id=t.dataset.editsave, key=state.editing.get(id);
+    const pane=$('#pane-'+id);
+    if(!pane||!key) return;
+    const markdown=collectSection(pane);
+    t.disabled=true; t.textContent='Сохраняю…';
+    const r=await api().edit_summary(id,key,markdown);
+    if(r && r.ok){
+      const job=state.jobs.get(id);
+      if(job){
+        job.summary_sections=r.sections;
+        job.summary_md=r.markdown;
+      }
+      state.editing.delete(id);
+      render(); loadLib();
+      toast('Раздел обновлён, файлы перезаписаны');
+    } else {
+      t.disabled=false; t.textContent='Сохранить';
+      toast((r&&r.error)||'Не удалось сохранить');
+    }
+    return;
+  }
   if(t.dataset.copytab){
     const j=state.jobs.get(t.dataset.copytab);
     if(j) await copyText(paneText(j, state.tabs.get(j.id) || firstTab(j)));
@@ -885,9 +1079,34 @@ document.addEventListener('click', async ev=>{
   }
   if(t.dataset.libdel){ ev.stopPropagation(); await deleteLib(t.dataset.libdel); return; }
   if(t.dataset.lib){ await openLib(t.dataset.lib); return; }
+  if(t.dataset.pick){
+    const idx=Number(t.dataset.pick);
+    state.picking = state.picking===idx ? null : idx;
+    renderRec(); return;
+  }
+  if(t.dataset.tag!==undefined && t.dataset.name!==undefined){
+    const session=await api().rec_tag(Number(t.dataset.tag), t.dataset.name);
+    state.picking=null;
+    if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
+      if(keep) state.rec._t=keep; }
+    renderRec(); return;
+  }
+  if(t.dataset.person){
+    // Быстрый путь: имя вешается на последнюю реплику — обычно её и слышно.
+    const lines=(state.rec&&state.rec.lines)||[];
+    if(!lines.length){ toast('Пока нечего отмечать'); return; }
+    const session=await api().rec_tag(lines[lines.length-1].index, t.dataset.person);
+    if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
+      if(keep) state.rec._t=keep; }
+    renderRec(); return;
+  }
   if(t.dataset.rec){ await recAction(t.dataset.rec); return; }
   if(t.dataset.rectab){ state.recTab=t.dataset.rectab; renderRec(); return; }
-  if(t.dataset.tab){ state.tabs.set(t.dataset.job,t.dataset.tab); render(); return; }
+  if(t.dataset.tab){
+    state.tabs.set(t.dataset.job,t.dataset.tab);
+    state.editing.delete(t.dataset.job);
+    render(); return;
+  }
   if(t.dataset.cancel){ await api().cancel(t.dataset.cancel); return; }
   if(t.dataset.remove){ state.jobs.delete(t.dataset.remove); render(); return; }
   if(t.dataset.reveal){ await api().reveal(t.dataset.reveal); return; }
@@ -912,9 +1131,25 @@ document.addEventListener('click', async ev=>{
 /* Cmd+C и Cmd+A. Без строки меню macOS сама их не обрабатывает, а привычка
    копировать выделенное клавишами никуда не девается. */
 document.addEventListener('keydown', async ev=>{
+  // Цифра отмечает последнюю реплику именем участника под этим номером:
+  // на живом разговоре тянуться мышью некогда.
+  const inField=/^(input|textarea)$/i.test((ev.target.tagName||''));
+  if(!inField && !ev.metaKey && !ev.ctrlKey && !ev.altKey && /^[1-9]$/.test(ev.key)){
+    const r=state.rec;
+    if(r && r.state==='recording' && (r.people||[]).length>=Number(ev.key)){
+      const lines=r.lines||[];
+      if(lines.length){
+        const session=await api().rec_tag(lines[lines.length-1].index,
+                                          r.people[Number(ev.key)-1]);
+        if(session){ const keep=r._t; state.rec=session; if(keep) state.rec._t=keep; }
+        renderRec();
+        ev.preventDefault();
+        return;
+      }
+    }
+  }
   if(!(ev.metaKey||ev.ctrlKey) || ev.altKey) return;
   const key=(ev.key||'').toLowerCase();
-  const inField=/^(input|textarea)$/i.test((ev.target.tagName||''));
   if(key==='c' && !inField){
     if(await copySelection()) ev.preventDefault();
     return;
@@ -995,18 +1230,22 @@ function renderRec(){
         <span>${esc(state.recError)}</span>
         <span class="sp"><button class="btn sm primary" data-rec="privacy">Открыть настройки</button></span></div>`;
     }
+    const noHelper = p.helper===false;
     html+=`<div class="rec-card"><div class="rec-head">
         <div style="min-width:0">
           <div class="rec-title">Стенографист</div>
           <div class="rec-sub">${blocked
-            ? 'Нужно разрешение на запись экрана — без него не слышно собеседников'
-            : 'Записывает созвон и расшифровывает его прямо по ходу разговора'}</div>
+            ? 'Созвон требует разрешения на запись экрана — без него не слышно собеседников. Встречу в комнате можно писать и так.'
+            : 'Записывает разговор и расшифровывает его прямо по ходу'}</div>
         </div>
         <div class="rec-actions">
           ${blocked
             ? `<button class="btn sm ghost" data-rec="recheck">Проверить снова</button>
-               <button class="btn primary" data-rec="privacy">Открыть настройки</button>`
+               <button class="btn sm" data-rec="privacy">Открыть настройки</button>`
             : `<button class="btn primary" data-rec="start">Начать запись созвона</button>`}
+          <button class="btn ${blocked?'primary':''}" data-rec="start-room"
+            title="Все голоса идут в один микрофон — как на совещании за столом"
+            ${noHelper?'disabled':''}>Записать встречу</button>
         </div>
       </div>`;
     if(r && r.state==='done' && r.line_count) html+=recResult(r);
@@ -1028,14 +1267,20 @@ function renderRec(){
       </div>
     </div>`;
 
+  html+=peopleHTML(r);
   html+=`<div class="rec-body"><div class="rec-live" id="rec-live">`;
   if(!(r.lines||[]).length){
-    html+=`<div class="rec-empty">Речь появится здесь через полминуты после начала разговора.</div>`;
+    html+=`<div class="rec-empty">Речь появится здесь через полминуты после начала${
+      r.mode==='room' ? ' встречи' : ' разговора'}.</div>`;
   } else {
-    html+=r.lines.map(l=>`<div class="rec-line ${l.who}">
+    html+=r.lines.map(l=>{
+      const picking = state.picking===l.index;
+      return `<div class="rec-line ${l.who}${l.tagged?' tagged':''}${picking?' picking':''}"
+          data-pick="${l.index}" title="Отметить, кто это говорит">
         <span class="t">${hhmmss(l.start)}</span>
         <span class="w">${esc(l.label)}</span>
-        <span class="x">${esc(l.text)}</span></div>`).join('');
+        <span class="x">${esc(l.text)}</span></div>` + (picking ? pickbarHTML(r,l) : '');
+    }).join('');
   }
   html+=`</div><div class="rec-notes"><h4>Заметки по ходу</h4>`;
   html+=(r.notes||[]).length
@@ -1047,6 +1292,43 @@ function renderRec(){
   el.innerHTML=html;
 
   const pane=$('#rec-live'); if(pane) pane.scrollTop=pane.scrollHeight;
+
+  const add=$('#person-add');
+  if(add) add.onkeydown=async ev=>{
+    if(ev.key!=='Enter') return;
+    const name=add.value.trim();
+    if(!name) return;
+    add.value='';
+    const session=await api().rec_people([...(state.rec.people||[]), name]);
+    if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
+      if(keep) state.rec._t=keep; renderRec(); }
+  };
+}
+
+function peopleHTML(r){
+  if(r.state!=='recording' && r.state!=='finishing') return '';
+  const people=r.people||[];
+  return `<div class="people">
+    <span class="lbl">Кто на ${r.mode==='room'?'встрече':'связи'}:</span>
+    ${people.map((name,i)=>`<button class="person" data-person="${esc(name)}"
+        title="Отметить этим именем последнюю реплику">${esc(name)}
+        <span class="n">${i+1}</span></button>`).join('')}
+    <input type="text" id="person-add" placeholder="+ имя" maxlength="40">
+    <span class="hint">Кликните реплику и выберите, кто её сказал — или нажмите
+      имя, чтобы отметить последнюю. Отмеченные голоса приложение узнает
+      и подпишет ими всю запись.</span>
+  </div>`;
+}
+
+function pickbarHTML(r,line){
+  const people=r.people||[];
+  if(!people.length) return `<div class="pickbar"><span class="rec-empty">
+      Сначала добавьте участника в поле «+ имя» наверху.</span></div>`;
+  return `<div class="pickbar">` + people.map(name=>
+      `<button class="person ${line.label===name?'on':''}"
+         data-tag="${line.index}" data-name="${esc(name)}">${esc(name)}</button>`).join('') +
+    (line.tagged ? `<button class="person" data-tag="${line.index}" data-name="">снять</button>` : '') +
+    `</div>`;
 }
 
 function recResult(r){
@@ -1094,15 +1376,17 @@ async function recAction(what){
       : 'Разрешите «Запись экрана» в настройках и перезапустите приложение');
     return;
   }
-  if(what==='start'){
+  if(what==='start' || what==='start-room'){
+    const room = what==='start-room';
     state.callPrompt=false;
-    const res=await api().rec_start('', currentPreset());
+    const res=await api().rec_start('', currentPreset(), room?'room':'call');
     if(!res.ok){
       state.recError=res.error||'Не удалось начать';
       state.recPerms=await api().rec_permissions();
       renderRec(); toast(state.recError.slice(0,90));
       return;
     }
+    if(room) toast('Пишу встречу с микрофона — голоса разберу после остановки');
     state.recError='';
     state.rec=res.session; state.rec._t=Date.now(); renderRec();
     clearInterval(recTicker);
