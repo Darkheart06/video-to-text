@@ -1,18 +1,26 @@
-"""Сравнение языковых моделей на своей настоящей записи.
+"""Сравнение моделей и настроек на своей настоящей записи.
 
 Обзоры моделей меряют код и математику на видеокартах — про то, как модель
 сводит ваш русский созвон на вашем маке, там нет ничего. Поэтому: берём уже
 разобранную запись, гоняем по её расшифровке несколько моделей и кладём ответы
-рядом, вместе со временем работы.
+рядом, вместе со временем работы и мерой конкретики.
+
+Конкретику меряем так: из расшифровки вынимаются все прозвучавшие числа и
+сроки, а потом считается, сколько из них дошло до саммари. Это не «качество»
+целиком, но именно то, что теряется первым при обобщении.
 
 Запуск:
     python tools/modeltest.py "~/Documents/Расшифровка записей/Созвон.result.json" \\
         gemma4:12b-mlx qwen3.5:9b-mlx
+
+    # то же самое, но одной моделью с разными настройками
+    python tools/modeltest.py <файл> qwen3.5:9b-mlx --variants
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -24,6 +32,48 @@ from app import merge, summarize  # noqa: E402
 from app.settings import Settings  # noqa: E402
 
 OUT_DIR = Path("/tmp/modeltest")
+
+# Наборы настроек для проверки «а если покрутить ручки».
+VARIANTS = {
+    "по частям": {"summary_chunk_chars": 24000, "llm_max_tokens": 6000,
+                  "summary_thorough": False},
+    "по частям+проверка": {"summary_chunk_chars": 24000, "llm_max_tokens": 6000,
+                           "summary_thorough": True},
+    "мелкими частями": {"summary_chunk_chars": 12000, "llm_max_tokens": 6000,
+                        "summary_thorough": False},
+    "мелкими+проверка": {"summary_chunk_chars": 12000, "llm_max_tokens": 6000,
+                         "summary_thorough": True},
+}
+
+# Что считаем конкретикой: числа и слова, которыми называют срок.
+NUMBER = re.compile(r"\d[\d\s   ]*(?:[.,]\d+)?%?")
+WHEN = ("завтра", "послезавтра", "сегодня", "понедельник", "вторник", "среду",
+        "четверг", "пятниц", "выходны", "следующей неделе", "конца недели",
+        "конца месяца", "квартал")
+
+
+def facts(text: str) -> set[str]:
+    """Числа и сроки, прозвучавшие в тексте."""
+    out = {re.sub(r"[\s   ]", "", m.group(0)) for m in NUMBER.finditer(text or "")}
+    out = {x for x in out if len(x) >= 2}          # одиночные цифры — шум
+    lowered = (text or "").lower()
+    out |= {word for word in WHEN if word in lowered}
+    return out
+
+
+def deadlines(document: str) -> tuple[int, int]:
+    """Сколько строк в таблицах со сроком и сколько всего строк."""
+    filled = total = 0
+    for line in (document or "").split("\n"):
+        if not line.strip().startswith("|") or set(line.strip()) <= set("-:| "):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 2 or cells[0].lower().startswith(("задача", "**итого")):
+            continue
+        total += 1
+        if cells[-1] and cells[-1] not in {"—", "-", "–", ""}:
+            filled += 1
+    return filled, total
 
 
 def turns_of(data: dict) -> list[merge.Turn]:
@@ -67,10 +117,20 @@ def main() -> int:
     print(f"  {len(turns)} реплик, {letters} знаков, "
           f"{float(meta.get('duration', 0)) / 60:.0f} мин разговора\n")
 
+    source_facts = facts(" ".join(t.text for t in turns))
+    print(f"  в расшифровке чисел и сроков: {len(source_facts)}\n")
+
+    runs = [(model, {}) for model in models]
+    if "--variants" in sys.argv:
+        runs = [(models[0], dict(options, __name__=name))
+                for name, options in VARIANTS.items()]
+
     rows = []
-    for model in models:
-        print(f"— {model}: считаю…", flush=True)
-        probe = Settings({**settings, "llm_backend": "ollama", "ollama_model": model})
+    for model, options in runs:
+        label = options.pop("__name__", model)
+        print(f"— {label}: считаю…", flush=True)
+        probe = Settings({**settings, "llm_backend": "ollama", "ollama_model": model,
+                          **options})
         started = time.time()
         try:
             summary = summarize.summarize(turns, probe, meta=meta, names=names_of(data))
@@ -81,20 +141,23 @@ def main() -> int:
             spent = time.time() - started
             body, note = "", str(exc)[:120]
 
-        target = OUT_DIR / f"{model.replace(':', '_').replace('/', '_')}.md"
+        kept = len(source_facts & facts(body)) if body else 0
+        filled, total = deadlines(body)
+        target = OUT_DIR / f"{label.replace(':', '_').replace('/', '_').replace(' ', '-')}.md"
         target.write_text(body or f"(ошибка: {note})", "utf-8")
-        rows.append((model, spent, len(body), len(summarize.parse_sections(body)) if body else 0,
-                     note, target))
-        print(f"  {spent:.0f} с, {len(body)} знаков{' — ' + note if note else ''}\n")
+        rows.append((label, spent, len(body), kept, filled, total, note, target))
+        print(f"  {spent:.0f} с, {len(body)} знаков, конкретики {kept}, "
+              f"сроков в таблицах {filled} из {total}"
+              f"{' — ' + note if note else ''}\n")
 
     print("Итого:")
-    print(f"  {'модель':22} {'время':>8} {'знаков':>8} {'разделов':>9}")
-    for model, spent, size, sections, note, _ in rows:
-        print(f"  {model:22} {spent:>7.0f}с {size:>8} {sections:>9}"
+    print(f"  {'вариант':22} {'время':>7} {'знаков':>8} {'конкретики':>11} {'сроков':>9}")
+    for label, spent, size, kept, filled, total, note, _ in rows:
+        print(f"  {label:22} {spent:>6.0f}с {size:>8} {kept:>11} {f'{filled}/{total}':>9}"
               f"{'  ' + note if note else ''}")
     print("\nОтветы целиком:")
-    for _, _, _, _, _, target in rows:
-        print(f"  {target}")
+    for row in rows:
+        print(f"  {row[-1]}")
     return 0
 
 

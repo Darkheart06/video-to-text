@@ -28,7 +28,10 @@ OLLAMA_PREFERENCE = [
 ]
 
 TEMPERATURE = 0.2
-MAX_TOKENS = 3000
+# Сколько модель может написать в ответ. Замер на 51-минутном созвоне: и
+# gemma4, и qwen3.5 упирались в 3000 и обрывали подробности, поэтому по
+# умолчанию вдвое больше. Меняется настройкой llm_max_tokens.
+MAX_TOKENS = 6000
 
 # Сколько держать модель в памяти между запросами. Без этого Ollama выгружает
 # её через пять минут, и следующий запрос снова ждёт загрузки нескольких
@@ -104,9 +107,11 @@ def list_openai_models(base_url: str, headers: dict | None = None,
 class OllamaBackend:
     kind = "ollama"
 
-    def __init__(self, url: str, model: str, num_ctx: int, timeout: int = 900) -> None:
+    def __init__(self, url: str, model: str, num_ctx: int, timeout: int = 900,
+                 max_tokens: int = MAX_TOKENS) -> None:
         self.url = (url or "http://127.0.0.1:11434").rstrip("/")
         self.num_ctx = int(num_ctx)
+        self.max_tokens = int(max_tokens or MAX_TOKENS)
         self.timeout = timeout
         self.model = self._pick(model)
         self.name = f"Ollama · {self.model}"
@@ -152,7 +157,7 @@ class OllamaBackend:
             "options": {
                 "temperature": TEMPERATURE,
                 "num_ctx": self.num_ctx,
-                "num_predict": MAX_TOKENS,
+                "num_predict": self.max_tokens,
             },
         }
         if think is not None:
@@ -210,7 +215,8 @@ class GgufBackend:
     kind = "gguf"
 
     def __init__(self, path: str, num_ctx: int, threads: int = 0,
-                 gpu_layers: int = -1) -> None:
+                 gpu_layers: int = -1, max_tokens: int = MAX_TOKENS) -> None:
+        self.max_tokens = int(max_tokens or MAX_TOKENS)
         if not path:
             raise LLMError(
                 "Не указан файл модели. Настройки → «Файл модели (.gguf)» → "
@@ -265,7 +271,7 @@ class GgufBackend:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=TEMPERATURE,
-                max_tokens=MAX_TOKENS,
+                max_tokens=self.max_tokens,
             )
         except Exception as exc:
             raise LLMError(f"Модель не смогла ответить: {exc}") from exc
@@ -280,7 +286,8 @@ class OpenAIBackend:
     kind = "openai"
 
     def __init__(self, base_url: str, model: str, api_key: str = "",
-                 timeout: int = 900) -> None:
+                 timeout: int = 900, max_tokens: int = MAX_TOKENS) -> None:
+        self.max_tokens = int(max_tokens or MAX_TOKENS)
         self.base = (base_url or "http://127.0.0.1:1234/v1").rstrip("/")
         self.timeout = timeout
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -304,7 +311,7 @@ class OpenAIBackend:
             data = _post_json(f"{self.base}/chat/completions", {
                 "model": self.model,
                 "temperature": TEMPERATURE,
-                "max_tokens": MAX_TOKENS,
+                "max_tokens": self.max_tokens,
                 "stream": False,
                 "messages": [
                     {"role": "system", "content": system},
@@ -327,20 +334,24 @@ def build(settings) -> OllamaBackend | GgufBackend | OpenAIBackend:
     """Собирает бэкенд по настройкам. При «auto» пробует по очереди."""
     choice = settings.get("llm_backend", "auto")
     ctx = int(settings.get("llm_num_ctx", 32768))
+    limit = int(settings.get("llm_max_tokens", MAX_TOKENS) or MAX_TOKENS)
 
     def gguf():
         return GgufBackend(settings.get("gguf_path", ""), ctx,
                            threads=int(settings.get("num_threads", 0)),
-                           gpu_layers=int(settings.get("gguf_gpu_layers", -1)))
+                           gpu_layers=int(settings.get("gguf_gpu_layers", -1)),
+                           max_tokens=limit)
 
     def ollama():
         return OllamaBackend(settings.get("ollama_url", ""),
-                             settings.get("ollama_model", "auto"), ctx)
+                             settings.get("ollama_model", "auto"), ctx,
+                             max_tokens=limit)
 
     def openai():
         return OpenAIBackend(settings.get("openai_base_url", ""),
                              settings.get("openai_model", "auto"),
-                             settings.get("openai_api_key", ""))
+                             settings.get("openai_api_key", ""),
+                             max_tokens=limit)
 
     if choice == "gguf":
         return gguf()

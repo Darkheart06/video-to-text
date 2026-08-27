@@ -7,6 +7,7 @@ import threading
 import traceback
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -62,6 +63,15 @@ class Job:
                 for t in self.turns
             ],
         }
+
+
+def _recorded_at(source: str) -> str:
+    """Когда запись сделана — по времени файла, если оно вообще есть."""
+    try:
+        stamp = Path(source).stat().st_mtime
+    except OSError:
+        return ""
+    return datetime.fromtimestamp(stamp).strftime("%Y-%m-%d %H:%M")
 
 
 class Runner:
@@ -188,6 +198,9 @@ class Runner:
                 "duration": info.duration or transcript.duration,
                 "language": transcript.language,
                 "speakers": len(job.speakers) or "—",
+                # Дата самой записи, а не разбора: файл могли принести через
+                # неделю, а «завтра» в разговоре означало завтра после встречи.
+                "recorded_at": _recorded_at(job.source),
                 "processed_at": render.now_stamp(),
                 "models": f"{transcript.model} ({transcript.backend})",
             }

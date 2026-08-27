@@ -895,6 +895,9 @@ class Stenographer:
             "duration": size / SAMPLE_RATE,
             "language": self.settings["language"],
             "speakers": len(set(keys.values())) or 1,
+            # Метка начала записи «2026-08-27 13-32» — из неё берётся дата,
+            # к которой привязаны «завтра» и «до пятницы» в задачах.
+            "recorded_at": session.stamp or render.now_stamp(),
             "processed_at": render.now_stamp(),
             "models": "запись встречи" if room else "запись созвона",
         }

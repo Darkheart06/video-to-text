@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import compute, llm, presets
+from . import compute, dates, llm, presets
 from .llm import LLMError  # noqa: F401  — переэкспорт для остальных модулей
 from .merge import Turn
 from .presets import Preset
@@ -24,7 +24,10 @@ SYSTEM = (
     "записей. Пиши по-русски, по существу, деловым языком, без воды и без "
     "вступлений вроде «в этом тексте». Опирайся только на предоставленную "
     "расшифровку: ничего не додумывай и не добавляй фактов от себя. Если "
-    "информации для раздела нет — так и напиши."
+    "информации для раздела нет — так и напиши.\n"
+    "Числа, суммы, проценты, сроки, названия и имена переноси дословно, как они "
+    "прозвучали. Обобщение там, где в разговоре была конкретика, — это ошибка: "
+    "«скидка до 13% при 10 000 XP» полезно, «предусмотрены скидки» бесполезно."
 )
 
 
@@ -111,10 +114,29 @@ def summarize(turns: list[Turn], settings: Settings, meta: dict | None = None,
         final = backend.chat(system, _final_prompt(
             preset, header, None, notes="\n\n---\n\n".join(notes)))
 
+    # Второй заход: что важного не попало в документ. Модель может только
+    # дописать пункт, переписать готовое ей не дают. Нужен весь текст сразу,
+    # поэтому запускаем, только если расшифровка с документом влезают в
+    # контекст: примерно два знака на токен для русского, с запасом на ответ.
+    room = int(settings.get("llm_num_ctx", 32768)) * 2 - 8000
+    if settings.get("summary_thorough", True) and len(text) + len(final) < room:
+        if progress:
+            progress(0.9, f"Проверяю, не упущено ли важное · {backend.name}")
+        try:
+            final = add_missed(final, preset, missed_items(backend, preset, text, final))
+        except Exception:
+            pass
+
     # Арифметику считаем сами: модель в ней ошибается уверенно и незаметно.
     # Проверяем любой профиль — цены могут прозвучать и на обычной встрече.
     result = compute.process(final, title=meta.get("title", ""))
     final, tables = result.markdown, result.tables
+
+    # «Завтра» через неделю ничего не значит, а дату записи мы знаем — значит,
+    # можем посчитать. Считает код: даты модели путают так же, как суммы.
+    if settings.get("resolve_dates", True):
+        final = dates.process(final, dates.parse_stamp(meta.get("recorded_at", ""))
+                              or dates.parse_stamp(meta.get("processed_at", "")))
 
     if progress:
         progress(1.0, "Готово")
@@ -174,6 +196,98 @@ def clean_title(answer: str) -> str:
     return line[:60]
 
 
+# --- проверка на пропущенное -------------------------------------------------
+
+MISSED_SYSTEM = (
+    "Ты сверяешь готовый документ с расшифровкой и ищешь только то, что в "
+    "документ не попало. Ничего не переписываешь и не повторяешь: твой ответ — "
+    "список недостающего, строками вида «Раздел | пункт». Раздел бери из списка "
+    "заголовков документа, слово в слово. Если всё существенное на месте, ответь "
+    "одной строкой: ВСЁ НА МЕСТЕ."
+)
+
+
+def missed_items(backend, preset: Preset, text: str, document: str) -> list[tuple[str, str]]:
+    """Спрашивает у модели, что важного не попало в документ.
+
+    Отдельный проход, а не переписывание: так модель может только добавить, но
+    не испортить и не потерять уже собранное. Сравнение gemma и qwen на одном
+    созвоне показало, что каждая замечает своё — значит, и одна модель со
+    второго захода видит то, что пропустила с первого.
+    """
+    titles = [title for _, title in preset.sections]
+    prompt = f"""РАСШИФРОВКА:
+{text}
+
+ГОТОВЫЙ ДОКУМЕНТ:
+{document}
+
+Разделы документа: {", ".join(titles)}.
+
+Что важного из расшифровки не попало в документ? Считаются: названные числа,
+суммы, проценты, сроки, условия, договорённости, задачи, возражения и риски.
+Не считается: пересказ того, что уже написано другими словами.
+
+Ответ — не больше десяти строк вида «Раздел | пункт», без пояснений."""
+    answer = backend.chat(MISSED_SYSTEM, prompt)
+    if "ВСЁ НА МЕСТЕ" in answer.upper():
+        return []
+
+    known = {title.lower(): title for title in titles}
+    out: list[tuple[str, str]] = []
+    for raw in answer.split("\n"):
+        line = re.sub(r"^[\s\-*•\d.)]+", "", raw).strip()
+        # Строка markdown-таблицы — это не «раздел | пункт», а кусок документа,
+        # который модель зачем-то процитировала.
+        if "|" not in line or raw.strip().startswith("|") or line.count("|") > 2:
+            continue
+        head, _, body = line.partition("|")
+        head = re.sub(r"[*_`#]+", "", head).strip().lower()
+        body = body.strip(" -–—*_`")
+        if len(head) < 3 or len(body) < 8:
+            continue
+        title = known.get(head)
+        if title is None:
+            # Частичное совпадание — но только осмысленное: пустой или слишком
+            # короткий заголовок иначе «подходит» к любому разделу.
+            title = next((known[k] for k in known if k in head or head in k), None)
+        if title is None:
+            continue
+        out.append((title, body))
+    return out[:10]
+
+
+def add_missed(document: str, preset: Preset, items: list[tuple[str, str]]) -> str:
+    """Дописывает найденное в конец нужных разделов, не трогая остальное."""
+    if not items:
+        return document
+    # Ключи сравниваем без учёта регистра: заголовок в документе и название
+    # раздела в ответе модели совпадают не всегда буква в букву.
+    by_title: dict[str, list[str]] = {}
+    for title, body in items:
+        by_title.setdefault(title.strip().lower(), []).append(body)
+
+    lines = document.split("\n")
+    out: list[str] = []
+    current: str | None = None
+
+    def flush() -> None:
+        for body in by_title.pop((current or "").lower(), []):
+            # Ставим в конец раздела, отдельным пунктом: видно, что добавлено.
+            out.append(f"- {body}")
+
+    for line in lines:
+        heading = re.match(r"^\s*##\s+(?!#)(.+?)\s*$", line)
+        if heading:
+            flush()
+            if out and out[-1].strip():
+                out.append("")
+            current = re.sub(r"[*_`:]+", "", heading.group(1)).strip()
+        out.append(line)
+    flush()
+    return "\n".join(out)
+
+
 def _system(preset: Preset) -> str:
     return SYSTEM + ("\n\n" + preset.rules.strip() if preset.rules.strip() else "")
 
@@ -195,12 +309,14 @@ def _map_prompt(preset: Preset, header: str, part: str, idx: int, total: int) ->
 
 Ниже — фрагмент {idx} из {total} расшифровки записи.
 
-Выпиши по этому фрагменту сжатые заметки — всё, что понадобится, чтобы потом
+Выпиши по этому фрагменту подробные заметки — всё, что понадобится, чтобы потом
 собрать итоговый документ с такими разделами:
 {wanted}
 
-Обязательно сохраняй дословно все цифры, суммы, ставки, количества, даты,
-имена и названия. Ничего не выдумывай: чего в фрагменте нет — того не пиши.
+Не сокращай и не обобщай: эти заметки — единственное, что дойдёт до итогового
+документа, сам фрагмент больше никто не увидит. Обязательно сохраняй дословно
+все цифры, суммы, ставки, количества, даты, сроки, имена и названия. Ничего не
+выдумывай: чего в фрагменте нет — того не пиши.
 
 РАСШИФРОВКА (фрагмент {idx}/{total}):
 {part}"""
@@ -222,6 +338,9 @@ def _final_prompt(preset: Preset, header: str, text: str | None,
 {preset.template}
 
 Требования: только факты из источника; конкретные формулировки вместо общих.
+Срок — это не только дата: «завтра», «до пятницы», «на следующей неделе»,
+«к концу месяца» — это тоже сроки, переноси их как сказано. Прочерк ставь
+только там, где срок или ответственный действительно не прозвучали.
 {rules}
 Не добавляй никаких разделов, кроме перечисленных, и никакого текста до первого
 заголовка."""

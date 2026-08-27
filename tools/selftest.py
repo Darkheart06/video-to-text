@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import (  # noqa: E402
     asr,
     compute,
+    dates,
     diarize,
     edits,
     library,
@@ -484,7 +485,67 @@ def main() -> int:
     failures += not check("имя занято — берём соседнее",
                           record.free_stem(stemdir, "Тема 2026") == "Тема 2026 (2)")
 
-    print("\n13. Ошибки на плохом входе")
+    print("\n13. Сроки словами превращаются в даты")
+    from datetime import date as _date
+    base = _date(2026, 8, 27)          # четверг
+    for said, want in [("завтра", "28 августа"), ("послезавтра", "29 августа"),
+                       ("до пятницы", "28 августа"), ("к понедельнику", "31 августа"),
+                       ("к концу месяца", "31 августа"),
+                       ("на следующей неделе", "31 августа")]:
+        got = dates.resolve(said, base)
+        failures += not check(f"«{said}»", want in got, got)
+    failures += not check("названную дату второй раз не пишем",
+                          dates.resolve("3 сентября", base) == "3 сентября")
+    failures += not check("прочерк остаётся прочерком",
+                          dates.resolve("—", base) == "—")
+
+    table = ("## Задачи\n| Задача | Кто | Срок |\n|---|---|---|\n"
+             "| Макеты | Ира | завтра |\n| Смета | Дима | — |\n\n"
+             "В тексте до пятницы дату не ставим.")
+    fixed = dates.process(table, base)
+    failures += not check("дата попала в колонку срока",
+                          "завтра (28 августа)" in fixed)
+    failures += not check("связный текст не тронут",
+                          "В тексте до пятницы дату не ставим." in fixed)
+    failures += not check("без даты записи ничего не меняется",
+                          dates.process(table, None) == table)
+
+    print("\n14. Проверка «что упущено»")
+    doc = ("## Краткое саммари\n- Обсудили релиз.\n\n## Решения\n- Режем онбординг.")
+
+    class FakeModel:
+        def __init__(self, answer):
+            self.answer = answer
+
+        def chat(self, system, prompt):
+            return self.answer
+
+    found = summarize.missed_items(
+        FakeModel("- Решения | Скидка 13% при 10 000 XP\nмусор без разделителя"),
+        presets.MEETING, "расшифровка", doc)
+    failures += not check("разобран только осмысленный ответ", len(found) == 1,
+                          str(found))
+    # Модель любит процитировать кусок документа вместо списка недостающего.
+    failures += not check(
+        "кусок таблицы за ответ не принимаем",
+        summarize.missed_items(
+            FakeModel("| Задача | Кто | Срок |\n|---|---|---|\n| Тексты | Маркетинг | — |"),
+            presets.MEETING, "t", doc) == [])
+    failures += not check(
+        "строка без названия раздела отбрасывается",
+        summarize.missed_items(FakeModel(" | что-то важное"), presets.MEETING, "t", doc) == [])
+    grown = summarize.add_missed(doc, presets.MEETING, found)
+    failures += not check("дописано в нужный раздел",
+                          grown.index("Скидка 13%") > grown.index("## Решения"))
+    failures += not check("прежний текст на месте", "Режем онбординг." in grown)
+    failures += not check("«всё на месте» — ничего не трогаем",
+                          summarize.missed_items(FakeModel("ВСЁ НА МЕСТЕ"),
+                                                 presets.MEETING, "t", doc) == [])
+    failures += not check("чужой раздел отбрасывается",
+                          summarize.add_missed(doc, presets.MEETING,
+                                               [("Небывалый раздел", "мусор")]) == doc)
+
+    print("\n15. Ошибки на плохом входе")
     bad = runner.submit("/tmp/нет-такого-файла.mp4")
     for _ in range(40):
         if bad.status not in ("pending", "running"):
