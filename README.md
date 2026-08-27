@@ -213,6 +213,50 @@ Recordings are named after what was discussed rather than «Созвон 2026-08
 front of the timestamp — «Логика геймификации 2026-08-27 13-32» — so recordings
 still sort by time. If the model does not answer, the old name stays.
 
+### Deadlines become dates
+
+In a conversation deadlines are spoken, not written: “by tomorrow”, “end of the
+month”, “on Friday”. A week later none of that means anything in a task list, so
+the date of the recording is used to work out what was meant and the answer is
+appended in brackets — «завтра (28 августа)». The words that were said stay
+where they were.
+
+The arithmetic is done in Python. Models are as confidently wrong about dates as
+they are about multiplication, and only in table columns that are about
+deadlines — inside prose, “by Friday” may be a quote rather than a commitment.
+
+### How many voices there are
+
+After separation the app compares the voices against each other and merges the
+clusters that turn out to be the same person. The question is what counts as
+“the same”, and a number in the settings cannot answer it: how similar two
+fragments of one person are depends on the microphone, the room and the
+connection — on one recording it is 0.95, on another 0.70.
+
+So the reference is taken from the recording itself. Each voice's speech is cut
+in two, the halves are compared, and “how similar is a person to themselves
+*here*” becomes the reference; the threshold sits a margin below it. That number
+also says how far the voice prints can be trusted at all: at 0.95 they are
+steady and the threshold can be raised close to it, at 0.70 different people
+easily reach 0.8 and merging must stay timid. **The threshold therefore only
+goes up** — never below `speaker_merge_similarity` — so at worst separation
+behaves as it did before, and on a clean recording it is more careful.
+
+The halves are dealt alternately rather than split by time: if a cluster
+actually holds two people, both land in both halves, and the error again goes
+the safe way.
+
+`speaker_merge_auto: false` goes back to the fixed `speaker_merge_similarity`.
+If you know the number of participants, say so — **Сколько спикеров** turns all
+of this off and is always more accurate than guessing.
+
+Check it on your own recordings, with or without the right answer:
+
+```bash
+python tools/speakertest.py "~/Documents/Расшифровка записей/Созвон.wav" --было 4
+python tools/speakertest.py "~/Documents/Расшифровка записей" --список правда.txt
+```
+
 ### Archive
 
 The panel on the left lists everything already processed — files and recorded
@@ -258,7 +302,8 @@ The **Настройки** button, or `config.json` next to the project.
   compares the voices against each other anyway and merges clusters that turned
   out to be the same person (`speaker_merge_similarity`, `0.78` by default;
   `1.0` disables it). On a real half-hour meeting this took 28 “speakers” down
-  to seven.
+  to seven. The threshold is then tightened per recording — see
+  [How many voices there are](#how-many-voices-there-are).
 - **Размер контекста** — how much text the model holds at once.
 
 ## How long it takes
@@ -288,6 +333,8 @@ recordings.
 ```bash
 python tools/selftest.py sample.mp4   # whole pipeline, stubbed ASR and LLM
 python tools/uicheck.py               # interface in a headless browser
+python tools/speakertest.py rec.m4a --было 4     # how many voices, and how far off
+python tools/modeltest.py rec.result.json qwen3.5:9b-mlx gemma4:12b-mlx
 ruff check .
 ```
 

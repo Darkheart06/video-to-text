@@ -837,6 +837,10 @@ function settingsHTML(){
       <input type="number" step="0.05" min="0.2" max="0.95" data-k="cluster_threshold" value="${s.cluster_threshold}">
       <div class="hint">Меньше — больше спикеров. Если голоса склеились, уменьшите до 0.5; если один человек разбился на нескольких — поднимите до 0.7.</div>
     </div>
+    <div class="row"><input type="checkbox" data-k="speaker_merge_auto" ${s.speaker_merge_auto?'checked':''}><span>Подбирать похожесть голосов по записи</span></div>
+    <div class="hint">После разделения похожие голоса сводятся в одного человека. Насколько «похожие» — приложение
+      меряет по самой записи: режет речь каждого голоса пополам и смотрит, насколько человек похож сам на себя
+      здесь и сейчас. Порог от этого только строже, чем ${s.speaker_merge_similarity}, — хуже не станет.</div>
   </div>
   <div class="group"><h3>Что готовить из записи</h3>
     <div class="field"><label>Профиль</label>

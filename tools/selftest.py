@@ -207,6 +207,20 @@ def main() -> int:
                           f"{len(FakeOllama.calls)} запросов к модели")
     failures += not check("без предупреждений", not job.warnings, "; ".join(job.warnings))
 
+    # Порог сведения голосов считается по самой записи — проверяем правило,
+    # а не сам звук: ниже настроенного числа порог опускаться не должен.
+    failures += not check("порог по записи: устойчивые голоса — строже",
+                          diarize.auto_limit([0.97, 0.96, 0.95], {}) > 0.78,
+                          f"{diarize.auto_limit([0.97, 0.96, 0.95], {})}")
+    failures += not check("порог по записи: шумные голоса — как настроено",
+                          diarize.auto_limit([0.68, 0.71, 0.78], {}) == 0.78)
+    failures += not check("порог по записи: мерить не на чем — не выдумываем",
+                          diarize.auto_limit([0.9], {}) is None)
+    halves = diarize.halves([diarize.SpeakerSpan(i, i + 2, 0) for i in range(0, 20, 2)])
+    failures += not check("речь делится пополам вперемешку",
+                          len(halves[0]) == len(halves[1]) == 5
+                          and not {id(s) for s in halves[0]} & {id(s) for s in halves[1]})
+
     print("\n4. Выходные файлы")
     for path in job.files.values():
         p = Path(path)

@@ -122,6 +122,39 @@ similar remaining pair dropping from 0.97 to 0.58.
 Refinement is skipped when the user states the speaker count explicitly — then
 the count is theirs to decide.
 
+### Where the threshold comes from
+
+“Similar enough” was a number in the settings, and a number cannot cover it. How
+alike two prints of the *same* person are depends on the recording as a whole:
+the microphone, the room, the codec, how much each person actually says. On the
+half-hour meeting above, one person's clusters matched each other at 0.94–0.97.
+On sherpa-onnx's own four-speaker sample — half a minute of speech in total —
+a person matches themselves at 0.68–0.78 while two *different* speakers score
+0.83. The same 0.78 is far too strict in the first case and disastrous in the
+second.
+
+So the reference is measured per recording (`diarize.self_similarity`): each
+cluster's speech is dealt alternately into two halves and the halves are
+compared. That yields “how similar is a person to themselves here”, and the
+threshold is set a margin below the lower quartile of those values.
+
+Two safeguards, because this measurement can be wrong:
+
+- **The threshold only moves up.** A low reference means the prints are noisy —
+  exactly when merging is dangerous, as the four-speaker sample shows. Dropping
+  the threshold there would merge different people, so the configured
+  `speaker_merge_similarity` is a floor, not a starting point, and 0.92 is the
+  ceiling.
+- **Halves are dealt alternately, not split by time.** If a cluster really holds
+  two people, a time split makes the halves look like different people and pulls
+  the reference down; dealing them alternately puts both people in both halves
+  and pulls it up — which, given the floor above, means the failure mode is a
+  stricter threshold rather than a looser one.
+
+Clusters with under 12 seconds of speech are left out of the measurement: half
+of a short cluster is too little audio for a print worth comparing. When nothing
+can be measured, the configured number is used unchanged.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three

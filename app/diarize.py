@@ -193,6 +193,69 @@ def voice_print(extractor, audio: np.ndarray, spans: list[SpeakerSpan],
     return vector / norm if norm else None
 
 
+def halves(spans: list[SpeakerSpan]) -> tuple[list[SpeakerSpan], list[SpeakerSpan]]:
+    """Делит речь одного голоса на две половины примерно поровну.
+
+    Не «первая половина встречи и вторая», а вперемешку: если в кластер попали
+    два человека, при делении по времени половины окажутся непохожими, и мы
+    сочтём, что в этой записи даже один человек сам на себя не похож. При
+    чередовании оба попадут в обе половины, и ошибка уйдёт в безопасную
+    сторону — порог получится строже, а не мягче.
+    """
+    one: list[SpeakerSpan] = []
+    other: list[SpeakerSpan] = []
+    for n, span in enumerate(sorted(spans, key=lambda s: -(s.end - s.start))):
+        (one if n % 2 == 0 else other).append(span)
+    return one, other
+
+
+def self_similarity(extractor, audio: np.ndarray,
+                    groups: dict[int, list[SpeakerSpan]],
+                    minimum: float = 12.0) -> list[float]:
+    """Насколько человек похож сам на себя — в этой самой записи.
+
+    Микрофон, комната, связь и то, как человек говорит именно сегодня, сдвигают
+    похожесть целиком: на одной записи два куска речи одного человека дают 0.95,
+    на другой — 0.7. Поэтому меряем это прямо здесь: режем речь каждого голоса
+    пополам и сравниваем половины между собой.
+    """
+    out: list[float] = []
+    for items in groups.values():
+        if sum(s.end - s.start for s in items) < minimum:
+            continue
+        one, other = halves(items)
+        first = voice_print(extractor, audio, one, seconds=30.0)
+        second = voice_print(extractor, audio, other, seconds=30.0)
+        if first is None or second is None:
+            continue
+        out.append(float(first @ second))
+    return out
+
+
+def auto_limit(values: list[float], settings) -> float | None:
+    """Порог сведения, посчитанный по самой записи.
+
+    «Сам на себя» — это заодно и оценка того, насколько вообще можно доверять
+    сравнению голосов в этой записи. Высокая (0.95) — отпечатки устойчивые, и
+    порог можно поднять почти к ней: настоящий один человек, разорванный на два
+    кластера, всё равно наберёт больше. Низкая (0.7) — короткие реплики, плохой
+    микрофон, отпечатки шумят; в такой записи разные люди легко набирают 0.8, и
+    смело сводить голоса нельзя.
+
+    Поэтому порог только растёт: ниже настроенного числа он не опускается. Так
+    сведение в худшем случае работает как раньше, а на хорошей записи —
+    аккуратнее. Берём не среднее, а нижнюю четверть: порог должен пережить
+    самого «неровного» из говорящих, иначе его разорвёт надвое.
+    """
+    if len(values) < 2:
+        return None
+    ordered = sorted(values)
+    base = ordered[round(0.25 * (len(ordered) - 1))]
+    step = float(settings.get("speaker_merge_margin", 0.06))
+    fixed = float(settings.get("speaker_merge_similarity", 0.78))
+    return min(0.92, max(fixed, base - step))
+
+
 def refine(spans: list[SpeakerSpan], audio: np.ndarray,
            settings, progress: Progress | None = None) -> list[SpeakerSpan]:
     """Сводит кластеры, которые на самом деле один и тот же человек.
@@ -207,6 +270,11 @@ def refine(spans: list[SpeakerSpan], audio: np.ndarray,
     одной похож на **каждый** кластер другой. Иначе получается цепочка —
     A похож на B, B на C — и в один «голос» съезжается половина встречи,
     хотя A и C совсем разные люди.
+
+    Насколько «похоже» — считаем по самой записи (см. self_similarity), а не
+    берём число из настроек: на одной записи два куска речи одного человека
+    похожи на 0.95, на другой — на 0.7, и один и тот же порог там окажется то
+    слишком строгим, то слишком мягким.
 
     Заодно обрывки в пару секунд отдаём ближайшему голосу: отдельный
     «Спикер 6» ради одного «угу» только мешает читать.
@@ -240,6 +308,20 @@ def refine(spans: list[SpeakerSpan], audio: np.ndarray,
     # по соседям во времени.
     speechless = [k for k, v in prints.items() if v is None]
     prints = {k: v for k, v in prints.items() if v is not None}
+
+    # Порог берём из самой записи, а не из настроек: см. self_similarity.
+    if settings.get("speaker_merge_auto", True) and len(prints) > 1:
+        try:
+            measured = self_similarity(extractor, audio,
+                                       {k: groups[k] for k in prints})
+        except Exception:
+            measured = []
+        found = auto_limit(measured, settings)
+        if found is not None:
+            limit = found
+            if progress:
+                progress(0.5, f"Голоса этой записи: порог {limit:.2f}")
+
     similarity = {(a, b): float(prints[a] @ prints[b])
                   for a in prints for b in prints if a < b}
 
