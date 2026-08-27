@@ -477,6 +477,7 @@ python tools/speakertest.py "~/Documents/Расшифровка записей" 
 | `tools/recover.py` | сборка прерванной записи из рабочей папки |
 
 Почему именно так — [docs/architecture.ru.md](docs/architecture.ru.md).
+Куда двигаться дальше — [docs/roadmap.ru.md](docs/roadmap.ru.md).
 
 ## Разработка
 

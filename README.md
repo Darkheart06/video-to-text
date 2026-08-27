@@ -356,8 +356,9 @@ file → ffmpeg (mono 16 kHz) → Whisper       (text + word timings)
                             → .md / .csv / .txt / .srt / .json
 ```
 
-[docs/architecture.md](docs/architecture.md) explains the decisions behind that
-line — why sherpa-onnx and not pyannote.audio, why the summary is markdown and
+[docs/roadmap.md](docs/roadmap.md) lays out what comes next and what breaks at
+scale. [docs/architecture.md](docs/architecture.md) explains the decisions behind
+that line — why sherpa-onnx and not pyannote.audio, why the summary is markdown and
 not JSON, why arithmetic never touches the model, and what was measured on real
 recordings.
 
