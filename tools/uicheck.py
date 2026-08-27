@@ -193,10 +193,32 @@ window.pywebview = {api: {
 """
 
 
+DOCS_DIR = ROOT / "docs" / "screenshots"
+
+
+def docs_shot(page, scheme: str, want: str, name: str) -> None:
+    """Кладёт картинку в docs/screenshots — но только с флагом --docs.
+
+    Снимки для README снимаются здесь же, в проверке интерфейса: иначе они
+    отстают от кода на несколько версий, как и вышло с 1.0.0.
+    """
+    if "--docs" not in sys.argv or scheme != want:
+        return
+    # Прибираемся перед съёмкой: уводим курсор от кнопок и гасим всплывашку,
+    # оставшуюся от предыдущего клика, — на картинке для README она закрывает
+    # половину таблицы.
+    page.mouse.move(2, 2)
+    page.evaluate("document.querySelector('#toast')?.classList.remove('show')")
+    page.wait_for_timeout(400)
+    DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(DOCS_DIR / name))
+
+
 def main() -> int:
     from playwright.sync_api import sync_playwright
 
-    out_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/uicheck")
+    plain = [a for a in sys.argv[1:] if not a.startswith("--")]
+    out_dir = Path(plain[0] if plain else "/tmp/uicheck")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     settings = {
@@ -280,6 +302,7 @@ def main() -> int:
                     errors.append(f"{scheme}: в панели записи нет «{probe}»")
             if not page.locator(".rec-dot").count():
                 errors.append(f"{scheme}: нет индикатора идущей записи")
+            docs_shot(page, scheme, "light", "main.png")
 
             # --- разметка голосов по ходу ---
             if page.locator(".person").count() < 2:
@@ -328,6 +351,7 @@ def main() -> int:
             if "56 000" not in (page.text_content("#pane-demo9999") or ""):
                 errors.append(f"{scheme}: в смете нет итога")
             page.screenshot(path=str(out_dir / f"7-estimate-{scheme}.png"), full_page=True)
+            docs_shot(page, scheme, "light", "estimate.png")
             page.evaluate("state.jobs.delete('demo9999'); render();")
             page.wait_for_timeout(100)
 
@@ -415,6 +439,7 @@ def main() -> int:
             page.click("#btn-pick-top")
             page.wait_for_timeout(120)
             page.screenshot(path=str(out_dir / f"9-library-{scheme}.png"))
+            docs_shot(page, scheme, "dark", "archive-dark.png")
             # удаление в два клика: первый спрашивает, второй убирает
             page.click('[data-libdel="lib3"]')
             page.wait_for_timeout(150)
