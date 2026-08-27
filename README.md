@@ -1,4 +1,4 @@
-# Расшифровка записей — local transcription for macOS
+# Transcripts — local transcription for macOS
 
 Turn a recording of a meeting, call or voice note into a timestamped transcript
 with speaker labels, a summary, a brief, action items and decisions — entirely on
@@ -55,7 +55,8 @@ bash install.sh
 The script walks through the steps and asks before every large download: it
 checks Python and ffmpeg, creates a `.venv`, installs the libraries, fetches the
 speaker-separation models, helps you set up a language model and builds
-`Расшифровка.app`.
+`Расшифровка.app` — the bundle keeps its Russian name for now, the window inside
+is English.
 
 ### Giving it to someone without a terminal
 
@@ -70,8 +71,8 @@ be opened once with **right click → Open**.
 
 ## Connecting a language model
 
-Three ways, switched under **Настройки → Как подключена модель**. The
-“Проверить связь” button really calls the model and shows its answer.
+Three ways, switched under **Settings → How the model is connected**. The
+“Test the connection” button really calls the model and shows its answer.
 
 **1. Ollama** — the path of least resistance:
 
@@ -127,13 +128,30 @@ For 24 GB: `qwen3.5:9b-mlx` — same speed, more specifics, seven gigabytes less
 memory. Check it on your own recording:
 
 ```bash
-python tools/modeltest.py "~/Documents/Расшифровка записей/Созвон.result.json" \
+python tools/modeltest.py "~/Documents/Transcripts/Call.result.json" \
     gemma4:12b-mlx qwen3.5:9b-mlx
 ```
 
+## Two languages
+
+The interface and the documents speak English or Russian, and they are set
+separately — the window can be English while the summaries stay Russian, because
+those are two different questions. The window is for whoever presses the buttons;
+the document language is for whoever will read the brief, and it decides how the
+model writes, what the output folder is called (`Transcripts` or «Расшифровка
+записей») and whether the totals row says “Total” or «Итого».
+
+On first launch both follow the system: a Russian Mac gets a Russian window,
+anything else gets English. **Settings → Language** switches them at any time,
+and the window redraws without a restart. The archive reads both folders, so
+nothing is lost when you switch.
+
+Recognition is a separate thing: **Recording language** in the settings is the language spoken
+in the recording, and Whisper handles far more than these two.
+
 ## Using it
 
-Drop a file into the window, or press **Выбрать запись**. Pick at the top what
+Drop a file into the window, or press **Choose a recording**. Pick at the top what
 should come out of the recording, and watch the stages go by; at the end you get
 tabs with the sections of the chosen profile plus the transcript.
 
@@ -141,18 +159,18 @@ tabs with the sections of the chosen profile plus the transcript.
 
 | Profile | What you get |
 |---|---|
-| **Встреча или созвон** | summary, brief, decisions, tasks, risks |
-| **Смета по надиктованному** | a table of work items with rates and a total |
-| **Голосовая заметка** | thoughts by topic, tasks, numbers that were said |
-| **Интервью с пользователем** | pains, verbatim quotes, conclusions |
-| **Свои правила** | whatever you describe in your own words |
+| **Meeting or call** | summary, brief, decisions, tasks, risks |
+| **Estimate from dictation** | a table of work items with rates and a total |
+| **Voice note** | thoughts by topic, tasks, numbers that were said |
+| **User interview** | pains, verbatim quotes, conclusions |
+| **Your own rules** | whatever you describe in your own words |
 
 For the estimate, just dictate it: “demolition — twelve hours at three thousand,
 wall chasing — eight hours at twenty-five hundred”. The model only sorts that
 into columns; the multiplication and the total are done in Python, and a
-`.таблицы.csv` lands next to the summary.
+`.tables.csv` lands next to the summary.
 
-With **Свои правила** you write the instructions in one field and a document
+With **Your own rules** you write the instructions in one field and a document
 template in the other. Every `##` heading in the template becomes a tab in the
 window and a section in the file.
 
@@ -160,37 +178,37 @@ window and a section in the file.
 
 ### Recording a call
 
-Press **Начать запись созвона** (the app also offers this by itself when it
+Press **Record a call** (the app also offers this by itself when it
 notices the microphone is busy). macOS will ask for Screen Recording permission —
 that is what gives access to the system audio; the button in the app opens the
 right settings pane directly.
 
 Your microphone and the system output are captured as two separate tracks, so
 “me” and “them” never get confused with each other. While the call is running,
-everyone on the other side is simply “Собеседник”; when you stop, the system
-track is separated by voice and the finished transcript has “Собеседник 1”,
-“Собеседник 2” and so on.
+everyone on the other side is simply “Them”; when you stop, the system
+track is separated by voice and the finished transcript has “Person 1”,
+“Person 2” and so on (or «Собеседник 1» in Russian).
 
 ### Naming voices while you record
 
 A row of participants appears above the live transcript. Type names into the
-“+ имя” field, then mark who is speaking with one click — press a name to tag the
+“+ name” field, then mark who is speaking with one click — press a name to tag the
 latest line, or click a line and pick the person. Keys 1–9 do the same without
 reaching for the mouse.
 
 One tagged line per person is enough. When the recording stops, the app compares
 the tagged speech against everything else and labels the whole transcript with
-real names instead of “Спикер 2”.
+real names instead of “Speaker 2”.
 
 The comparison runs per line rather than against an averaged cluster voice, and
 what decides it is the gap between the best and second-best match, not the
 absolute similarity: on a real recording a speech fragment matched its own
 cluster's average at 0.52 while a different person scored 0.40. No gap, no name —
-“Спикер 2” beats someone else's name on someone else's words.
+“Speaker 2” beats someone else's name on someone else's words.
 
 ### Recording a room meeting
 
-“Записать встречу” sits next to the call button. It captures the microphone only
+“Record a meeting” sits next to the call button. It captures the microphone only
 and needs no Screen Recording permission — around a table every voice reaches the
 same microphone anyway. When it stops, the recording is separated by voice like
 any other file, and names tagged during the meeting are applied throughout.
@@ -198,7 +216,7 @@ any other file, and names tagged during the meeting are applied throughout.
 ### Editing the summary
 
 Models sometimes drag in things that were not discussed, or an action item nobody
-assigned. The **«Править»** button above the text turns on pointwise editing:
+assigned. The **Edit** button above the text turns on pointwise editing:
 a cross removes a bullet or a table row, and the text itself is editable in place.
 Saving rewrites the summary and the tables, and totals in estimates are
 recalculated.
@@ -208,9 +226,9 @@ derived document changes.
 
 ### Recording titles
 
-Recordings are named after what was discussed rather than «Созвон 2026-08-27
-13-32». The same model that writes the summary suggests the title, and it goes in
-front of the timestamp — «Логика геймификации 2026-08-27 13-32» — so recordings
+Recordings are named after what was discussed rather than “Call 2026-08-27
+13-32”. The same model that writes the summary suggests the title, and it goes in
+front of the timestamp — “Gamification logic 2026-08-27 13-32” — so recordings
 still sort by time. If the model does not answer, the old name stays.
 
 ### Deadlines become dates
@@ -218,7 +236,7 @@ still sort by time. If the model does not answer, the old name stays.
 In a conversation deadlines are spoken, not written: “by tomorrow”, “end of the
 month”, “on Friday”. A week later none of that means anything in a task list, so
 the date of the recording is used to work out what was meant and the answer is
-appended in brackets — «завтра (28 августа)». The words that were said stay
+appended in brackets — “tomorrow (August 28)”. The words that were said stay
 where they were.
 
 The arithmetic is done in Python. Models are as confidently wrong about dates as
@@ -247,14 +265,14 @@ actually holds two people, both land in both halves, and the error again goes
 the safe way.
 
 `speaker_merge_auto: false` goes back to the fixed `speaker_merge_similarity`.
-If you know the number of participants, say so — **Сколько спикеров** turns all
+If you know the number of participants, say so — **How many speakers** turns all
 of this off and is always more accurate than guessing.
 
 Check it on your own recordings, with or without the right answer:
 
 ```bash
-python tools/speakertest.py "~/Documents/Расшифровка записей/Созвон.wav" --было 4
-python tools/speakertest.py "~/Documents/Расшифровка записей" --список правда.txt
+python tools/speakertest.py "~/Documents/Transcripts/Call.wav" --было 4    # «--было» = how many there really were
+python tools/speakertest.py "~/Documents/Transcripts" --список truth.txt
 ```
 
 ### Archive
@@ -279,12 +297,12 @@ transcripts. There is no separate database: the list is built from the
 
 ## Output
 
-For `meeting.mp4`, in `~/Documents/Расшифровка записей`:
+For `meeting.mp4`, in `~/Documents/Transcripts` (or «Расшифровка записей» in Russian):
 
 | File | Contents |
 |---|---|
 | `meeting.summary.md` | the sections of the chosen profile |
-| `meeting.таблицы.csv` | recomputed tables, when there were any |
+| `meeting.tables.csv` | recomputed tables, when there were any |
 | `meeting.transcript.md` | transcript with timestamps and speakers |
 | `meeting.transcript.txt` | the same as plain text |
 | `meeting.subtitles.srt` | subtitles |
@@ -292,19 +310,21 @@ For `meeting.mp4`, in `~/Documents/Расшифровка записей`:
 
 ## Configuration
 
-The **Настройки** button, or `config.json` next to the project.
+The **Settings** button, or `config.json` next to the project.
 
-- **Язык** — `auto` guesses; naming the language is faster and more accurate.
-- **Модель Whisper** — `large-v3-turbo` is the sensible default.
-- **Сколько спикеров** — `0` detects automatically; an exact number is cleaner
+- **Language** — the window language and, separately, the language of summaries,
+  folders and file names. `auto` follows the system.
+- **Recording language** — `auto` guesses; naming the language is faster and more accurate.
+- **Whisper model** — `large-v3-turbo` is the sensible default.
+- **How many speakers** — `0` detects automatically; an exact number is cleaner
   when you know it.
-- **Порог разделения** — lower means more speakers. After separation the app
+- **Splitting threshold** — lower means more speakers. After separation the app
   compares the voices against each other anyway and merges clusters that turned
   out to be the same person (`speaker_merge_similarity`, `0.78` by default;
   `1.0` disables it). On a real half-hour meeting this took 28 “speakers” down
   to seven. The threshold is then tightened per recording — see
   [How many voices there are](#how-many-voices-there-are).
-- **Размер контекста** — how much text the model holds at once.
+- **Context size** — how much text the model holds at once.
 
 ## How long it takes
 

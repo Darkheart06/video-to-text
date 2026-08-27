@@ -9,6 +9,7 @@
     python tools/speakertest.py "~/Documents/Расшифровка записей/Созвон.wav" --было 3
     python tools/speakertest.py папка_с_записями --список правда.txt
 
+Ключи работают и по-английски: `--truth 3`, `--list truth.txt`.
 В файле правды по строке на запись: `имя файла<TAB>сколько человек`.
 Годится любой файл, из которого ffmpeg достаёт звук, — не только .wav.
 """
@@ -68,16 +69,23 @@ def main() -> int:
         print(__doc__)
         return 2
 
+    def flag(*names: str) -> str:
+        """Ключи есть и по-русски, и по-английски — инструмент двуязычный."""
+        for name in names:
+            if name in sys.argv:
+                return sys.argv[sys.argv.index(name) + 1]
+        return ""
+
     truth: dict[str, int] = {}
-    if "--список" in sys.argv:
-        path = Path(sys.argv[sys.argv.index("--список") + 1]).expanduser()
+    listed = flag("--список", "--list")
+    if listed:
+        path = Path(listed).expanduser()
         for line in path.read_text("utf-8").split("\n"):
             name, _, count = line.partition("\t")
             if count.strip().isdigit():
                 truth[name.strip()] = int(count.strip())
-    expected = None
-    if "--было" in sys.argv:
-        expected = int(sys.argv[sys.argv.index("--было") + 1])
+    said = flag("--было", "--truth")
+    expected = int(said) if said.isdigit() else None
 
     target = Path(plain[0]).expanduser()
     known = media.AUDIO_EXT | {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
@@ -104,9 +112,9 @@ def main() -> int:
               f"{f', на самом деле голосов: {want}' if want else ''}", flush=True)
         for name, options in VARIANTS.items():
             started = time.time()
-            said: list[str] = []
+            limits: list[str] = []
 
-            def note(_frac: float, message: str, into: list[str] = said) -> None:
+            def note(_frac: float, message: str, into: list[str] = limits) -> None:
                 if "порог" in message:
                     into.append(message.split("порог", 1)[1].strip())
 
@@ -123,7 +131,7 @@ def main() -> int:
             shown = " · ".join(f"{m:.1f}" for m in minutes[:8])
             print(f"  {name:16} голосов {found}{mark}, похожесть пары {worst:+.2f}, "
                   f"{time.time() - started:.0f} с"
-                  f"{', порог ' + said[-1] if said else ''}   [{shown}]", flush=True)
+                  f"{', порог ' + limits[-1] if limits else ''}   [{shown}]", flush=True)
             table.setdefault(name, []).append((source.name, found, want))
 
     temp.cleanup()

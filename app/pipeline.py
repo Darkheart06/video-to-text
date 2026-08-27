@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from . import asr, cleanup, diarize, media, merge, presets, render, summarize
+from . import asr, cleanup, diarize, i18n, media, merge, presets, render, summarize
 from .settings import WORK_DIR, Settings
 
 Listener = Callable[["Job"], None]
@@ -150,12 +150,12 @@ class Runner:
                 acc += weight
 
             self._update(job, status="running", stage="prepare",
-                         message="Проверка файла", progress=0.005)
+                         message=i18n.t("stage.check"), progress=0.005)
             info = media.probe(job.source)
 
             WORK_DIR.mkdir(parents=True, exist_ok=True)
             wav = WORK_DIR / f"{job.id}.wav"
-            self._update(job, message="Извлечение звуковой дорожки",
+            self._update(job, message=i18n.t("stage.audio"),
                          progress=bounds["prepare"][0] + bounds["prepare"][1] * 0.3)
             media.extract_wav(job.source, wav)
 
@@ -165,7 +165,7 @@ class Runner:
                 wav, s, progress=self._stage_progress(job, "asr", base, span)
             )
             if not transcript.segments:
-                raise RuntimeError("Речь не распознана — возможно, в записи нет голоса.")
+                raise RuntimeError(i18n.t("warn.no_speech"))
 
             # 2. Спикеры
             spans: list[diarize.SpeakerSpan] = []
@@ -179,15 +179,15 @@ class Runner:
                 except Cancelled:
                     raise
                 except Exception as exc:
-                    job.warnings.append(f"Разделение по спикерам не выполнено: {exc}")
-                    self._update(job, message="Продолжаю без разделения по спикерам")
+                    job.warnings.append(i18n.t("warn.diar_failed", error=exc))
+                    self._update(job, message=i18n.t("warn.diar_skip"))
 
             turns = merge.build_turns(transcript)
             cleanup.clean_turns(turns, bool(s["transcript_cleanup"]))
             job.turns = turns
             speaking = diarize.speaking_time(spans)
             job.speakers = {
-                f"S{spk + 1}": {"label": f"Спикер {spk + 1}",
+                f"S{spk + 1}": {"label": i18n.d("speaker", s.doc_lang, n=spk + 1),
                                 "seconds": round(sec, 1)}
                 for spk, sec in speaking.items()
             }
@@ -225,35 +225,37 @@ class Runner:
                 except Cancelled:
                     raise
                 except Exception as exc:
-                    job.warnings.append(f"Саммари не составлено: {exc}")
-                    self._update(job, message="Продолжаю без саммари")
+                    job.warnings.append(i18n.t("warn.summary_failed", error=exc))
+                    self._update(job, message=i18n.t("warn.summary_skip"))
 
             # 4. Файлы
             base, span = bounds["write"]
-            self._update(job, stage="write", message="Сохранение результатов",
+            self._update(job, stage="write", message=i18n.t("stage.save"),
                          progress=base + span * 0.2)
             stem = render.safe_stem(Path(job.source).stem)
             job.files = render.write_all(
-                s.output_path, stem, transcript, turns, spans, summary, meta
+                s.output_path, stem, transcript, turns, spans, summary, meta,
+                lang=s.doc_lang
             )
 
-            self._update(job, stage="done", message="Готово", progress=1.0, status="done")
+            self._update(job, stage="done", message=i18n.t("state.done"),
+                         progress=1.0, status="done")
 
         except Cancelled:
             job.status = "cancelled"
-            job.message = "Отменено"
+            job.message = i18n.t("state.cancelled")
             self._emit(job)
         except Exception as exc:
             if job._cancel.is_set():
                 # Отмена могла прилететь изнутри чужой библиотеки и превратиться
                 # там в свою ошибку — для пользователя это всё равно отмена.
                 job.status = "cancelled"
-                job.message = "Отменено"
+                job.message = i18n.t("state.cancelled")
                 self._emit(job)
                 return
             job.status = "error"
             job.error = str(exc) or exc.__class__.__name__
-            job.message = "Ошибка"
+            job.message = i18n.t("state.error")
             job.meta.setdefault("traceback", traceback.format_exc()[-2000:])
             self._emit(job)
         finally:
@@ -274,15 +276,16 @@ class Runner:
         for key, info in job.speakers.items():
             info["label"] = names.get(key, info["label"])
 
-        job.transcript_md = render.transcript_markdown(job.turns, job.meta, names)
+        lang = self.settings.doc_lang
+        job.transcript_md = render.transcript_markdown(job.turns, job.meta, names, lang)
         out_dir = Path(next(iter(job.files.values()))).parent if job.files \
             else self.settings.output_path
         stem = render.safe_stem(Path(job.source).stem)
         (out_dir / f"{stem}.transcript.md").write_text(job.transcript_md, "utf-8")
         (out_dir / f"{stem}.transcript.txt").write_text(
-            render.plain_transcript(job.turns, names), "utf-8")
+            render.plain_transcript(job.turns, names, lang), "utf-8")
         (out_dir / f"{stem}.subtitles.srt").write_text(
-            render.srt(job.turns, names), "utf-8")
+            render.srt(job.turns, names, lang=lang), "utf-8")
         # В архиве подписи берутся из result.json — обновляем и его, иначе
         # запись, открытая позже, снова окажется со «Спикером 1».
         result = out_dir / f"{stem}.result.json"

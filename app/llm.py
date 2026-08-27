@@ -17,6 +17,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import i18n
+
 BACKENDS = ("ollama", "gguf", "openai")
 
 # Что предпочесть, когда в Ollama несколько моделей, а в настройках «auto»
@@ -82,10 +84,7 @@ def list_ollama_models(url: str, timeout: int = 10) -> list[str]:
     try:
         data = _get_json(f"{url}/api/tags", timeout=timeout)
     except (urllib.error.URLError, OSError) as exc:
-        raise LLMError(
-            f"Ollama не отвечает по адресу {url}. Запустите приложение Ollama "
-            f"или команду `ollama serve`. ({exc})"
-        ) from exc
+        raise LLMError(i18n.t("llm.ollama_down", url=url, error=exc)) from exc
     return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
 
 
@@ -95,10 +94,7 @@ def list_openai_models(base_url: str, headers: dict | None = None,
     try:
         data = _get_json(f"{base}/models", timeout=timeout, headers=headers)
     except (urllib.error.URLError, OSError) as exc:
-        raise LLMError(
-            f"Сервер модели не отвечает по адресу {base}. Проверьте, что он "
-            f"запущен и что адрес заканчивается на /v1. ({exc})"
-        ) from exc
+        raise LLMError(i18n.t("llm.server_down", url=base, error=exc)) from exc
     return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
 
 
@@ -122,9 +118,7 @@ class OllamaBackend:
     def _pick(self, preferred: str) -> str:
         installed = self.list_models()
         if not installed:
-            raise LLMError(
-                "В Ollama нет ни одной модели. Установите: ollama pull qwen3:8b"
-            )
+            raise LLMError(i18n.t("llm.ollama_empty"))
         if preferred and preferred != "auto":
             if preferred in installed:
                 return preferred
@@ -132,10 +126,8 @@ class OllamaBackend:
             for name in installed:
                 if name.split(":")[0] == base:
                     return name
-            raise LLMError(
-                f"Модель «{preferred}» не установлена. Есть: {', '.join(installed)}. "
-                f"Установить: ollama pull {preferred}"
-            )
+            raise LLMError(i18n.t("llm.model_missing", name=preferred,
+                                  have=", ".join(installed)))
         for want in OLLAMA_PREFERENCE:
             if want in installed:
                 return want
@@ -176,15 +168,15 @@ class OllamaBackend:
             except urllib.error.HTTPError as exc:
                 if think is False:
                     continue
-                raise LLMError(f"Ollama ответила ошибкой {exc.code}") from exc
+                raise LLMError(i18n.t("llm.ollama_error", code=exc.code)) from exc
             except (urllib.error.URLError, OSError) as exc:
-                raise LLMError(f"Ollama перестала отвечать: {exc}") from exc
+                raise LLMError(i18n.t("llm.ollama_timeout", error=exc)) from exc
             if "error" in data:
                 if think is False:
                     continue
                 raise LLMError(str(data["error"]))
             return clean_answer((data.get("message", {}) or {}).get("content", ""))
-        raise LLMError("Модель не ответила")
+        raise LLMError(i18n.t("llm.no_answer"))
 
     def warm(self) -> None:
         """Заранее поднимает модель в память — чтобы к концу созвона она уже
@@ -192,7 +184,7 @@ class OllamaBackend:
         try:
             _post_json(f"{self.url}/api/chat", {
                 "model": self.model, "stream": False, "keep_alive": KEEP_ALIVE,
-                "messages": [{"role": "user", "content": "привет"}],
+                "messages": [{"role": "user", "content": i18n.t("llm.hello")}],
                 "options": {"num_predict": 1, "num_ctx": self.num_ctx},
                 "think": False,
             }, timeout=600)
@@ -218,28 +210,21 @@ class GgufBackend:
                  gpu_layers: int = -1, max_tokens: int = MAX_TOKENS) -> None:
         self.max_tokens = int(max_tokens or MAX_TOKENS)
         if not path:
-            raise LLMError(
-                "Не указан файл модели. Настройки → «Файл модели (.gguf)» → "
-                "«Выбрать файл…»."
-            )
+            raise LLMError(i18n.t("llm.gguf_unset"))
         model_path = Path(path).expanduser()
         if not model_path.exists():
-            raise LLMError(f"Файл модели не найден: {model_path}")
+            raise LLMError(i18n.t("llm.gguf_missing", path=model_path))
         if model_path.suffix.lower() != ".gguf":
-            raise LLMError(
-                f"Ожидался файл .gguf, а выбран {model_path.suffix or 'файл без расширения'}"
-            )
+            raise LLMError(i18n.t("llm.gguf_ext",
+                                  what=model_path.suffix or i18n.t("llm.gguf_noext")))
 
         try:
             from llama_cpp import Llama
         except ImportError as exc:
-            raise LLMError(
-                "Не установлена библиотека llama-cpp-python, без неё файл .gguf "
-                "не открыть. Установите: .venv/bin/pip install llama-cpp-python"
-            ) from exc
+            raise LLMError(i18n.t("llm.gguf_lib")) from exc
 
         self.path = model_path
-        self.name = f"Файл · {model_path.name}"
+        self.name = i18n.t("llm.file", name=model_path.name)
         key = (str(model_path), int(num_ctx), int(gpu_layers))
         model = _GGUF_CACHE.get(key)
         if model is None:
@@ -252,10 +237,8 @@ class GgufBackend:
                     verbose=False,
                 )
             except Exception as exc:
-                raise LLMError(
-                    f"Не удалось загрузить {model_path.name}: {exc}. "
-                    f"Часто помогает уменьшить размер контекста в настройках."
-                ) from exc
+                raise LLMError(f"{i18n.t('llm.gguf_load', name=model_path.name)} ({exc})"
+                               ) from exc
             _GGUF_CACHE.clear()      # держим в памяти только одну модель
             _GGUF_CACHE[key] = model
         self.model = model
@@ -274,7 +257,7 @@ class GgufBackend:
                 max_tokens=self.max_tokens,
             )
         except Exception as exc:
-            raise LLMError(f"Модель не смогла ответить: {exc}") from exc
+            raise LLMError(i18n.t("llm.failed", error=exc)) from exc
         return clean_answer(out["choices"][0]["message"]["content"])
 
 
@@ -300,7 +283,7 @@ class OpenAIBackend:
     def _first_model(self) -> str:
         models = self.list_models()
         if not models:
-            raise LLMError(f"Сервер {self.base} не отдал ни одной модели.")
+            raise LLMError(i18n.t("llm.server_empty", url=self.base))
         return models[0]
 
     def warm(self) -> None:
@@ -320,9 +303,9 @@ class OpenAIBackend:
             }, timeout=self.timeout, headers=self.headers)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:300]
-            raise LLMError(f"Сервер ответил ошибкой {exc.code}: {detail}") from exc
+            raise LLMError(f"{i18n.t('llm.server_error', code=exc.code)}: {detail}") from exc
         except (urllib.error.URLError, OSError) as exc:
-            raise LLMError(f"Сервер модели перестал отвечать: {exc}") from exc
+            raise LLMError(i18n.t("llm.server_timeout", error=exc)) from exc
         if "error" in data:
             raise LLMError(str(data["error"]))
         return clean_answer(data["choices"][0]["message"]["content"])
@@ -368,9 +351,7 @@ def build(settings) -> OllamaBackend | GgufBackend | OpenAIBackend:
             return make()
         except LLMError as exc:
             problems.append(f"{name}: {exc}")
-    raise LLMError(
-        "Ни один способ подключить модель не сработал.\n" + "\n".join(problems)
-    )
+    raise LLMError(i18n.t("llm.nothing_worked") + "\n".join(problems))
 
 
 def probe(settings) -> dict:
@@ -412,10 +393,7 @@ def self_test(settings) -> dict:
     except LLMError as exc:
         return {"ok": False, "error": str(exc)}
     try:
-        answer = backend.chat(
-            "Отвечай одним словом.",
-            "Ответь словом «готово», если ты меня понимаешь.",
-        )
+        answer = backend.chat(i18n.t("llm.ping_rules"), i18n.t("llm.ping"))
     except LLMError as exc:
         return {"ok": False, "error": str(exc), "backend": backend.name}
     return {"ok": True, "backend": backend.name, "answer": answer[:120]}

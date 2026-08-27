@@ -11,7 +11,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import media
+from . import i18n, media
 from .settings import MODELS_DIR, Settings
 
 SEG_URL = (
@@ -53,9 +53,10 @@ def download_models(progress: Progress | None = None) -> None:
             progress(frac, msg)
 
     if not SEG_PATH.exists():
-        report(0.0, "Скачивание модели сегментации")
+        report(0.0, i18n.t("diar.download_seg"))
         tmp = MODELS_DIR / "segmentation.tar.bz2"
-        _download(SEG_URL, tmp, lambda f: report(f * 0.3, "Скачивание модели сегментации"))
+        _download(SEG_URL, tmp,
+                  lambda f: report(f * 0.3, i18n.t("diar.download_seg")))
         with tarfile.open(tmp, "r:bz2") as tf:
             try:
                 tf.extractall(MODELS_DIR, filter="data")  # Python 3.12+
@@ -63,14 +64,14 @@ def download_models(progress: Progress | None = None) -> None:
                 tf.extractall(MODELS_DIR)
         tmp.unlink(missing_ok=True)
         if not SEG_PATH.exists():
-            raise DiarizationError("Архив с моделью сегментации распакован не так, как ожидалось")
+            raise DiarizationError(i18n.t("err.seg_archive"))
 
     if not EMB_PATH.exists():
-        report(0.3, "Скачивание модели голосовых отпечатков")
+        report(0.3, i18n.t("diar.download_emb"))
         _download(EMB_URL, EMB_PATH,
-                  lambda f: report(0.3 + f * 0.7, "Скачивание модели голосовых отпечатков"))
+                  lambda f: report(0.3 + f * 0.7, i18n.t("diar.download_emb")))
 
-    report(1.0, "Модели готовы")
+    report(1.0, i18n.t("diar.models_ready"))
 
 
 def _download(url: str, dst: Path, on_progress: Callable[[float], None]) -> None:
@@ -96,9 +97,7 @@ def diarize(wav_path, settings: Settings, progress: Progress | None = None) -> l
     try:
         import sherpa_onnx
     except ImportError as exc:  # pragma: no cover
-        raise DiarizationError(
-            "Не установлен sherpa-onnx — разделение по спикерам недоступно."
-        ) from exc
+        raise DiarizationError(i18n.t("err.sherpa")) from exc
 
     if not models_ready():
         download_models(progress)
@@ -126,16 +125,15 @@ def diarize(wav_path, settings: Settings, progress: Progress | None = None) -> l
 
     audio = media.read_wav(wav_path)
     if engine.sample_rate != media.SAMPLE_RATE:  # pragma: no cover
-        raise DiarizationError(
-            f"Модель ждёт {engine.sample_rate} Гц, а аудио {media.SAMPLE_RATE} Гц"
-        )
+        raise DiarizationError(i18n.t("err.sample_rate", model=engine.sample_rate,
+                                      audio=media.SAMPLE_RATE))
 
     if progress:
-        progress(0.0, "Разделение по спикерам")
+        progress(0.0, i18n.t("diar.run"))
 
     def callback(processed: int, total: int) -> int:
         if progress and total:
-            progress(min(0.99, processed / total), "Разделение по спикерам")
+            progress(min(0.99, processed / total), i18n.t("diar.run"))
         return 0
 
     try:
@@ -151,11 +149,11 @@ def diarize(wav_path, settings: Settings, progress: Progress | None = None) -> l
     if settings["num_speakers"] and int(settings["num_speakers"]) > 0:
         # Человек сам сказал, сколько их — сводить кластеры не надо.
         if progress:
-            progress(1.0, f"Найдено спикеров: {len({s.speaker for s in spans})}")
+            progress(1.0, i18n.t("diar.found", n=len({s.speaker for s in spans})))
         return spans
     spans = refine(spans, audio, settings, progress)
     if progress:
-        progress(1.0, f"Найдено спикеров: {len({s.speaker for s in spans})}")
+        progress(1.0, i18n.t("diar.found", n=len({s.speaker for s in spans})))
     return spans
 
 
@@ -296,7 +294,7 @@ def refine(spans: list[SpeakerSpan], audio: np.ndarray,
         return spans
 
     if progress:
-        progress(0.0, "Сверяю голоса между собой")
+        progress(0.0, i18n.t("diar.compare"))
     try:
         extractor = embedder(int(settings["num_threads"]))
         prints = {key: voice_print(extractor, audio, items)
@@ -320,7 +318,7 @@ def refine(spans: list[SpeakerSpan], audio: np.ndarray,
         if found is not None:
             limit = found
             if progress:
-                progress(0.5, f"Голоса этой записи: порог {limit:.2f}")
+                progress(0.5, i18n.t("diar.limit", value=f"{limit:.2f}"))
 
     similarity = {(a, b): float(prints[a] @ prints[b])
                   for a in prints for b in prints if a < b}
@@ -385,7 +383,7 @@ def refine(spans: list[SpeakerSpan], audio: np.ndarray,
     out = [SpeakerSpan(s.start, s.end, owner.get(s.speaker, s.speaker)) for s in spans]
     out = _renumber(out)
     if progress:
-        progress(1.0, f"Голосов после сверки: {len({s.speaker for s in out})}")
+        progress(1.0, i18n.t("diar.after", n=len({s.speaker for s in out})))
     return out
 
 

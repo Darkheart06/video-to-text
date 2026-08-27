@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import diarize, presets
+from . import diarize, i18n, presets
 from .pipeline import Runner
 from .settings import WHISPER_MODELS, Settings
 
@@ -28,7 +28,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("files", nargs="*", help="mp4, mov, webm, mp3, m4a, wav …")
     parser.add_argument("--out", help="папка для результатов")
     parser.add_argument("--model", choices=list(WHISPER_MODELS), help="модель Whisper")
-    parser.add_argument("--language", help="код языка (ru, en …) или auto")
+    parser.add_argument("--language", help="код языка записи (ru, en …) или auto")
+    parser.add_argument("--ui-lang", choices=["auto", "ru", "en"],
+                        help="язык сообщений: auto — как в системе")
+    parser.add_argument("--doc-lang", choices=["auto", "ru", "en"],
+                        help="язык саммари и файлов: auto — как у сообщений")
     parser.add_argument("--speakers", type=int, help="сколько спикеров ожидается (0 = авто)")
     parser.add_argument("--no-speakers", action="store_true",
                         help="не разделять по спикерам")
@@ -50,6 +54,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = Settings.load()
+    if args.ui_lang:
+        settings["ui_language"] = args.ui_lang
+    if args.doc_lang:
+        settings["doc_language"] = args.doc_lang
+    i18n.use(settings.get("ui_language", "auto"))
     if args.out:
         settings["output_dir"] = args.out
     if args.model:

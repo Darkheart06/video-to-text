@@ -27,7 +27,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import asr, cleanup, diarize, llm, media, merge, presets, render, summarize
+from . import asr, cleanup, diarize, i18n, llm, media, merge, presets, render, summarize
 from .settings import WORK_DIR, Settings
 
 SAMPLE_RATE = media.SAMPLE_RATE
@@ -49,12 +49,8 @@ DENIED = ("-3801", "SCStreamErrorDomain Code=-3801", "declined")
 
 def friendly_error(text: str) -> str:
     if any(mark in text for mark in DENIED):
-        return (
-            "macOS не разрешила записывать экран, а без этого не слышно "
-            "собеседников. Откройте «Конфиденциальность и безопасность» → "
-            "«Запись экрана», включите «Расшифровка» и запустите приложение заново."
-        )
-    return text.strip()[-300:] or "Захват звука не запустился"
+        return i18n.t("rec.screen_denied")
+    return text.strip()[-300:] or i18n.t("rec.capture_failed")
 
 
 @dataclass
@@ -76,10 +72,10 @@ class Line:
         if self.speaker:
             return self.speaker
         if self.who == "me":
-            return "Я"
+            return i18n.d("me", i18n.current())
         # На встрече в комнате все голоса идут в один микрофон, и пока запись
         # не разобрана, честнее не подписывать реплику вовсе, чем врать.
-        return "Собеседник" if self.who == "them" else ""
+        return i18n.d("them", i18n.current()) if self.who == "them" else ""
 
 
 @dataclass
@@ -139,7 +135,7 @@ def permissions() -> dict:
     """Что macOS уже разрешила: запись экрана (звук системы) и микрофон."""
     if not helper_ready():
         return {"screen": False, "microphone": False,
-                "error": "Помощник захвата не установлен"}
+                "error": i18n.t("rec.helper_missing")}
     try:
         out = subprocess.run([str(HELPER), "check"], capture_output=True,
                              text=True, timeout=10)
@@ -153,7 +149,7 @@ def request_permissions() -> dict:
     перезапуска программы — об этом сообщаем отдельно."""
     if not helper_ready():
         return {"screen": False, "microphone": False,
-                "error": "Помощник захвата не установлен"}
+                "error": i18n.t("rec.helper_missing")}
     try:
         out = subprocess.run([str(HELPER), "request"], capture_output=True,
                              text=True, timeout=120)
@@ -194,7 +190,8 @@ def _to_float(raw: bytes) -> np.ndarray:
     return np.frombuffer(raw[:usable], dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def assign_room(lines: list[Line], spans: list) -> tuple[dict[int, str], dict[str, str]]:
+def assign_room(lines: list[Line], spans: list,
+                lang: str = "") -> tuple[dict[int, str], dict[str, str]]:
     """Раскладывает реплики встречи по найденным голосам.
 
     Здесь нет «своей» дорожки: все, включая меня, говорят в один микрофон,
@@ -202,6 +199,7 @@ def assign_room(lines: list[Line], spans: list) -> tuple[dict[int, str], dict[st
     пока их не назовут по имени.
     """
     keys = dict.fromkeys(range(len(lines)), "S1")
+    lang = i18n.pick(lang, i18n.current())
     order: dict[int, int] = {}
     for i, line in enumerate(lines):
         found = merge._speaker_at(spans, line.start, line.end)
@@ -211,19 +209,20 @@ def assign_room(lines: list[Line], spans: list) -> tuple[dict[int, str], dict[st
             order[found] = len(order)
         keys[i] = f"S{order[found] + 1}"
     count = max(1, len(order))
-    names = {f"S{n + 1}": f"Спикер {n + 1}" for n in range(count)}
+    names = {f"S{n + 1}": i18n.d("speaker", lang, n=n + 1) for n in range(count)}
     return keys, names
 
 
-def assign_others(lines: list[Line],
-                  spans: list) -> tuple[dict[int, str], dict[str, str]]:
+def assign_others(lines: list[Line], spans: list,
+                  lang: str = "") -> tuple[dict[int, str], dict[str, str]]:
     """Раскладывает реплики собеседников по найденным голосам.
 
     Своя дорожка не участвует: «Я» и так известен. Номера даём по первому
     появлению в разговоре, чтобы «Собеседник 1» был тем, кто заговорил раньше.
     """
+    lang = i18n.pick(lang, i18n.current())
     keys = {i: ("S1" if line.who == "me" else "S2") for i, line in enumerate(lines)}
-    names = {"S1": "Я", "S2": "Собеседник"}
+    names = {"S1": i18n.d("me", lang), "S2": i18n.d("them", lang)}
     if len({s.speaker for s in spans}) < 2:
         return keys, names
 
@@ -241,9 +240,9 @@ def assign_others(lines: list[Line],
     if len(order) < 2:
         return ({i: ("S1" if line.who == "me" else "S2")
                  for i, line in enumerate(lines)}, names)
-    names = {"S1": "Я"}
+    names = {"S1": i18n.d("me", lang)}
     for number in range(len(order)):
-        names[f"S{number + 2}"] = f"Собеседник {number + 1}"
+        names[f"S{number + 2}"] = i18n.d("them_numbered", lang, n=number + 1)
     return keys, names
 
 
@@ -260,7 +259,9 @@ def _write_wav(path: Path, audio: np.ndarray) -> None:
 # Слова-паразиты только мешают сравнивать два распознавания одной и той же
 # фразы: в одной дорожке Whisper их слышит, в другой нет.
 _FILLER = {"вот", "ну", "это", "эт", "как", "бы", "то", "есть", "да", "а", "и",
-           "так", "там", "уже", "щас", "сейчас", "получается", "короче"}
+           "так", "там", "уже", "щас", "сейчас", "получается", "короче",
+           "the", "a", "an", "so", "well", "like", "just", "you", "know",
+           "i", "mean", "uh", "um", "yeah", "okay", "ok", "right"}
 
 
 def normalize(text: str) -> str:
@@ -360,11 +361,9 @@ class Stenographer:
     def start(self, title: str = "", preset: str = "", mode: str = "call") -> dict:
         with self._lock:
             if self.is_active():
-                raise RecordError("Запись уже идёт")
+                raise RecordError(i18n.t("rec.already"))
             if not helper_ready():
-                raise RecordError(
-                    "Помощник захвата не установлен — переустановите приложение."
-                )
+                raise RecordError(i18n.t("rec.helper_reinstall"))
             # Предварительную проверку разрешения не делаем: macOS отвечает на
             # неё неточно. Пробуем начать по-настоящему — отказ придёт от самой
             # системы, и уже понятной формулировкой.
@@ -377,7 +376,8 @@ class Stenographer:
             self.session = Session(
                 id=session_id, started_at=time.time(), directory=directory,
                 mode="room" if room else "call",
-                title=title.strip() or (f"Встреча {stamp}" if room else f"Созвон {stamp}"),
+                title=title.strip() or (i18n.t("rec.title_room" if room else
+                                               "rec.title_call") + stamp),
                 preset=preset or self.settings.get("preset", presets.DEFAULT),
                 stamp=stamp,
             )
@@ -388,7 +388,7 @@ class Stenographer:
             )
             self._worker = threading.Thread(target=self._run, daemon=True)
             self._worker.start()
-            self._say("Идёт запись встречи" if room else "Идёт запись")
+            self._say(i18n.t("rec.running_room" if room else "rec.running_call"))
             return self.session.snapshot()
 
     def stop(self) -> dict | None:
@@ -396,7 +396,7 @@ class Stenographer:
             if not self.session or self.session.state != "recording":
                 return self.session.snapshot() if self.session else None
             self.session.state = "finishing"
-            self._say("Завершаю запись")
+            self._say(i18n.t("rec.finishing"))
             self._stop.set()
         if self._worker:
             self._worker.join(timeout=900)
@@ -409,7 +409,7 @@ class Stenographer:
                 return
             self._stop.set()
             self.session.state = "done"
-            self.session.message = "Запись отменена"
+            self.session.message = i18n.t("rec.cancelled")
         self._terminate_helper()
         if self.session:
             shutil.rmtree(self.session.directory, ignore_errors=True)
@@ -473,7 +473,7 @@ class Stenographer:
             self._terminate_helper()
             session.state = "error"
             session.error = str(exc)
-            session.message = "Ошибка"
+            session.message = i18n.t("state.error")
             self._emit()
 
     def _ready(self, mic_path: Path, sys_path: Path) -> int:
@@ -529,8 +529,8 @@ class Stenographer:
 
         session.lines.extend(fresh)
         session.lines.sort(key=lambda item: item.start)
-        self._say(f"Записано {int(session.duration // 60)} мин, "
-                  f"реплик {len(session.lines)}")
+        self._say(i18n.t("rec.counted", minutes=int(session.duration // 60),
+                         lines=len(session.lines)))
         return offset + length
 
     def _transcribe(self, audio: np.ndarray, base: float, who: str) -> list[Line]:
@@ -563,13 +563,9 @@ class Stenographer:
         text = "\n".join(f"{line.label}: {line.text}" for line in fresh)
         try:
             backend = llm.build(self.settings)
-            answer = backend.chat(
-                summarize.SYSTEM,
-                "Идёт созвон. Ниже — то, что прозвучало за последние минуты.\n"
-                "Выпиши коротко: 2–4 пункта о чём говорили и отдельно новые "
-                "задачи и договорённости, если они были. Без вступлений.\n\n"
-                + text,
-            )
+            lang = self.settings.doc_lang
+            answer = backend.chat(summarize.SYSTEM[lang],
+                                  summarize.PROMPTS[lang]["live_notes"] + text)
         except Exception:
             return
         session.notes.append({
@@ -711,7 +707,7 @@ class Stenographer:
             taken_keys.add(key)
             fresh[key] = name
         if taken_names:
-            self._say("Узнал по голосу: " + ", ".join(sorted(taken_names)))
+            self._say(i18n.t("rec.recognised", names=", ".join(sorted(taken_names))))
         return fresh
 
     # --- кто говорил на встрече -------------------------------------------
@@ -721,7 +717,7 @@ class Stenographer:
         session = self.session
         assert session is not None
         keys = dict.fromkeys(range(len(session.lines)), "S1")
-        names = {"S1": "Спикер 1"}
+        names = {"S1": i18n.d("speaker", self.settings.doc_lang, n=1)}
         if not self.settings.get("record_split_speakers", True):
             return keys, names
         if len(session.lines) < 2 or audio.size < SAMPLE_RATE * 15:
@@ -733,8 +729,8 @@ class Stenographer:
 
         def tick() -> None:
             while not ticking.wait(3):
-                self._say("Разбираю, кто говорил на встрече — "
-                          f"{int(time.time() - started)} с")
+                self._say(i18n.t("rec.splitting_room",
+                                 seconds=int(time.time() - started)))
 
         try:
             _write_wav(path, audio)
@@ -744,14 +740,14 @@ class Stenographer:
                 "min_duration_off": min(0.25, float(self.settings["min_duration_off"])),
             })
         except Exception as exc:
-            self._say(f"Голоса не разобраны: {exc}")
+            self._say(i18n.t("rec.split_failed", error=exc))
             return keys, names
         finally:
             ticking.set()
             path.unlink(missing_ok=True)
 
-        keys, names = assign_room(session.lines, spans)
-        self._say(f"Голосов на встрече: {len(names)}")
+        keys, names = assign_room(session.lines, spans, self.settings.doc_lang)
+        self._say(i18n.t("rec.voices_room", n=len(names)))
         return keys, names
 
     # --- кто именно говорил на той стороне --------------------------------
@@ -772,7 +768,8 @@ class Stenographer:
         assert session is not None
         keys = {i: ("S1" if line.who == "me" else "S2")
                 for i, line in enumerate(session.lines)}
-        names = {"S1": "Я", "S2": "Собеседник"}
+        names = {"S1": i18n.d("me", self.settings.doc_lang),
+                 "S2": i18n.d("them", self.settings.doc_lang)}
 
         theirs = [i for i, line in enumerate(session.lines) if line.who == "them"]
         if not self.settings.get("record_split_speakers", True) or len(theirs) < 2:
@@ -787,8 +784,8 @@ class Stenographer:
 
         def tick() -> None:
             while not ticking.wait(3):
-                self._say("Разбираю, кто из собеседников говорил — "
-                          f"{int(time.time() - started)} с")
+                self._say(i18n.t("rec.splitting_call",
+                                 seconds=int(time.time() - started)))
 
         try:
             _write_wav(path, spk)
@@ -805,15 +802,15 @@ class Stenographer:
                 "min_duration_off": min(0.25, float(self.settings["min_duration_off"])),
             })
         except Exception as exc:
-            self._say(f"Голоса собеседников не разобраны: {exc}")
+            self._say(i18n.t("rec.split_failed_call", error=exc))
             return keys, names
         finally:
             ticking.set()
             path.unlink(missing_ok=True)
 
-        keys, names = assign_others(session.lines, spans)
+        keys, names = assign_others(session.lines, spans, self.settings.doc_lang)
         if len(names) > 2:
-            self._say(f"Собеседников на звонке: {len(names) - 1}")
+            self._say(i18n.t("rec.voices_call", n=len(names) - 1))
         return keys, names
 
     def _retitle(self, session: Session, topic: str, out_dir: Path,
@@ -837,7 +834,7 @@ class Stenographer:
         session = self.session
         assert session is not None
         session.state = "finishing"
-        self._say("Собираю запись")
+        self._say(i18n.t("rec.assembling"))
 
         mic = _to_float((session.directory / "mic.pcm").read_bytes()
                         if (session.directory / "mic.pcm").exists() else b"")
@@ -845,7 +842,7 @@ class Stenographer:
                         if (session.directory / "sys.pcm").exists() else b"")
         size = max(mic.size, spk.size)
         if size == 0:
-            raise RecordError("Записать звук не удалось — дорожки пустые")
+            raise RecordError(i18n.t("rec.empty"))
         mixed = np.zeros(size, dtype=np.float32)
         mixed[:mic.size] += mic
         mixed[:spk.size] += spk
@@ -884,7 +881,8 @@ class Stenographer:
                                   keys.get(i, "S1" if room else "S2"))
                       for i, line in enumerate(session.lines)],
             language=self.settings["language"], duration=size / SAMPLE_RATE,
-            backend="live", model="запись встречи" if room else "запись созвона",
+            backend="live",
+            model=i18n.t("rec.what_room" if room else "rec.what_call", "ru"),
         )
         turns = merge.build_turns(transcript)
         cleanup.clean_turns(turns, bool(self.settings.get("transcript_cleanup", True)))
@@ -899,7 +897,7 @@ class Stenographer:
             # к которой привязаны «завтра» и «до пятницы» в задачах.
             "recorded_at": session.stamp or render.now_stamp(),
             "processed_at": render.now_stamp(),
-            "models": "запись встречи" if room else "запись созвона",
+            "models": i18n.t("rec.what_room" if room else "rec.what_call", "ru"),
         }
 
         summary = None
@@ -910,8 +908,8 @@ class Stenographer:
 
             def tick() -> None:
                 while not ticking.wait(3):
-                    self._say("Готовлю саммари и бриф — "
-                              f"{int(time.time() - started)} с")
+                    self._say(i18n.t("rec.summarising",
+                                     seconds=int(time.time() - started)))
 
             threading.Thread(target=tick, daemon=True).start()
             try:
@@ -924,7 +922,7 @@ class Stenographer:
                 session.summary_tabs = [list(x) for x in summary.tabs]
                 meta["models"] += f" + {summary.model}"
             except Exception as exc:
-                session.message = f"Саммари не составлено: {exc}"
+                session.message = i18n.t("warn.summary_failed", error=exc)
             finally:
                 ticking.set()
 
@@ -932,7 +930,7 @@ class Stenographer:
         # у модели тему разговора и ставим её перед датой — дата остаётся,
         # чтобы записи по-прежнему выстраивались по времени.
         if summary and not session.renamed:
-            self._say("Придумываю название")
+            self._say(i18n.t("rec.naming"))
             topic = summarize.suggest_title(summary.markdown, self.settings)
             if topic:
                 stem, audio_path = self._retitle(session, topic, out_dir, audio_path)
@@ -940,10 +938,11 @@ class Stenographer:
                 meta["source"] = str(audio_path)
 
         session.files = render.write_all(out_dir, stem, transcript, turns, [],
-                                         summary, meta, names)
+                                         summary, meta, names,
+                                         lang=self.settings.doc_lang)
         session.files["audio"] = str(audio_path)
         session.state = "done"
-        session.message = "Готово"
+        session.message = i18n.t("state.done")
         self._emit()
         shutil.rmtree(session.directory, ignore_errors=True)
 

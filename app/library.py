@@ -21,15 +21,17 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import merge, presets, render
+from . import i18n, merge, presets, render
 
-INDEX_NAME = ".записи.json"
+# Скрытый список рядом с записями: он только ускоряет открытие папки, и его
+# можно спокойно удалить.
+INDEX_NAME = ".library.json"
 RESULT_SUFFIX = ".result.json"
 
 # Какой файл к какому месту в карточке относится.
 SUFFIXES = [
     (".summary.md", "summary"),
-    (".таблицы.csv", "tables"),
+    *[(name, "tables") for name in i18n.table_suffixes()],
     (".transcript.md", "transcript_md"),
     (".transcript.txt", "transcript_txt"),
     (".subtitles.srt", "subtitles"),
@@ -64,11 +66,22 @@ class Entry:
 
 # --- список -----------------------------------------------------------------
 
-def entries(output_dir: Path, query: str = "") -> list[dict]:
-    """Все разобранные записи, новые сверху. Пустой запрос — весь список."""
-    output_dir = Path(output_dir)
-    if not output_dir.exists():
+def entries(where, query: str = "", lang: str = "") -> list[dict]:
+    """Все разобранные записи, новые сверху. Пустой запрос — весь список.
+
+    Папок может быть несколько: у английского и русского языка имена разные, а
+    архив должен показывать всё, что человек уже разобрал.
+    """
+    folders = _folders(where)
+    if not folders:
         return []
+    if len(folders) > 1:
+        out: list[dict] = []
+        for folder in folders:
+            out += entries(folder, query, lang)
+        out.sort(key=lambda e: -float(e.get("at") or 0))
+        return out
+    output_dir = folders[0]
 
     index = _load_index(output_dir)
     found: list[dict] = []
@@ -83,7 +96,7 @@ def entries(output_dir: Path, query: str = "") -> list[dict]:
         seen.add(key)
         entry = _cached_entry(key, mtime, index)
         if entry is None:
-            entry = _read_entry(path, mtime)
+            entry = _read_entry(path, mtime, lang)
             if entry is None:
                 continue
             _cache[key] = (mtime, entry)
@@ -128,7 +141,7 @@ def _filter(found: list[dict], query: str) -> list[dict]:
         # везде. С трёх букв — уже осмысленно.
         if any(len(w) >= 3 for w in words) and all(
                 w in haystack or w in _transcript_text(entry["path"]) for w in words):
-            out.append(dict(entry, matched="в тексте"))
+            out.append(dict(entry, matched=i18n.t("lib.in_text")))
     return out
 
 
@@ -153,7 +166,7 @@ def _transcript_text(result_path: str) -> str:
 
 # --- разбор одного файла ----------------------------------------------------
 
-def _read_entry(path: Path, mtime: float) -> dict | None:
+def _read_entry(path: Path, mtime: float, lang: str = "") -> dict | None:
     data = _load_json(path)
     if not data:
         return None
@@ -169,13 +182,13 @@ def _read_entry(path: Path, mtime: float) -> dict | None:
         id=_ident(path),
         path=str(path),
         title=str(meta.get("title") or stem),
-        kind="call" if "созвон" in models or "запис" in models.lower() else "file",
+        kind="call" if _is_call(models) else "file",
         at=mtime,
         when=_when(meta.get("processed_at"), mtime),
         duration=float(meta.get("duration") or 0),
         language=str(meta.get("language") or ""),
         speakers=len(data.get("speakers")
-                     or _speakers_from_turns(turns, models)),
+                     or _speakers_from_turns(turns, models, lang)),
         lines=len(turns),
         preset=str(summary.get("preset") or ""),
         preview=preview,
@@ -215,9 +228,9 @@ def _load_json(path: Path) -> dict | None:
 
 # --- открыть запись ---------------------------------------------------------
 
-def snapshot(output_dir: Path, entry_id: str) -> dict | None:
+def snapshot(where, entry_id: str, lang: str = "") -> dict | None:
     """Разворачивает запись обратно в карточку — ту же, что после обработки."""
-    path = _path_of(output_dir, entry_id)
+    path = _path_of(where, entry_id)
     if path is None:
         return None
     data = _load_json(path)
@@ -234,7 +247,7 @@ def snapshot(output_dir: Path, entry_id: str) -> dict | None:
         for key, value in (data.get("speakers") or {}).items()
     }
     if not speakers:
-        speakers = _speakers_from_turns(turns, str(meta.get("models", "")))
+        speakers = _speakers_from_turns(turns, str(meta.get("models", "")), lang)
     stem = path.name[: -len(RESULT_SUFFIX)]
 
     return {
@@ -243,14 +256,14 @@ def snapshot(output_dir: Path, entry_id: str) -> dict | None:
         "title": str(meta.get("title") or stem),
         "status": "done",
         "stage": "done",
-        "message": "Из архива",
+        "message": i18n.t("lib.from_archive"),
         "progress": 1.0,
         "error": "",
         "files": files_of(path.parent, stem),
         "meta": meta,
         "summary_md": summary.get("markdown", ""),
         "summary_sections": sections,
-        "summary_tabs": [list(x) for x in _tabs(summary, sections)],
+        "summary_tabs": [list(x) for x in _tabs(summary, sections, lang)],
         "preset": summary.get("preset", ""),
         "transcript_md": "",
         "speakers": speakers,
@@ -260,7 +273,13 @@ def snapshot(output_dir: Path, entry_id: str) -> dict | None:
     }
 
 
-def _speakers_from_turns(turns: list, models: str) -> dict:
+def _is_call(models: str) -> bool:
+    """Записанный созвон видно по строке моделей: там сказано, чем писали."""
+    low = (models or "").lower()
+    return any(word in low for word in ("созвон", "запис", "call", "recording", "meeting"))
+
+
+def _speakers_from_turns(turns: list, models: str, lang: str = "") -> dict:
     """Записи, сделанные до того, как имена стали попадать в result.json.
 
     Без этого созвон из архива открывался бы с подписями «S1» и «S2».
@@ -272,20 +291,20 @@ def _speakers_from_turns(turns: list, models: str) -> dict:
             continue
         seconds[key] = seconds.get(key, 0.0) + max(
             0.0, float(turn.get("end") or 0) - float(turn.get("start") or 0))
-    call = "созвон" in models and set(seconds) <= {"S1", "S2"}
-    fallback = {"S1": "Я", "S2": "Собеседник"}
+    call = _is_call(models) and set(seconds) <= {"S1", "S2"}
+    fallback = {"S1": i18n.d("me", lang), "S2": i18n.d("them", lang)}
     return {
-        key: {"label": fallback[key] if call else f"Спикер {key[1:]}",
+        key: {"label": fallback[key] if call else i18n.d("speaker", lang, n=key[1:]),
               "seconds": round(sec, 1)}
         for key, sec in sorted(seconds.items())
     }
 
 
-def _tabs(summary: dict, sections: dict) -> list[tuple[str, str]]:
+def _tabs(summary: dict, sections: dict, lang: str = "") -> list[tuple[str, str]]:
     saved = summary.get("tabs")
     if saved:
         return [(str(k), str(v)) for k, v in saved if k and v]
-    return presets.tabs_for(list(sections))
+    return presets.tabs_for(list(sections), lang)
 
 
 def files_of(directory: Path, stem: str) -> dict[str, str]:
@@ -297,22 +316,28 @@ def files_of(directory: Path, stem: str) -> dict[str, str]:
     return out
 
 
-def _path_of(output_dir: Path, entry_id: str) -> Path | None:
-    for path in Path(output_dir).glob(f"*{RESULT_SUFFIX}"):
-        if _ident(path) == entry_id:
-            return path
+def _folders(where) -> list[Path]:
+    items = where if isinstance(where, (list, tuple, set)) else [where]
+    return [Path(x) for x in items if Path(x).exists()]
+
+
+def _path_of(where, entry_id: str) -> Path | None:
+    for folder in _folders(where):
+        for path in folder.glob(f"*{RESULT_SUFFIX}"):
+            if _ident(path) == entry_id:
+                return path
     return None
 
 
 # --- переименование спикеров ------------------------------------------------
 
-def rename(output_dir: Path, entry_id: str, names: dict[str, str]) -> dict | None:
+def rename(where, entry_id: str, names: dict[str, str], lang: str = "") -> dict | None:
     """Меняет подписи спикеров у записи из архива и переписывает её файлы.
 
     Имена людей вспоминаются обычно потом, когда запись уже давно разобрана, —
     поэтому переименование работает и здесь, а не только сразу после обработки.
     """
-    path = _path_of(output_dir, entry_id)
+    path = _path_of(where, entry_id)
     if path is None:
         return None
     data = _load_json(path)
@@ -330,17 +355,17 @@ def rename(output_dir: Path, entry_id: str, names: dict[str, str]) -> dict | Non
     stem = path.name[: -len(RESULT_SUFFIX)]
     directory = path.parent
     (directory / f"{stem}.transcript.md").write_text(
-        render.transcript_markdown(turns, meta, labels), "utf-8")
+        render.transcript_markdown(turns, meta, labels, lang), "utf-8")
     (directory / f"{stem}.transcript.txt").write_text(
-        render.plain_transcript(turns, labels), "utf-8")
+        render.plain_transcript(turns, labels, lang), "utf-8")
     subtitles = directory / f"{stem}.subtitles.srt"
     if subtitles.exists():
-        subtitles.write_text(render.srt(turns, labels), "utf-8")
+        subtitles.write_text(render.srt(turns, labels, lang=lang), "utf-8")
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
 
     _cache.pop(str(path), None)
     _text_cache.pop(str(directory / f"{stem}.transcript.txt"), None)
-    return snapshot(output_dir, entry_id)
+    return snapshot(directory, entry_id, lang)
 
 
 def _turns_of(data: dict) -> list[merge.Turn]:
@@ -361,23 +386,23 @@ def _turns_of(data: dict) -> list[merge.Turn]:
 
 # --- удаление ---------------------------------------------------------------
 
-def delete(output_dir: Path, entry_id: str) -> dict:
+def delete(where, entry_id: str) -> dict:
     """Убирает запись целиком — со всеми файлами, в Корзину, а не насовсем."""
-    path = _path_of(output_dir, entry_id)
+    path = _path_of(where, entry_id)
     if path is None:
-        return {"ok": False, "error": "Запись не найдена"}
+        return {"ok": False, "error": i18n.t("lib.missing")}
     stem = path.name[: -len(RESULT_SUFFIX)]
     targets = list(files_of(path.parent, stem).values())
     if not targets:
-        return {"ok": False, "error": "Файлы уже удалены"}
+        return {"ok": False, "error": i18n.t("lib.gone")}
 
     removed = _to_trash(targets)
     for target in targets:
         _cache.pop(target, None)
         _text_cache.pop(target, None)
-    index = _load_index(Path(output_dir))
+    index = _load_index(path.parent)
     index.pop(str(path), None)
-    _save_index(Path(output_dir), index)
+    _save_index(path.parent, index)
     return {"ok": True, "removed": removed, "title": stem}
 
 

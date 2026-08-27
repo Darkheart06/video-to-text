@@ -7,6 +7,8 @@ import os
 import platform
 from pathlib import Path
 
+from . import i18n
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.json"
 MODELS_DIR = ROOT / "models"
@@ -14,7 +16,16 @@ WORK_DIR = ROOT / ".work"
 
 # Результаты кладём туда, где человек их найдёт, а не внутрь приложения:
 # установленная копия живёт в Library, куда никто не заглядывает.
-OUTPUT_DIR = Path.home() / "Documents" / "Расшифровка записей"
+DOCUMENTS = Path.home() / "Documents"
+
+
+def output_dir_for(lang: str) -> Path:
+    return DOCUMENTS / i18n.d("out.dir", lang)
+
+
+# Папка по умолчанию — на языке документов; старое русское имя остаётся
+# рабочим, архив читает обе.
+OUTPUT_DIR = output_dir_for("ru")
 
 # Модели Whisper: короткое имя -> (репозиторий mlx, имя для faster-whisper)
 WHISPER_MODELS = {
@@ -26,6 +37,12 @@ WHISPER_MODELS = {
 }
 
 DEFAULTS = {
+    # Язык окна и язык документов — вещи разные: окно бывает английским у
+    # человека, который сводит русские созвоны. «auto» у окна — язык системы,
+    # «auto» у документов — вслед за окном.
+    "ui_language": "auto",           # auto | en | ru
+    "doc_language": "auto",          # auto | en | ru
+
     # Распознавание речи
     "asr_backend": "auto",           # auto | mlx | faster
     "whisper_model": "large-v3-turbo",
@@ -144,10 +161,42 @@ class Settings(dict):
     # --- производные значения -------------------------------------------------
 
     @property
+    def ui_lang(self) -> str:
+        return i18n.pick(self.get("ui_language", "auto"))
+
+    @property
+    def doc_lang(self) -> str:
+        """Язык документов: «auto» — тот же, что у окна."""
+        return i18n.pick(self.get("doc_language", "auto"), self.ui_lang)
+
+    @property
     def output_path(self) -> Path:
-        p = Path(self["output_dir"]).expanduser() if self["output_dir"] else OUTPUT_DIR
+        if self["output_dir"]:
+            p = Path(self["output_dir"]).expanduser()
+        else:
+            p = output_dir_for(self.doc_lang)
+            # Если человек уже накопил записи в папке с другим именем, а новая
+            # ещё пуста, продолжаем складывать туда же: разъезжаться архиву ни
+            # к чему.
+            empty = not p.exists() or not any(p.glob("*.result.json"))
+            if empty:
+                for lang in i18n.LANGUAGES:
+                    other = output_dir_for(lang)
+                    if other != p and other.exists() and any(other.glob("*.result.json")):
+                        p = other
+                        break
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    @property
+    def library_paths(self) -> list[Path]:
+        """Все папки, где могут лежать разобранные записи."""
+        found = [self.output_path]
+        for lang in i18n.LANGUAGES:
+            other = output_dir_for(lang)
+            if other not in found and other.exists():
+                found.append(other)
+        return found
 
     def whisper_repo(self, backend: str) -> str:
         mlx_repo, fw_name = WHISPER_MODELS.get(

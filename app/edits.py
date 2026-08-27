@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import compute, render
+from . import compute, i18n, render
 
 RESULT_SUFFIX = ".result.json"
 
@@ -23,7 +23,7 @@ class EditError(RuntimeError):
     pass
 
 
-def apply(result_path: str | Path, key: str, markdown: str) -> dict:
+def apply(result_path: str | Path, key: str, markdown: str, lang: str = "") -> dict:
     """Заменяет один раздел саммари и переписывает файлы записи.
 
     Возвращает обновлённые разделы и весь документ — интерфейсу этого хватает,
@@ -31,20 +31,20 @@ def apply(result_path: str | Path, key: str, markdown: str) -> dict:
     """
     path = Path(result_path)
     if not path.exists() or not path.name.endswith(RESULT_SUFFIX):
-        raise EditError("Файл записи не найден")
+        raise EditError(i18n.t("app.no_recording"))
 
     try:
         data = json.loads(path.read_text("utf-8"))
     except Exception as exc:
-        raise EditError(f"Не удалось прочитать запись: {exc}") from exc
+        raise EditError(i18n.t("edit.unreadable", error=exc)) from exc
 
     summary = data.get("summary")
     if not summary:
-        raise EditError("У этой записи нет саммари")
+        raise EditError(i18n.t("edit.no_summary"))
 
     sections = dict(summary.get("sections") or {})
     if key not in sections:
-        raise EditError("Такого раздела в записи нет")
+        raise EditError(i18n.t("edit.no_section"))
 
     tabs = [tuple(x) for x in (summary.get("tabs") or []) if len(x) == 2]
     if not tabs:
@@ -54,7 +54,9 @@ def apply(result_path: str | Path, key: str, markdown: str) -> dict:
     document = assemble(tabs, sections)
 
     # Строку из сметы могли удалить — итог пересчитываем, иначе он будет врать.
-    result = compute.process(document, str((data.get("meta") or {}).get("title", "")))
+    lang = i18n.pick(lang, i18n.current())
+    result = compute.process(document, str((data.get("meta") or {}).get("title", "")),
+                             lang)
     document = result.markdown
     sections = _split(document, tabs, sections)
 
@@ -68,11 +70,11 @@ def apply(result_path: str | Path, key: str, markdown: str) -> dict:
     meta = data.get("meta") or {}
 
     (directory / f"{stem}.summary.md").write_text(
-        render.summary_markdown(_AsSummary(document), meta), "utf-8")
+        render.summary_markdown(_AsSummary(document), meta, lang), "utf-8")
 
-    csv_path = directory / f"{stem}.таблицы.csv"
+    csv_path = directory / f"{stem}{i18n.d('out.tables', lang)}"
     if result.tables:
-        csv_path.write_text(compute.to_csv(result.tables), "utf-8")
+        csv_path.write_text(compute.to_csv(result.tables, lang), "utf-8")
     elif csv_path.exists():
         # Таблиц не осталось — файл со старыми суммами только запутает.
         csv_path.unlink(missing_ok=True)

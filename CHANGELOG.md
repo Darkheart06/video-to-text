@@ -4,6 +4,42 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.2.0] — 2026-08-27
+
+### Added
+
+- **The app speaks English.** Interface, progress messages, errors, profiles,
+  prompts and output files all exist in English and Russian. The two are set
+  separately — window language and document language — because they answer
+  different questions: who presses the buttons, and who will read the brief.
+  On first launch both follow the system; **Settings → Language** switches them
+  without a restart.
+- **Output follows the document language.** Results land in `Transcripts` or
+  «Расшифровка записей», tables are `.tables.csv` or `.таблицы.csv`, the total
+  row says “Total” or «Итого», and speakers are “Speaker 2” or «Спикер 2». The
+  archive reads both folders, so switching loses nothing.
+- **English profiles** — meeting, estimate, voice note, interview and your own
+  rules, with English headings and English instructions to the model. Section
+  keys are shared between languages, so a recording made in Russian opens in an
+  English window with English tabs.
+- **Spoken deadlines in English** — “tomorrow”, “by Friday”, “next week”, “end
+  of the month” resolve to real dates the same way the Russian ones do.
+- **English filler cleanup** — “um”, “you know”, “I mean”, “sort of” and their
+  neighbours are removed from transcripts, with the same protection against
+  cutting meaningful phrases.
+- `tools/uicheck.py --docs` now shoots the README screenshots in both languages
+  as part of the interface check, so the pictures cannot fall a version behind
+  the code again — which is exactly what had happened by 1.1.0.
+
+### Changed
+
+- `tools/selftest.py` pins the language for its Russian fixtures and gained a
+  section that exercises the English side end to end: profiles, totals, dates,
+  transcript, output folder and the completeness of the phrasebook itself.
+- `tools/speakertest.py` accepts any media file (not only `.wav`) and takes
+  `--truth` / `--list` alongside the Russian flags.
+- The command line takes `--ui-lang` and `--doc-lang`.
+
 ## [1.1.0] — 2026-08-27
 
 Everything here came out of using the app on real calls for a day, and every

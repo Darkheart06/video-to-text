@@ -10,6 +10,10 @@
 
 Исходные слова остаются на месте, дата приписывается рядом: «завтра
 (28 августа)». Так видно и что было сказано, и что это значит.
+
+Русский и английский разбираются одним и тем же кодом: слова разные, а
+арифметика одна. Язык нужен только для того, чтобы правильно написать дату —
+«28 августа» или «28 August».
 """
 
 from __future__ import annotations
@@ -17,53 +21,72 @@ from __future__ import annotations
 import re
 from datetime import date, timedelta
 
-MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля",
-          "августа", "сентября", "октября", "ноября", "декабря")
+from . import i18n
+
+MONTHS = {
+    "ru": ("января", "февраля", "марта", "апреля", "мая", "июня", "июля",
+           "августа", "сентября", "октября", "ноября", "декабря"),
+    "en": ("January", "February", "March", "April", "May", "June", "July",
+           "August", "September", "October", "November", "December"),
+}
 
 # Слова, которыми называют день недели, — в разных падежах.
 WEEKDAYS = {
     "понедельник": 0, "вторник": 1, "сред": 2, "четверг": 3,
     "пятниц": 4, "суббот": 5, "воскресен": 6,
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
 }
 
 # Заголовки колонок, в которых имеет смысл искать срок.
-DEADLINE_WORDS = ("срок", "дата", "когда", "дедлайн", "deadline", "due", "date")
+DEADLINE_WORDS = ("срок", "дата", "когда", "дедлайн", "deadline", "due", "date",
+                  "when", "by when")
+
+# Ничего не значащие прочерки — их не трогаем.
+DASHES = {"—", "-", "–", "n/a", "none", "tbd"}
 
 
-def human(day: date) -> str:
-    return f"{day.day} {MONTHS[day.month - 1]}"
+def human(day: date, lang: str = "") -> str:
+    lang = i18n.pick(lang, i18n.current())
+    months = MONTHS.get(lang) or MONTHS["en"]
+    name = months[day.month - 1]
+    return f"{day.day} {name}" if lang == "ru" else f"{name} {day.day}"
 
 
-def resolve(text: str, base: date) -> str:
+def resolve(text: str, base: date, lang: str = "") -> str:
     """Дописывает дату к относительному сроку в одной ячейке."""
     value = (text or "").strip()
-    if not value or value in {"—", "-", "–"}:
+    if not value or value.lower() in DASHES:
         return text
     # Дата уже названа — второй раз не пишем.
-    if re.search(r"\d{1,2}[.\s/-]\d{1,2}", value) or any(m in value.lower() for m in MONTHS):
+    lowered = value.lower()
+    if re.search(r"\d{1,2}[.\s/-]\d{1,2}", value):
+        return text
+    if any(m.lower() in lowered for m in MONTHS["ru"] + MONTHS["en"]):
         return text
 
-    lowered = value.lower()
     day = _day_for(lowered, base)
     if day is None:
         return text
-    return f"{value} ({human(day)})"
+    return f"{value} ({human(day, lang)})"
 
 
 def _day_for(lowered: str, base: date) -> date | None:
-    if "послезавтра" in lowered:
+    if "послезавтра" in lowered or "day after tomorrow" in lowered:
         return base + timedelta(days=2)
-    if "завтра" in lowered:
+    if "завтра" in lowered or "tomorrow" in lowered:
         return base + timedelta(days=1)
-    if "сегодня" in lowered:
+    if "сегодня" in lowered or "today" in lowered:
         return base
     # «конец», «конца», «концу» — падежи, ловим по корню.
-    if "конц" in lowered and "месяц" in lowered:
+    if ("конц" in lowered and "месяц" in lowered) or "end of the month" in lowered \
+            or "end of month" in lowered:
         return _month_end(base)
-    if "следующ" in lowered and "недел" in lowered:
+    if ("следующ" in lowered and "недел" in lowered) or "next week" in lowered:
         # Понедельник следующей недели — то, что обычно имеют в виду.
         return base + timedelta(days=7 - base.weekday())
-    if ("конц" in lowered and "недел" in lowered) or "этой недел" in lowered:
+    if ("конц" in lowered and "недел" in lowered) or "этой недел" in lowered \
+            or "end of the week" in lowered or "this week" in lowered:
         return base + timedelta(days=(4 - base.weekday()) % 7)
 
     for word, number in WEEKDAYS.items():
@@ -80,7 +103,7 @@ def _month_end(base: date) -> date:
     return date(base.year, base.month + 1, 1) - timedelta(days=1)
 
 
-def process(markdown: str, base: date | None) -> str:
+def process(markdown: str, base: date | None, lang: str = "") -> str:
     """Проставляет даты в колонках со сроками.
 
     Только в таблицах: в связном тексте «до пятницы» может быть цитатой или
@@ -117,7 +140,7 @@ def process(markdown: str, base: date | None) -> str:
             continue
         for n in columns:
             if n < len(cells):
-                cells[n] = resolve(cells[n], base)
+                cells[n] = resolve(cells[n], base, lang)
         out.append("| " + " | ".join(cells) + " |")
 
     return "\n".join(out)

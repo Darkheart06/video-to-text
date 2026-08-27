@@ -18,12 +18,16 @@ HESITATIONS = {
     "м", "мм", "ммм", "мммм", "мхм", "хм", "хмм",
     "а-а", "а-а-а", "э-э", "э-э-э", "м-м", "м-м-м",
     "ммда", "эээм", "ыы", "ы-ы",
+    # Английское мычание — те же звуки, другая запись.
+    "uh", "uhh", "uhhh", "um", "umm", "ummm", "erm", "eh", "hmm", "hmmm", "mm",
+    "mhm", "mm-hmm", "uh-huh",
 }
 
 # Слова-паразиты. Убираем, только если рядом нет сочетания из PROTECTED.
 FILLERS = {
     "вот", "ну", "типа", "короче", "блин", "слушай", "смотри",
     "собственно", "допустим", "скажем", "значит",
+    "basically", "literally", "actually", "anyway", "whatever",
 }
 
 # Устойчивые обороты-паразиты — вырезаются целиком.
@@ -32,7 +36,17 @@ FILLER_PHRASES = [
     "по сути дела", "если честно", "честно говоря", "скажем так",
     "собственно говоря", "как говорится", "что называется",
     "я не знаю", "ну это", "вот это вот",
+    "you know", "i mean", "sort of", "kind of", "or something",
+    "to be honest", "at the end of the day",
 ]
+
+# Продолжения, после которых оборот перестаёт быть паразитом: «как бы то ни
+# было» — это связка, а не «как бы».
+PHRASE_GUARDS = {
+    "как бы": (r"\s+то\s+ни\s+было",),
+    "sort of": (r"\s+thing",),
+    "kind of": (r"\s+thing",),
+}
 
 # Сочетания, где слово из FILLERS осмысленно и должно остаться.
 PROTECTED = {
@@ -44,6 +58,9 @@ PROTECTED = {
     ("ну", "что"), ("ну", "как"),
     ("значит", "что"), ("типа", "того"),
     ("смотри", "какой"), ("смотри", "как"),
+    # В английском те же слова бывают по делу: «actually happened» — не мусор.
+    ("actually", "happened"), ("actually", "works"), ("literally", "every"),
+    ("basically", "done"), ("anyway", "we"),
 }
 
 _WORD = re.compile(r"[А-Яа-яЁёA-Za-z0-9]+(?:-[А-Яа-яЁёA-Za-z0-9]+)*")
@@ -72,9 +89,13 @@ def _tokenize(text: str) -> list[tuple[str, str]]:
 
 def _drop_phrases(text: str) -> str:
     for phrase in FILLER_PHRASES:
-        pattern = r"(?<![А-Яа-яЁёA-Za-z])" + r"[\s,]+".join(
+        # Запятые, обнимавшие оборот, забираем вместе с ним: «мы, you know,
+        # отгружаем» без этого превращается в «мы, отгружаем».
+        pattern = (r"[\s,]*(?<![А-Яа-яЁёA-Za-z])" + r"[\s,]+".join(
             re.escape(w) for w in phrase.split()
-        ) + r"(?![А-Яа-яЁёA-Za-z])"
+        ) + r"[\s,]*(?![А-Яа-яЁёA-Za-z])")
+        for guard in PHRASE_GUARDS.get(phrase, ()):
+            pattern += f"(?!{guard})"
         text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
     return text
 

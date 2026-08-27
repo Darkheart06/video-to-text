@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import diarize, edits, library, llm, media, presets, record
+from . import diarize, edits, i18n, library, llm, media, presets, record
 from .pipeline import Runner
 from .settings import WHISPER_MODELS, Settings
 
@@ -34,6 +34,7 @@ def _push(event: str, payload: dict) -> None:
 class Api:
     def __init__(self) -> None:
         self.settings = Settings.load()
+        i18n.use(self.settings.get("ui_language", "auto"))
         self.runner = Runner(self.settings, listener=lambda job: _push("job", job.snapshot()))
         self.steno = record.Stenographer(self.settings, listener=_push)
         threading.Thread(target=self._watch_for_calls, daemon=True).start()
@@ -164,6 +165,7 @@ class Api:
                     value = float(value)
                 self.settings[key] = value
         self.settings.save()
+        i18n.use(self.settings.get("ui_language", "auto"))
         return dict(self.settings)
 
     def prepare_models(self) -> dict:
@@ -186,7 +188,8 @@ class Api:
         patterns = ";".join(f"*{e}" for e in sorted(SUPPORTED_EXT))
         result = _window.create_file_dialog(
             webview.OPEN_DIALOG, allow_multiple=True,
-            file_types=(f"Видео и аудио ({patterns})", "Все файлы (*.*)"),
+            file_types=(f"{i18n.t('app.files_media')} ({patterns})",
+                        i18n.t("app.files_all")),
         )
         return list(result or [])
 
@@ -195,7 +198,7 @@ class Api:
 
         result = _window.create_file_dialog(
             webview.OPEN_DIALOG, allow_multiple=False,
-            file_types=("Файл модели (*.gguf)", "Все файлы (*.*)"),
+            file_types=(i18n.t("app.files_gguf"), i18n.t("app.files_all")),
         )
         return str(result[0]) if result else ""
 
@@ -217,13 +220,15 @@ class Api:
     def library(self, query: str = "") -> dict:
         """Список всего, что уже разобрано, — для панели слева."""
         try:
-            items = library.entries(self.settings.output_path, query or "")
+            items = library.entries(self.settings.library_paths, query or "",
+                                    self.settings.ui_lang)
         except Exception as exc:
             return {"items": [], "error": str(exc)}
         return {"items": items, "dir": str(self.settings.output_path)}
 
     def library_open(self, entry_id: str) -> dict | None:
-        return library.snapshot(self.settings.output_path, entry_id)
+        return library.snapshot(self.settings.library_paths, entry_id,
+                                self.settings.ui_lang)
 
     def edit_summary(self, job_id: str, key: str, markdown: str) -> dict:
         """Заменяет раздел саммари — и в файлах, и в открытой карточке.
@@ -234,13 +239,14 @@ class Api:
         job = self.runner.get(job_id)
         result = (job.files or {}).get("result") if job else None
         if not result:
-            snapshot = library.snapshot(self.settings.output_path, job_id)
+            snapshot = library.snapshot(self.settings.library_paths, job_id,
+                                        self.settings.ui_lang)
             result = (snapshot or {}).get("files", {}).get("result")
         if not result:
-            return {"ok": False, "error": "Файл записи не найден"}
+            return {"ok": False, "error": i18n.t("app.no_recording")}
 
         try:
-            fresh = edits.apply(result, key, markdown or "")
+            fresh = edits.apply(result, key, markdown or "", self.settings.doc_lang)
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -249,30 +255,33 @@ class Api:
             job.summary_md = fresh["markdown"]
             if fresh["tables"]:
                 job.files.setdefault(
-                    "tables", str(Path(result).parent
-                                  / (Path(result).name.replace(".result.json",
-                                                               ".таблицы.csv"))))
+                    "tables",
+                    str(Path(result).parent
+                        / Path(result).name.replace(
+                            ".result.json", i18n.d("out.tables", self.settings.doc_lang))))
             elif "tables" in job.files:
                 job.files.pop("tables")
         return {"ok": True, **fresh}
 
     def library_rename(self, entry_id: str, names: dict) -> dict | None:
         try:
-            return library.rename(self.settings.output_path, entry_id, names or {})
+            return library.rename(self.settings.library_paths, entry_id, names or {},
+                                  self.settings.doc_lang)
         except Exception:
             return None
 
     def library_delete(self, entry_id: str) -> dict:
         try:
-            return library.delete(self.settings.output_path, entry_id)
+            return library.delete(self.settings.library_paths, entry_id)
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
     def presets(self) -> dict:
         """Профили для интерфейса плюс пример шаблона для своих правил."""
-        return {"items": presets.catalogue(),
+        lang = self.settings.doc_lang
+        return {"items": presets.catalogue(lang),
                 "current": self.settings.get("preset", presets.DEFAULT),
-                "example": presets.CUSTOM_EXAMPLE}
+                "example": presets.custom_example(lang)}
 
     def job(self, job_id: str) -> dict | None:
         job = self.runner.get(job_id)
@@ -338,17 +347,12 @@ def run() -> int:
     try:
         import webview
     except ImportError:
-        print(
-            "Не установлен pywebview — окно не открыть.\n"
-            "Установите: pip install pywebview\n"
-            "Или пользуйтесь консольной версией: python -m app.cli <файл>",
-            file=sys.stderr,
-        )
+        print(i18n.t("app.no_pywebview"), file=sys.stderr)
         return 1
 
     api = Api()
     _window = webview.create_window(
-        "Расшифровка записей",
+        i18n.t("app.title"),
         str(UI_FILE),
         js_api=api,
         width=1180,

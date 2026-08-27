@@ -16,6 +16,8 @@ import io
 import re
 from dataclasses import dataclass, field
 
+from . import i18n
+
 # Как называются колонки. Порядок важен: сначала более узкие варианты.
 QTY_WORDS = ("количество", "кол-во", "колво", "часы", "часов", "часа", "час",
              "объём", "объем", "шт", "штук", "qty", "quantity", "hours")
@@ -25,6 +27,9 @@ SUM_WORDS = ("стоимость", "сумма", "итого", "всего", "am
 UNIT_WORDS = ("единица", "ед", "ед.", "единицы", "unit")
 
 TOTAL_LABELS = ("итого", "всего", "total", "итог")
+
+# Как подписать посчитанную строку — на языке документа.
+TOTAL_WORD = {"ru": "Итого", "en": "Total"}
 
 CURRENCY_SIGNS = {"₽": "₽", "руб": "₽", "р.": "₽", "rub": "₽",
                   "$": "$", "usd": "$", "€": "€", "eur": "€"}
@@ -139,7 +144,7 @@ def _render_row(cells: list[str]) -> str:
 
 # --- основной сценарий -------------------------------------------------------
 
-def process(markdown: str, title: str = "") -> Result:
+def process(markdown: str, title: str = "", lang: str = "") -> Result:
     """Находит в тексте таблицы, пересчитывает стоимость и добавляет «Итого»."""
     lines = markdown.split("\n")
     out: list[str] = []
@@ -161,7 +166,7 @@ def process(markdown: str, title: str = "") -> Result:
                 out.extend(block)
             else:
                 tables.append(table)
-                out.extend(_to_markdown(table))
+                out.extend(_to_markdown(table, lang))
             continue
 
         out.append(line)
@@ -244,14 +249,18 @@ def _recalc(block: list[str], title: str) -> Table | None:
                  qty_index=qty_i, rate_index=rate_i)
 
 
-def _to_markdown(table: Table) -> list[str]:
+def _total_word(lang: str) -> str:
+    return TOTAL_WORD.get(i18n.pick(lang, i18n.current()), TOTAL_WORD["en"])
+
+
+def _to_markdown(table: Table, lang: str = "") -> list[str]:
     lines = [_render_row(table.header),
              "|" + "|".join(["---"] * len(table.header)) + "|"]
     lines += [_render_row(r) for r in table.rows]
     if table.total is not None:
         sum_i = table.sum_index if table.sum_index >= 0 else len(table.header) - 1
         cells = [""] * len(table.header)
-        cells[0] = "**Итого**"
+        cells[0] = f"**{_total_word(lang)}**"
         cells[sum_i] = "**" + format_number(table.total) + \
                        (f" {table.currency}" if table.currency else "") + "**"
         lines.append(_render_row(cells))
@@ -260,7 +269,7 @@ def _to_markdown(table: Table) -> list[str]:
 
 # --- выгрузка ----------------------------------------------------------------
 
-def to_csv(tables: list[Table]) -> str:
+def to_csv(tables: list[Table], lang: str = "") -> str:
     """Одна CSV на все таблицы: между ними пустая строка и заголовок раздела.
 
     Числа выгружаем голыми — без знака валюты и разделителей тысяч, иначе
@@ -280,7 +289,7 @@ def to_csv(tables: list[Table]) -> str:
             writer.writerow([_csv_cell(c, i in numeric) for i, c in enumerate(row)])
         if table.total is not None:
             tail = [""] * len(table.header)
-            tail[0] = "Итого"
+            tail[0] = _total_word(lang)
             sum_i = table.sum_index if table.sum_index >= 0 else len(table.header) - 1
             tail[sum_i] = _csv_number(table.total)
             writer.writerow(tail)

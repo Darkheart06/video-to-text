@@ -136,6 +136,105 @@ LIB = [
      "preview": "Еженедельная встреча команды продукта по подготовке релиза 2.4."},
 ]
 
+
+# --- то же самое по-английски: для картинок в английском README и для
+# проверки, что окно собирается на другом языке с другими данными.
+
+EN_SECTIONS = {
+    "summary": "- Agreed the scope of the first release and moved two tasks to the next sprint.\n"
+               "- The contractor budget is approved at **£7,400**.\n"
+               "- The 1C integration is still open — waiting on finance.",
+    "brief": "### Context\nWeekly product team meeting on release 2.4.\n\n"
+             "### Topics discussed\n- Release scope and what moves\n- Contractor budget\n"
+             "- The 1C integration\n\n### Key points\n- Onboarding is cut to three screens.\n"
+             "- We hold the dates by cutting scope, not quality.",
+    "tasks": "| Task | Owner | Deadline |\n|---|---|---|\n"
+             "| Prepare the onboarding mockups | Irina | 28 August |\n"
+             "| Sign off the contractor estimate | Dmitry | 1 September |\n"
+             "| Clarify the 1C requirements | Sergei | — |",
+    "decisions": "- Onboarding is cut to three screens.\n- The contractor is approved, up to £7,400.",
+    "risks": "- No answer from finance on 1C — blocks the estimate.\n"
+             "- A developer's holiday from 5 September is not in the plan.",
+}
+
+EN_ESTIMATE_SECTIONS = {
+    "works": "| Job | Quantity | Unit | Rate | Amount |\n|---|---|---|---|---|\n"
+             "| Take down the partition | 12 | hour | 30 | 360 |\n"
+             "| Chase the walls | 8 | hour | 25 | 200 |\n"
+             "| **Total** |  |  |  | **560** |",
+    "terms": "- Paid on acceptance.",
+    "open": "- No price was named for the doors.",
+    "summary": "- An estimate for rough works in a two-room flat.",
+}
+
+EN_TURNS = [
+    (12.4, 41.8, "S1", "Let's start with the release. The plan says the 28th, and I want to "
+                       "understand what we actually make."),
+    (42.1, 58.0, "S2", "Everything except onboarding. Three screens out of five are done."),
+    (58.4, 96.2, "S1", "Then we cut it to three screens and move the rest. Irina, can you "
+                       "have the mockups by the 28th?"),
+    (96.5, 104.0, "S3", "I can, but I need the final copy by Wednesday."),
+    (104.2, 151.9, "S2", "The copy will be there. One more thing about the contractor — the "
+                         "estimate came in at seven and a half thousand, we need to sign it off."),
+]
+
+EN_JOB = {
+    **JOB, "title": "Product team 25.08.mp4",
+    "meta": {"duration": 3187, "language": "en"},
+    "summary_md": "## Summary\n" + EN_SECTIONS["summary"],
+    "summary_sections": EN_SECTIONS,
+    "speakers": {
+        "S1": {"label": "Speaker 1", "seconds": 1284.0},
+        "S2": {"label": "Speaker 2", "seconds": 902.5},
+        "S3": {"label": "Speaker 3", "seconds": 431.2},
+    },
+    "turns": [{"start": s, "end": e, "speaker": spk, "text": x} for s, e, spk, x in EN_TURNS],
+}
+
+EN_RUNNING = {
+    **EN_JOB, "id": "demo5678", "title": "Customer interview.mov", "status": "running",
+    "stage": "asr", "message": "Recognising, part 2 of 6", "progress": 0.34,
+    "files": {}, "summary_sections": {}, "turns": [], "speakers": {},
+    "warnings": ["Speaker separation failed: the models are not downloaded yet"],
+}
+
+EN_ESTIMATE_JOB = {
+    **ESTIMATE_JOB, "title": "Renovation estimate.m4a",
+    "meta": {"duration": 214, "language": "en"},
+    "summary_md": "## Work\n" + EN_ESTIMATE_SECTIONS["works"],
+    "summary_sections": EN_ESTIMATE_SECTIONS,
+    "summary_tabs": [["works", "Work"], ["terms", "Terms"],
+                     ["open", "To clarify"], ["summary", "In short"]],
+    "files": {"summary": "/Users/sam/output/Renovation estimate.summary.md",
+              "tables": "/Users/sam/output/Renovation estimate.tables.csv"},
+    "turns": [{"start": 3.0, "end": 9.0, "speaker": "S1",
+               "text": "So, taking down the partition — twelve hours at thirty."}],
+}
+
+EN_REC = {
+    **REC, "title": "Call 25.08 21-40",
+    "message": "6 min recorded, 14 lines",
+    "notes": [{"at": 300, "text": "- Went over the release dates\n- Irina takes the mockups"}],
+    "people": ["Irina", "Dmitry"],
+    "lines": [
+        {"start": 12.0, "who": "me", "label": "Me", "index": 0, "tagged": False,
+         "text": "Let's start with the release."},
+        {"start": 19.5, "who": "them", "label": "Them", "index": 1, "tagged": False,
+         "text": "Everything except onboarding."},
+        {"start": 31.0, "who": "me", "label": "Me", "index": 2, "tagged": False,
+         "text": "Then we cut it to three screens."},
+    ],
+}
+
+EN_LIB = [
+    {**LIB[0], "title": "Call 26.08 07-30",
+     "preview": "Agreed the scope of the first release and moved two tasks."},
+    {**LIB[1], "title": "Renovation estimate",
+     "preview": "Partition demolition, wall chasing, waste removal."},
+    {**LIB[2], "title": "Product team 25.08.mp4",
+     "preview": "Weekly product team meeting on release 2.4."},
+]
+
 BRIDGE = """
 window.pywebview = {api: {
   get_settings: async () => (%(settings)s),
@@ -214,6 +313,83 @@ def docs_shot(page, scheme: str, want: str, name: str) -> None:
     page.screenshot(path=str(DOCS_DIR / name))
 
 
+def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path) -> list[str]:
+    """Собирает окно по-английски: проверяет перевод и снимает картинки."""
+    import re
+
+    from app import i18n
+
+    errors: list[str] = []
+    i18n.use("en")
+    english = dict(settings, ui_language="en", doc_language="en")
+    catalogue = {"items": presets_mod.catalogue("en"), "current": "meeting",
+                 "example": presets_mod.custom_example("en")}
+    bridge = BRIDGE % {"settings": json.dumps(english), "env": json.dumps(env),
+                       "rec": json.dumps(EN_REC), "presets": json.dumps(catalogue),
+                       "lib": json.dumps(EN_LIB), "estimate": json.dumps(EN_ESTIMATE_JOB),
+                       "sections": json.dumps(EN_SECTIONS)}
+
+    for scheme in ("light", "dark"):
+        page = browser.new_page(viewport={"width": 1180, "height": 820},
+                                color_scheme=scheme)
+        page.on("pageerror", lambda e, s=scheme: errors.append(f"en/{s}: {e}"))
+        page.on("console", lambda m, s=scheme: errors.append(f"en/{s}: {m.text}")
+                if m.type == "error" else None)
+        page.add_init_script(bridge)
+        page.goto(UI.as_uri())
+        page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
+        page.wait_for_timeout(300)
+
+        for probe in ("Archive", "Settings", "Choose a recording"):
+            if probe not in (page.text_content("#app") or ""):
+                errors.append(f"en/{scheme}: в окне нет «{probe}»")
+
+        page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", EN_JOB)
+        page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", EN_RUNNING)
+        page.wait_for_timeout(150)
+        page.click('.job[data-id="demo1234"] [data-tab="tasks"]')
+        page.wait_for_timeout(120)
+        page.click('[data-rec="start"]')
+        page.wait_for_timeout(300)
+        page.screenshot(path=str(out_dir / f"12-en-{scheme}.png"))
+        docs_shot(page, scheme, "light", "main.png")
+
+        # Кириллица в собственных надписях окна означает забытую строку.
+        # Данные (названия записей, реплики) остаются русскими — их исключаем.
+        chrome = page.evaluate("""() => {
+          const parts = [];
+          document.querySelectorAll('header, .picker, .drop, .tabs, .side-head,'
+            + ' .side-foot, .rec-head, .people, .actions').forEach(el => {
+            parts.push(el.innerText || '');
+          });
+          return parts.join(' | ');
+        }""")
+        stray = [w for w in re.findall(r"[А-Яа-яЁё][А-Яа-яЁё-]+", chrome)
+                 if w not in ("Созвон", "Встреча", "Собеседник", "Я", "Интервью",
+                              "клиентом", "команды", "Записано", "мин", "реплик",
+                              # имена участников — это данные, а не интерфейс
+                              "Ирина", "Дмитрий", "Сергей")]
+        if stray:
+            errors.append(f"en/{scheme}: непереведённое в окне — {sorted(set(stray))[:6]}")
+
+        page.click('[data-rec="cancel"]')
+        page.wait_for_timeout(150)
+        page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", EN_ESTIMATE_JOB)
+        page.wait_for_timeout(150)
+        page.click('.job[data-id="demo9999"] [data-tab="works"]')
+        page.wait_for_timeout(150)
+        docs_shot(page, scheme, "light", "estimate.png")
+
+        page.evaluate("state.jobs.delete('demo9999'); render();")
+        page.click('[data-lib="lib1"]')
+        page.wait_for_timeout(300)
+        docs_shot(page, scheme, "dark", "archive-dark.png")
+        page.close()
+
+    i18n.use("ru")
+    return errors
+
+
 def main() -> int:
     from playwright.sync_api import sync_playwright
 
@@ -222,6 +398,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     settings = {
+        "ui_language": "ru", "doc_language": "auto",
         "record_autodetect": True, "record_notes_minutes": 5, "record_chunk_seconds": 30,
         "language": "ru", "whisper_model": "large-v3-turbo", "asr_backend": "auto",
         "diarization_enabled": True, "num_speakers": 0, "cluster_threshold": 0.6,
@@ -244,7 +421,14 @@ def main() -> int:
         "whisper_models": ["large-v3-turbo", "large-v3", "medium", "small", "base"],
         "output_dir": "/Users/sergey/output",
     }
+    from app import i18n
     from app import presets as presets_mod
+    # Настоящий Api.__init__ делает то же самое при старте: язык окна берётся
+    # из settings["ui_language"], а auto/отсутствие поля разворачивается в
+    # язык системы. Тест эмулирует настройки без ui_language — окно в нём
+    # по умолчанию русское (см. index.html), так что и профили здесь должны
+    # прийти русскими, иначе подсказки в интерфейсе и в этом словаре разойдутся.
+    i18n.use("ru")
     catalogue = {"items": presets_mod.catalogue(), "current": "meeting",
                  "example": presets_mod.CUSTOM_EXAMPLE}
     bridge = BRIDGE % {"settings": json.dumps(settings), "env": json.dumps(env),
@@ -302,7 +486,7 @@ def main() -> int:
                     errors.append(f"{scheme}: в панели записи нет «{probe}»")
             if not page.locator(".rec-dot").count():
                 errors.append(f"{scheme}: нет индикатора идущей записи")
-            docs_shot(page, scheme, "light", "main.png")
+            docs_shot(page, scheme, "light", "main.ru.png")
 
             # --- разметка голосов по ходу ---
             if page.locator(".person").count() < 2:
@@ -351,7 +535,7 @@ def main() -> int:
             if "56 000" not in (page.text_content("#pane-demo9999") or ""):
                 errors.append(f"{scheme}: в смете нет итога")
             page.screenshot(path=str(out_dir / f"7-estimate-{scheme}.png"), full_page=True)
-            docs_shot(page, scheme, "light", "estimate.png")
+            docs_shot(page, scheme, "light", "estimate.ru.png")
             page.evaluate("state.jobs.delete('demo9999'); render();")
             page.wait_for_timeout(100)
 
@@ -439,7 +623,7 @@ def main() -> int:
             page.click("#btn-pick-top")
             page.wait_for_timeout(120)
             page.screenshot(path=str(out_dir / f"9-library-{scheme}.png"))
-            docs_shot(page, scheme, "dark", "archive-dark.png")
+            docs_shot(page, scheme, "dark", "archive-dark.ru.png")
             # удаление в два клика: первый спрашивает, второй убирает
             page.click('[data-libdel="lib3"]')
             page.wait_for_timeout(150)
@@ -551,6 +735,14 @@ def main() -> int:
             if page.locator(".chip").count() != 4:
                 errors.append(f"{scheme}: индикаторы состояния не отрисовались")
             page.close()
+
+        # --- английское окно ---
+        # Отдельным проходом, а не вторым витком цикла: проверки выше ищут
+        # русские строки, и переписывать их «под язык» — значит проверять
+        # словарь словарём. Здесь важно другое: что окно вообще собирается,
+        # нигде не осталось русского и картинки для английского README
+        # снимаются с того же состояния, что и русские.
+        errors += _english_pass(browser, settings, env, presets_mod, out_dir)
         browser.close()
 
     for e in errors:

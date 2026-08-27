@@ -8,7 +8,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import media
+from . import i18n, media
 from .settings import Settings, resolve_asr_backend
 
 Progress = Callable[[float, str], None]  # (доля 0..1, подпись)
@@ -63,7 +63,7 @@ def transcribe(wav_path, settings: Settings, progress: Progress | None = None) -
                                                 duration, progress)
 
     segments = _cleanup(segments)
-    progress(1.0, "Распознавание завершено")
+    progress(1.0, i18n.t("asr.done"))
     return Transcript(
         segments=segments,
         language=detected or (language or "?"),
@@ -86,7 +86,7 @@ def _transcribe_mlx(audio: np.ndarray, model_id: str, language: str | None,
 
     for idx, (a, b) in enumerate(chunks):
         offset = a / media.SAMPLE_RATE
-        progress(a / total, f"Распознавание, часть {idx + 1} из {len(chunks)}")
+        progress(a / total, i18n.t("asr.part", n=idx + 1, total=len(chunks)))
         res = mlx_whisper.transcribe(
             audio[a:b].astype(np.float32),
             path_or_hf_repo=model_id,
@@ -144,7 +144,7 @@ def _transcribe_faster(audio: np.ndarray, model_id: str, language: str | None,
             if w.start is not None and w.end is not None
         ]
         out.append(Segment(float(s.start), float(s.end), (s.text or "").strip(), words))
-        progress(min(0.99, float(s.end) / total), "Распознавание речи")
+        progress(min(0.99, float(s.end) / total), i18n.t("asr.run"))
     return out, info.language
 
 

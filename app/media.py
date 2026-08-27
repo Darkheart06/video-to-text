@@ -12,6 +12,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import i18n
+
 SAMPLE_RATE = 16000
 
 VIDEO_EXT = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".mpg", ".mpeg", ".wmv"}
@@ -37,9 +39,7 @@ def tool(name: str) -> str | None:
 
 def require_ffmpeg() -> None:
     if not tool("ffmpeg"):
-        raise MediaError(
-            "ffmpeg не найден. Установите его: brew install ffmpeg"
-        )
+        raise MediaError(i18n.t("err.ffmpeg"))
 
 
 @dataclass
@@ -54,18 +54,16 @@ def probe(path: str | Path) -> MediaInfo:
     require_ffmpeg()
     path = Path(path)
     if not path.exists():
-        raise MediaError(f"Файл не найден: {path}")
+        raise MediaError(i18n.t("err.not_found", path=path))
     if path.suffix.lower() not in SUPPORTED_EXT:
-        raise MediaError(
-            f"Формат {path.suffix or '?'} не поддерживается. "
-            f"Поддерживаются: {', '.join(sorted(SUPPORTED_EXT))}"
-        )
+        raise MediaError(i18n.t("err.format", ext=path.suffix or "?",
+                                list=", ".join(sorted(SUPPORTED_EXT))))
 
     ffprobe = tool("ffprobe")
     info = _probe_ffprobe(ffprobe, path) if ffprobe else _probe_ffmpeg(path)
 
     if not info.has_audio:
-        raise MediaError("В файле нет звуковой дорожки — распознавать нечего.")
+        raise MediaError(i18n.t("err.no_audio"))
     return info
 
 
@@ -76,7 +74,7 @@ def _probe_ffprobe(ffprobe: str, path: Path) -> MediaInfo:
         capture_output=True, text=True,
     )
     if out.returncode != 0:
-        raise MediaError(f"Не удалось прочитать файл: {out.stderr.strip()[:400]}")
+        raise MediaError(i18n.t("err.read", error=out.stderr.strip()[:400]))
 
     data = json.loads(out.stdout or "{}")
     streams = data.get("streams", [])
@@ -107,7 +105,7 @@ def _probe_ffmpeg(path: Path) -> MediaInfo:
                          capture_output=True, text=True)
     text = out.stderr
     if "Invalid data" in text or "No such file" in text:
-        raise MediaError(f"Не удалось прочитать файл: {text.strip()[-300:]}")
+        raise MediaError(i18n.t("err.read", error=text.strip()[-300:]))
 
     duration = 0.0
     m = re.search(r"Duration:\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)", text)
@@ -135,7 +133,7 @@ def extract_wav(src: str | Path, dst: str | Path) -> Path:
     ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0 or not dst.exists():
-        raise MediaError(f"Не удалось извлечь звук: {res.stderr.strip()[:400]}")
+        raise MediaError(i18n.t("err.extract", error=res.stderr.strip()[:400]))
     return dst
 
 
@@ -145,7 +143,7 @@ def read_wav(path: str | Path) -> np.ndarray:
 
     with wave.open(str(path), "rb") as w:
         if w.getframerate() != SAMPLE_RATE or w.getnchannels() != 1:
-            raise MediaError("Ожидался моно WAV 16 кГц")
+            raise MediaError(i18n.t("err.wav"))
         frames = w.readframes(w.getnframes())
     data = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
     return data

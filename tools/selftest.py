@@ -22,11 +22,14 @@ from app import (  # noqa: E402
     dates,
     diarize,
     edits,
+    i18n,
     library,
     media,
+    merge,
     pipeline,
     presets,
     record,
+    render,
     summarize,
 )
 from app.settings import Settings  # noqa: E402
@@ -134,6 +137,14 @@ class FakeOllama(BaseHTTPRequestHandler):
         self._send({"message": {"role": "assistant", "content": answer}})
 
 
+
+def settings_output_name(settings) -> str:
+    """Имя папки с результатами при пустом output_dir — без создания папки."""
+    from app.settings import output_dir_for
+
+    return output_dir_for(settings.doc_lang).name
+
+
 def check(name: str, condition: bool, detail: str = "") -> bool:
     mark = "\033[32m✓\033[0m" if condition else "\033[31m✗\033[0m"
     print(f"  {mark} {name}{(' — ' + detail) if detail else ''}")
@@ -170,7 +181,13 @@ def main() -> int:
     server = ThreadingHTTPServer(("127.0.0.1", 11888), FakeOllama)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
+    # Проверки ниже написаны по-русски и сверяют русские подписи, поэтому язык
+    # задаём явно: иначе на английской системе тест «упадёт» из-за перевода,
+    # а не из-за поломки. Английскую сторону проверяет отдельный раздел 16.
+    i18n.use("ru")
     settings = Settings.load()
+    settings["ui_language"] = "ru"
+    settings["doc_language"] = "ru"
     settings["llm_backend"] = "ollama"
     settings["ollama_url"] = "http://127.0.0.1:11888"
     settings["ollama_model"] = "auto"
@@ -566,6 +583,46 @@ def main() -> int:
             break
         time.sleep(0.1)
     failures += not check("несуществующий файл", bad.status == "error", bad.error[:60])
+
+    print("\n16. Английский язык")
+    # Проверяем не перевод как таковой, а то, что язык доходит до всех мест,
+    # где рождается текст: профили, документ, суммы, даты, подписи спикеров.
+    english = Settings({**settings, "ui_language": "en", "doc_language": "en"})
+    failures += not check("профиль на английском",
+                          presets.resolve(english).sections[0][1] == "Summary",
+                          presets.resolve(english).sections[0][1])
+    failures += not check("свои правила по-английски",
+                          "In short" in presets.custom_example("en"))
+    failures += not check("ключи разделов не зависят от языка",
+                          [k for k, _ in presets.builtin("en")["meeting"].sections]
+                          == [k for k, _ in presets.builtin("ru")["meeting"].sections])
+    en_estimate = compute.process(
+        "| Job | Quantity | Rate | Amount |\n|---|---|---|---|\n| Demo | 4 | 25 | |\n",
+        "Estimate", "en")
+    failures += not check("«Total» дописано по-английски",
+                          "**Total**" in en_estimate.markdown
+                          and en_estimate.tables[0].total == 100)
+    en_dates = dates.process(
+        "| Task | Deadline |\n|---|---|\n| Ship it | tomorrow |\n",
+        _date(2026, 8, 27), "en")
+    failures += not check("«tomorrow» стало датой", "(August 28)" in en_dates, en_dates.strip()[-40:])
+    failures += not check("подпись спикера по-английски",
+                          i18n.d("speaker", "en", n=2) == "Speaker 2")
+    en_turns = [merge.Turn(start=0, end=2, speaker=0, text="hello there")]
+    en_doc = render.transcript_markdown(en_turns, {"title": "Call"}, None, "en")
+    failures += not check("транскрипт по-английски",
+                          "# Transcript — Call" in en_doc and "| Duration |" in en_doc)
+    failures += not check("папка результатов по языку",
+                          settings_output_name(english) == "Transcripts"
+                          and settings_output_name(
+                              Settings({**settings, "doc_language": "ru"}))
+                          == "Расшифровка записей")
+    failures += not check("сообщения переводятся",
+                          i18n.t("state.done", "en") == "Done"
+                          and i18n.t("state.done", "ru") == "Готово")
+    missing = [key for key, row in {**i18n.MESSAGES, **i18n.DOCUMENT}.items()
+               if not row.get("ru") or not row.get("en")]
+    failures += not check("перевод полный", not missing, ", ".join(missing[:5]))
 
     asr.transcribe = real
     server.shutdown()

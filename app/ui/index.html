@@ -320,21 +320,21 @@
 <body>
 <div id="app">
   <header>
-    <h1>Расшифровка записей</h1>
+    <h1 data-t="app.title">Расшифровка записей</h1>
     <div class="chips" id="chips"></div>
-    <button class="btn ghost sm" id="btn-side" title="Показать или скрыть архив">Архив</button>
-    <button class="btn ghost sm" id="btn-settings">Настройки</button>
+    <button class="btn ghost sm" id="btn-side" data-t="head.archive" data-t-title="head.archiveTitle" title="Показать или скрыть архив">Архив</button>
+    <button class="btn ghost sm" id="btn-settings" data-t="head.settings">Настройки</button>
   </header>
 
   <div class="stage">
   <aside class="side" id="side">
     <div class="side-head">
-      <input type="text" id="lib-search" placeholder="Поиск по записям и тексту">
+      <input type="text" id="lib-search" data-t-ph="side.searchPh" placeholder="Поиск по записям и тексту">
       <span class="side-count" id="lib-count"></span>
     </div>
     <div class="side-list" id="lib-list"></div>
     <div class="side-foot">
-      <button class="btn sm ghost" id="btn-lib-folder" style="width:100%">Открыть папку с файлами</button>
+      <button class="btn sm ghost" id="btn-lib-folder" style="width:100%" data-t="side.openFolder">Открыть папку с файлами</button>
     </div>
   </aside>
   <main>
@@ -342,9 +342,9 @@
       <div class="picker" id="picker"></div>
       <div id="rec"></div>
       <div class="drop" id="drop">
-        <h2>Перетащите запись сюда</h2>
-        <p>Или выберите файл — приложение сделает транскрипт, саммари и бриф</p>
-        <button class="btn primary" id="btn-pick">Выбрать запись</button>
+        <h2 data-t="drop.title">Перетащите запись сюда</h2>
+        <p data-t="drop.hint">Или выберите файл — приложение сделает транскрипт, саммари и бриф</p>
+        <button class="btn primary" id="btn-pick" data-t="btn.pick">Выбрать запись</button>
         <div class="formats">mp4 · mov · webm · mkv · mp3 · m4a · wav</div>
       </div>
       <div class="jobs" id="jobs"></div>
@@ -355,17 +355,507 @@
 
 <div class="backdrop" id="backdrop"></div>
 <aside class="drawer" id="drawer">
-  <header><h1>Настройки</h1><button class="btn ghost sm" id="btn-close" style="margin-left:auto">Закрыть</button></header>
+  <header><h1 data-t="head.settings">Настройки</h1><button class="btn ghost sm" id="btn-close" style="margin-left:auto" data-t="btn.close">Закрыть</button></header>
   <div class="body" id="settings-body"></div>
   <div class="foot">
-    <button class="btn primary" id="btn-save">Сохранить</button>
-    <button class="btn" id="btn-models">Скачать модели спикеров</button>
+    <button class="btn primary" id="btn-save" data-t="btn.save">Сохранить</button>
+    <button class="btn" id="btn-models" data-t="btn.downloadModels">Скачать модели спикеров</button>
   </div>
 </aside>
 
 <div class="toast" id="toast"></div>
 
 <script>
+/* ========== два языка ==========
+   Русский и английский лежат рядом, ключ общий. Язык приходит из настроек
+   (ui_language), при переключении окно перерисовывается целиком. Тексты,
+   которые присылает сам Python (названия профилей, содержимое записей),
+   через этот словарь не проходят — T() на неизвестном ключе просто
+   возвращает его как есть, так что такие строки проходят насквозь. */
+const STR = {
+  ru: {
+    'app.title': 'Расшифровка записей',
+    'head.archive': 'Архив',
+    'head.archiveTitle': 'Показать или скрыть архив',
+    'head.settings': 'Настройки',
+
+    'side.searchPh': 'Поиск по записям и тексту',
+    'side.openFolder': 'Открыть папку с файлами',
+
+    'drop.title': 'Перетащите запись сюда',
+    'drop.hint': 'Или выберите файл — приложение сделает транскрипт, саммари и бриф',
+    'drop.dragFailed': 'Перетаскивание не сработало — нажмите «Выбрать запись»',
+
+    'btn.pick': 'Выбрать запись',
+    'btn.close': 'Закрыть',
+    'btn.save': 'Сохранить',
+    'btn.downloadModels': 'Скачать модели спикеров',
+    'btn.cancel': 'Отмена',
+
+    'job.queued': 'В очереди',
+    'job.speakerCount': '{n} спикер(ов)',
+    'job.noSplit': 'без разделения',
+    'job.copy': 'Копировать',
+    'job.copyTitle': 'Скопировать текст этой вкладки',
+    'job.edit': 'Править',
+    'job.editTitle': 'Убрать лишнее или поправить формулировку',
+    'job.whoIsWho': 'Кто есть кто:',
+    'job.namePh': 'Имя',
+    'job.minutes': '{n} мин',
+    'job.applyNames': 'Применить имена',
+    'job.revealFinder': 'Показать в Finder',
+    'job.copySummary': 'Скопировать саммари',
+    'job.cancel': 'Отменить',
+    'job.done': 'готово',
+    'job.cancelled': 'отменено',
+    'job.unknownSpeaker': 'Неизвестный',
+    'job.renamedToast': 'Имена применены, файлы обновлены',
+    'job.renameFailed': 'Не удалось обновить имена',
+
+    'tab.summary': 'Саммари',
+    'tab.brief': 'Бриф',
+    'tab.tasks': 'Задачи',
+    'tab.decisions': 'Решения',
+    'tab.risks': 'Риски',
+    'tab.transcript': 'Транскрипт',
+
+    'edit.sectionEmpty': 'Раздел пуст',
+    'edit.transcriptEmpty': 'Транскрипт пуст',
+    'edit.removeRowTitle': 'Убрать строку',
+    'edit.removePointTitle': 'Убрать пункт',
+    'edit.note': 'Вычеркнутое исчезнет из саммари и файлов. В транскрипте всё останется как было. Суммы в таблицах пересчитаются.',
+    'edit.saving': 'Сохраняю…',
+    'edit.saved': 'Раздел обновлён, файлы перезаписаны',
+    'edit.saveFailed': 'Не удалось сохранить',
+
+    'lib.call': 'созвон',
+    'lib.estimate': 'смета',
+    'lib.voices': '{n} голоса',
+    'lib.foundCount': 'нашлось: {n}',
+    'lib.nothingFound': 'ничего не нашлось',
+    'lib.countRecords': 'записей: {n}',
+    'lib.matched': 'найдено',
+    'lib.noResultsForQuery': 'По этому запросу ничего нет',
+    'lib.emptyHint': 'Здесь появятся разобранные записи — и файлы, и созвоны.',
+    'lib.deleteTitle': 'Убрать запись в Корзину',
+    'lib.confirmDelete': 'удалить?',
+    'lib.filesNotFound': 'Файлы этой записи не найдены',
+    'lib.deletedToast': 'Запись убрана в Корзину',
+    'lib.deleteFailed': 'Не удалось удалить',
+    'lib.folderNotCreated': 'Папка ещё не создана',
+
+    'preset.groupLabel': 'Что готовить из записи',
+    'preset.editRules': 'Изменить правила',
+
+    'chips.ffmpegFound': 'Найден',
+    'chips.ffmpegMissing': 'Не найден: brew install ffmpeg',
+    'chips.whisperMlx': 'Whisper (MLX)',
+    'chips.whisperCpu': 'Whisper (CPU)',
+    'chips.whisper': 'Whisper',
+    'chips.mlxAccel': 'Ускорение Apple Silicon',
+    'chips.speakers': 'Спикеры',
+    'chips.diarModelsOk': 'Модели на месте',
+    'chips.diarModelsMissing': 'Модели ещё не скачаны — скачаются при первом запуске',
+    'chips.model': 'Модель',
+    'chips.modelFile': 'Модель · файл',
+    'chips.modelFileTitle': '{gb} ГБ',
+    'chips.modelOllama': 'Модель · Ollama {n}',
+    'chips.modelApi': 'Модель · API',
+    'chips.modelNone': 'Не подключена ни одна языковая модель',
+    'chips.recheckTitle': 'Нажмите, чтобы проверить заново',
+    'chips.checked': 'Проверено',
+
+    'models.downloading': 'Скачиваю модели…',
+    'models.ready': 'Модели готовы',
+    'models.error': 'Ошибка: {error}',
+
+    'toast.nothingToCopy': 'Нечего копировать',
+    'toast.copied': 'Скопировано',
+    'toast.copyFailed': 'Не удалось скопировать',
+
+    'settings.savedToast': 'Настройки сохранены',
+
+    'settings.group.language': 'Язык',
+    'settings.uiLanguage': 'Язык окна',
+    'settings.uiLanguageHint': 'Язык окна.',
+    'settings.docLanguage': 'Язык результата',
+    'settings.docLanguageHint': 'На каком языке модель пишет саммари, бриф и задачи, и как называются папка и файлы результата.',
+    'settings.langAutoSystem': 'Как в системе',
+    'settings.langAutoInterface': 'Как у интерфейса',
+    'settings.langRu': 'Русский',
+    'settings.langEn': 'English',
+
+    'settings.group.asr': 'Распознавание',
+    'settings.recLanguage': 'Язык записи',
+    'settings.recLanguageHint': '«auto» определяет язык сам. Если язык известен — укажите его, так точнее.',
+    'settings.whisperModel': 'Модель Whisper',
+    'settings.whisperModelHint': 'large-v3-turbo — лучший баланс скорости и качества. small/base быстрее, но с ошибками.',
+    'settings.engine': 'Движок',
+    'settings.engineHintMlx': 'MLX доступен — используется ускорение Apple Silicon.',
+    'settings.engineHintNoMlx': 'MLX не установлен, работает CPU-движок.',
+
+    'settings.group.speakers': 'Спикеры',
+    'settings.diarizationEnabled': 'Разделять по спикерам',
+    'settings.numSpeakers': 'Сколько спикеров ожидается',
+    'settings.numSpeakersHint': '0 — определить автоматически по порогу ниже. Любое другое число задаёт количество жёстко, и порог тогда не работает: ставьте его, только если точно знаете, сколько человек говорит.',
+    'settings.clusterThreshold': 'Порог разделения — {val}',
+    'settings.clusterThresholdHint': 'Меньше — больше спикеров. Если голоса склеились, уменьшите до 0.5; если один человек разбился на нескольких — поднимите до 0.7.',
+    'settings.speakerMergeAuto': 'Подбирать похожесть голосов по записи',
+    'settings.speakerMergeHint': 'После разделения похожие голоса сводятся в одного человека. Насколько «похожие» — приложение меряет по самой записи: режет речь каждого голоса пополам и смотрит, насколько человек похож сам на себя здесь и сейчас. Порог от этого только строже, чем {val}, — хуже не станет.',
+
+    'settings.presetLabel': 'Профиль',
+    'settings.customRules': 'Правила для модели',
+    'settings.customRulesPh': 'Например: собери из записи список работ, ставки бери из слов заказчика, ничего не придумывай.',
+    'settings.customRulesHint': 'Напишите обычными словами, что нужно получить и чего делать нельзя.',
+    'settings.customTemplate': 'Шаблон документа',
+    'settings.customTemplateHint': 'Заголовки <code>##</code> становятся вкладками и разделами файла. Оставьте пустым — возьмётся пример. Колонки «Количество» и «Ставка» приложение перемножит само и добавит строку «Итого»: модель считает плохо, поэтому арифметику она не делает.',
+    'settings.insertExample': 'Подставить пример',
+
+    'settings.group.llm': 'Языковая модель для саммари',
+    'settings.summaryEnabled': 'Составлять саммари и бриф',
+    'settings.llmBackend': 'Как подключена модель',
+    'settings.optAuto': 'Автоматически',
+    'settings.optGgufFile': 'Файл .gguf на диске',
+    'settings.optOpenaiServer': 'Сервер с OpenAI API',
+    'settings.llmBackendHint': 'Автоматически — сначала файл .gguf, если он указан, затем Ollama, затем сервер.',
+    'settings.ollamaModel': 'Модель Ollama',
+    'settings.ollamaModelHintAuto': '«auto» выберет лучшую из установленных.',
+    'settings.ollamaNotRunning': 'Ollama не запущена.',
+    'settings.ollamaUrl': 'Адрес Ollama',
+    'settings.ggufPath': 'Файл модели (.gguf)',
+    'settings.ggufPathPh': 'например ~/Models/gemma-4-12b-Q4_K_M.gguf',
+    'settings.chooseFile': 'Выбрать файл…',
+    'settings.fileOk': 'файл на месте, {gb} ГБ',
+    'settings.llamaCppOk': 'Библиотека для чтения .gguf установлена.',
+    'settings.llamaCppMissing': 'Понадобится библиотека llama-cpp-python — установите её командой из README.',
+    'settings.gpuLayers': 'Слоёв на видеоядро',
+    'settings.gpuLayersHint': '−1 — вся модель на GPU (для Apple Silicon это правильный выбор). Уменьшайте, если не хватает памяти.',
+    'settings.serverUrl': 'Адрес сервера',
+    'settings.serverUrlHint': 'LM Studio — порт 1234, llama-server — 8080. Адрес должен заканчиваться на /v1.',
+    'settings.serverRespondingHint': 'Сервер отвечает, моделей: {n}.',
+    'settings.modelLabel': 'Модель',
+    'settings.apiKey': 'Ключ доступа',
+    'settings.apiKeyPh': 'для локального сервера не нужен',
+    'settings.contextSize': 'Размер контекста',
+    'settings.contextSizeHint': 'Сколько текста модель держит за раз. Больше — качественнее свод, но нужнее память.',
+    'settings.testConnection': 'Проверить связь',
+    'settings.testing': 'проверяю…',
+    'settings.testOk': '✓ {backend} отвечает: «{answer}»',
+    'settings.testFail': '✗ {error}',
+    'settings.testNoAnswer': 'не отвечает',
+
+    'settings.group.transcript': 'Транскрипт',
+    'settings.cleanupFillers': 'Убирать эканье и слова-паразиты',
+    'settings.cleanupHint': 'Вычищает «э-э», «ну», «вот», «как бы», «типа» и повторы слов. Осмысленные обороты вроде «вот здесь» и «ну и что» остаются. Дословный текст сохраняется в файле .result.json.',
+
+    'settings.group.recording': 'Запись созвонов',
+    'settings.autoDetect': 'Предлагать запись, когда начинается созвон',
+    'settings.splitSpeakers': 'Различать собеседников по голосам',
+    'settings.splitSpeakersHint': 'Во время разговора все, кроме вас, подписаны просто «Собеседник»: дорожка знает только «я / не я». После звонка их голоса разбираются отдельно, и в готовом транскрипте появляются «Собеседник 1», «Собеседник 2». Занимает около двух минут на час разговора.',
+    'settings.dedupe': 'Убирать эхо между дорожками',
+    'settings.dedupeHint': 'Один и тот же голос попадает и в микрофон, и в системный звук. Приложение оставляет ту дорожку, где он громче, — иначе каждая фраза показывалась бы дважды.',
+    'settings.notesInterval': 'Заметки по ходу, раз в N минут',
+    'settings.notesIntervalHint': '0 — не делать промежуточных сводок. Итоговый бриф собирается в любом случае.',
+    'settings.chunkSeconds': 'Разбирать звук кусками по N секунд',
+    'settings.chunkSecondsHint': 'Меньше — текст появляется быстрее, но машина работает чаще.',
+
+    'settings.group.files': 'Файлы',
+    'settings.outputDir': 'Папка результатов',
+    'settings.outputDirPh': 'по умолчанию — output рядом с приложением',
+    'settings.chooseFolder': 'Выбрать папку…',
+    'settings.keepWav': 'Сохранять извлечённый WAV',
+
+    'rec.detectedPrompt': 'Похоже, начался созвон — записать его?',
+    'rec.notNow': 'Не сейчас',
+    'rec.startCall': 'Записывать',
+    'rec.title': 'Стенографист',
+    'rec.blockedHint': 'Созвон требует разрешения на запись экрана — без него не слышно собеседников. Встречу в комнате можно писать и так.',
+    'rec.subHint': 'Записывает разговор и расшифровывает его прямо по ходу',
+    'rec.recheck': 'Проверить снова',
+    'rec.openSettings': 'Открыть настройки',
+    'rec.startCallBtn': 'Начать запись созвона',
+    'rec.startMeetingBtn': 'Записать встречу',
+    'rec.meetingTitle': 'Все голоса идут в один микрофон — как на совещании за столом',
+    'rec.cancel': 'Отменить',
+    'rec.stop': 'Остановить',
+    'rec.willAppearCall': 'Речь появится здесь через полминуты после начала разговора.',
+    'rec.willAppearRoom': 'Речь появится здесь через полминуты после начала встречи.',
+    'rec.notesHeading': 'Заметки по ходу',
+    'rec.notesEmpty': 'Первая сводка появится через несколько минут.',
+    'rec.whoOnMeeting': 'Кто на встрече:',
+    'rec.whoOnCall': 'Кто на связи:',
+    'rec.addNamePh': '+ имя',
+    'rec.tagLastTitle': 'Отметить этим именем последнюю реплику',
+    'rec.peopleHint': 'Кликните реплику и выберите, кто её сказал — или нажмите имя, чтобы отметить последнюю. Отмеченные голоса приложение узнает и подпишет ими всю запись.',
+    'rec.pickbarEmpty': 'Сначала добавьте участника в поле «+ имя» наверху.',
+    'rec.untag': 'снять',
+    'rec.pickLineTitle': 'Отметить, кто это говорит',
+    'rec.privacyEnable': 'Включите «Расшифровка» в списке и перезапустите приложение',
+    'rec.privacyFailed': 'Не удалось открыть настройки — откройте их вручную',
+    'rec.permOk': 'Разрешение на месте',
+    'rec.permMissing': 'Разрешения пока нет',
+    'rec.permRequesting': 'Открываю системный запрос…',
+    'rec.permGranted': 'Разрешение выдано',
+    'rec.permDenied': 'Разрешите «Запись экрана» в настройках и перезапустите приложение',
+    'rec.startFailed': 'Не удалось начать',
+    'rec.roomStartedToast': 'Пишу встречу с микрофона — голоса разберу после остановки',
+    'rec.nothingToTag': 'Пока нечего отмечать',
+  },
+  en: {
+    'app.title': 'Transcripts',
+    'head.archive': 'Archive',
+    'head.archiveTitle': 'Show or hide the archive',
+    'head.settings': 'Settings',
+
+    'side.searchPh': 'Search recordings and text',
+    'side.openFolder': 'Open the files folder',
+
+    'drop.title': 'Drop a recording here',
+    'drop.hint': 'Or choose a file — the app will produce a transcript, summary, and brief',
+    'drop.dragFailed': 'Drag and drop did not work — click "Choose a recording" instead',
+
+    'btn.pick': 'Choose a recording',
+    'btn.close': 'Close',
+    'btn.save': 'Save',
+    'btn.downloadModels': 'Download speaker models',
+    'btn.cancel': 'Cancel',
+
+    'job.queued': 'Queued',
+    'job.speakerCount': '{n} speaker(s)',
+    'job.noSplit': 'no speaker split',
+    'job.copy': 'Copy',
+    'job.copyTitle': "Copy this tab's text",
+    'job.edit': 'Edit',
+    'job.editTitle': "Cut what doesn't belong or fix the wording",
+    'job.whoIsWho': 'Who is who:',
+    'job.namePh': 'Name',
+    'job.minutes': '{n} min',
+    'job.applyNames': 'Apply names',
+    'job.revealFinder': 'Show in Finder',
+    'job.copySummary': 'Copy the summary',
+    'job.cancel': 'Cancel',
+    'job.done': 'done',
+    'job.cancelled': 'cancelled',
+    'job.unknownSpeaker': 'Unknown',
+    'job.renamedToast': 'Names applied, files updated',
+    'job.renameFailed': 'Could not update the names',
+
+    'tab.summary': 'Summary',
+    'tab.brief': 'Brief',
+    'tab.tasks': 'Tasks',
+    'tab.decisions': 'Decisions',
+    'tab.risks': 'Risks',
+    'tab.transcript': 'Transcript',
+
+    'edit.sectionEmpty': 'This section is empty',
+    'edit.transcriptEmpty': 'Transcript is empty',
+    'edit.removeRowTitle': 'Remove this row',
+    'edit.removePointTitle': 'Remove this point',
+    'edit.note': 'Struck-out lines disappear from the summary and the files. The transcript stays untouched. Table totals get recalculated.',
+    'edit.saving': 'Saving…',
+    'edit.saved': 'Section updated, files rewritten',
+    'edit.saveFailed': 'Could not save',
+
+    'lib.call': 'call',
+    'lib.estimate': 'estimate',
+    'lib.voices': '{n} voices',
+    'lib.foundCount': 'found: {n}',
+    'lib.nothingFound': 'nothing found',
+    'lib.countRecords': '{n} recordings',
+    'lib.matched': 'found',
+    'lib.noResultsForQuery': 'Nothing matches this search',
+    'lib.emptyHint': 'Processed recordings will show up here — files and calls alike.',
+    'lib.deleteTitle': 'Move this recording to the Trash',
+    'lib.confirmDelete': 'delete?',
+    'lib.filesNotFound': "This recording's files are missing",
+    'lib.deletedToast': 'Recording moved to the Trash',
+    'lib.deleteFailed': 'Could not delete',
+    'lib.folderNotCreated': "The folder hasn't been created yet",
+
+    'preset.groupLabel': 'What to make from the recording',
+    'preset.editRules': 'Edit the rules',
+
+    'chips.ffmpegFound': 'Found',
+    'chips.ffmpegMissing': 'Not found: brew install ffmpeg',
+    'chips.whisperMlx': 'Whisper (MLX)',
+    'chips.whisperCpu': 'Whisper (CPU)',
+    'chips.whisper': 'Whisper',
+    'chips.mlxAccel': 'Apple Silicon acceleration',
+    'chips.speakers': 'Speakers',
+    'chips.diarModelsOk': 'Models are in place',
+    'chips.diarModelsMissing': "Models not downloaded yet — they'll download on first run",
+    'chips.model': 'Model',
+    'chips.modelFile': 'Model · file',
+    'chips.modelFileTitle': '{gb} GB',
+    'chips.modelOllama': 'Model · Ollama {n}',
+    'chips.modelApi': 'Model · API',
+    'chips.modelNone': 'No language model is connected',
+    'chips.recheckTitle': 'Click to check again',
+    'chips.checked': 'Checked',
+
+    'models.downloading': 'Downloading models…',
+    'models.ready': 'Models are ready',
+    'models.error': 'Error: {error}',
+
+    'toast.nothingToCopy': 'Nothing to copy',
+    'toast.copied': 'Copied',
+    'toast.copyFailed': 'Could not copy',
+
+    'settings.savedToast': 'Settings saved',
+
+    'settings.group.language': 'Language',
+    'settings.uiLanguage': 'Interface language',
+    'settings.uiLanguageHint': 'The language of the app window.',
+    'settings.docLanguage': 'Output language',
+    'settings.docLanguageHint': 'The language the model uses for the summary, brief, and tasks, and for the output folder and file names.',
+    'settings.langAutoSystem': 'Follow the system',
+    'settings.langAutoInterface': 'Same as the interface',
+    'settings.langRu': 'Русский',
+    'settings.langEn': 'English',
+
+    'settings.group.asr': 'Transcription',
+    'settings.recLanguage': 'Recording language',
+    'settings.recLanguageHint': '"auto" detects the language on its own. If you know the language, set it — it is more accurate.',
+    'settings.whisperModel': 'Whisper model',
+    'settings.whisperModelHint': 'large-v3-turbo is the best balance of speed and quality. small/base are faster but less accurate.',
+    'settings.engine': 'Engine',
+    'settings.engineHintMlx': 'MLX is available — Apple Silicon acceleration is in use.',
+    'settings.engineHintNoMlx': 'MLX is not installed, so the CPU engine is used.',
+
+    'settings.group.speakers': 'Speakers',
+    'settings.diarizationEnabled': 'Split by speaker',
+    'settings.numSpeakers': 'Expected number of speakers',
+    'settings.numSpeakersHint': '0 detects it automatically using the threshold below. Any other number fixes the count, and the threshold stops applying — use it only when you know exactly how many people are speaking.',
+    'settings.clusterThreshold': 'Split threshold — {val}',
+    'settings.clusterThresholdHint': 'Lower means more speakers. If voices are getting merged, drop it to 0.5; if one person is being split into several, raise it to 0.7.',
+    'settings.speakerMergeAuto': 'Estimate voice similarity from the recording',
+    'settings.speakerMergeHint': 'After splitting, similar voices get merged back into one person. The app measures "similar" from the recording itself: it splits each voice\'s speech in half and checks how close a person sounds to themselves right now. This only makes the threshold stricter than {val} — never worse.',
+
+    'settings.presetLabel': 'Profile',
+    'settings.customRules': 'Rules for the model',
+    'settings.customRulesPh': "For example: pull a list of jobs from the recording, take rates from what the client said, don't invent anything.",
+    'settings.customRulesHint': 'Write in plain words what you need and what the model must not do.',
+    'settings.customTemplate': 'Document template',
+    'settings.customTemplateHint': 'Headings marked with <code>##</code> become tabs and file sections. Leave it empty to use the example. The app multiplies the "Quantity" and "Rate" columns itself and adds a "Total" row — the model is bad at arithmetic, so it does not do the math.',
+    'settings.insertExample': 'Insert the example',
+
+    'settings.group.llm': 'Language model for the summary',
+    'settings.summaryEnabled': 'Generate a summary and brief',
+    'settings.llmBackend': 'How the model is connected',
+    'settings.optAuto': 'Automatic',
+    'settings.optGgufFile': 'A .gguf file on disk',
+    'settings.optOpenaiServer': 'A server with an OpenAI API',
+    'settings.llmBackendHint': 'Automatic tries the .gguf file first if one is set, then Ollama, then the server.',
+    'settings.ollamaModel': 'Ollama model',
+    'settings.ollamaModelHintAuto': '"auto" picks the best of the installed models.',
+    'settings.ollamaNotRunning': 'Ollama is not running.',
+    'settings.ollamaUrl': 'Ollama address',
+    'settings.ggufPath': 'Model file (.gguf)',
+    'settings.ggufPathPh': 'e.g. ~/Models/gemma-4-12b-Q4_K_M.gguf',
+    'settings.chooseFile': 'Choose a file…',
+    'settings.fileOk': 'file is in place, {gb} GB',
+    'settings.llamaCppOk': 'The library for reading .gguf files is installed.',
+    'settings.llamaCppMissing': "You'll need the llama-cpp-python library — install it with the command from the README.",
+    'settings.gpuLayers': 'Layers on the GPU',
+    'settings.gpuLayersHint': '−1 puts the whole model on the GPU (the right choice on Apple Silicon). Lower it if you are short on memory.',
+    'settings.serverUrl': 'Server address',
+    'settings.serverUrlHint': 'LM Studio uses port 1234, llama-server uses 8080. The address should end in /v1.',
+    'settings.serverRespondingHint': 'Server is responding, models available: {n}.',
+    'settings.modelLabel': 'Model',
+    'settings.apiKey': 'Access key',
+    'settings.apiKeyPh': 'not needed for a local server',
+    'settings.contextSize': 'Context size',
+    'settings.contextSizeHint': 'How much text the model holds at once. More gives a better summary but needs more memory.',
+    'settings.testConnection': 'Test the connection',
+    'settings.testing': 'testing…',
+    'settings.testOk': '✓ {backend} responds: "{answer}"',
+    'settings.testFail': '✗ {error}',
+    'settings.testNoAnswer': 'not responding',
+
+    'settings.group.transcript': 'Transcript',
+    'settings.cleanupFillers': 'Strip filler words',
+    'settings.cleanupHint': 'Removes "um", "uh", "like", "you know" and repeated words. Meaningful phrases stay untouched. The verbatim text is kept in the .result.json file.',
+
+    'settings.group.recording': 'Recording calls',
+    'settings.autoDetect': 'Offer to record when a call starts',
+    'settings.splitSpeakers': 'Tell participants apart by voice',
+    'settings.splitSpeakersHint': 'During the call, everyone but you is just labeled "Participant" — the track only knows "me / not me". After the call, those voices get separated, and the finished transcript shows "Participant 1", "Participant 2". Takes about two minutes per hour of talk.',
+    'settings.dedupe': 'Remove echo between tracks',
+    'settings.dedupeHint': "The same voice ends up in both the microphone and the system audio. The app keeps whichever track it's louder on — otherwise every line would show up twice.",
+    'settings.notesInterval': 'Running notes, every N minutes',
+    'settings.notesIntervalHint': '0 skips the running notes. The final brief is still put together either way.',
+    'settings.chunkSeconds': 'Process audio in chunks of N seconds',
+    'settings.chunkSecondsHint': 'Smaller means text shows up sooner, but the machine works more often.',
+
+    'settings.group.files': 'Files',
+    'settings.outputDir': 'Output folder',
+    'settings.outputDirPh': 'defaults to output next to the app',
+    'settings.chooseFolder': 'Choose a folder…',
+    'settings.keepWav': 'Keep the extracted WAV',
+
+    'rec.detectedPrompt': 'Looks like a call just started — record it?',
+    'rec.notNow': 'Not now',
+    'rec.startCall': 'Record it',
+    'rec.title': 'Note-taker',
+    'rec.blockedHint': 'Recording a call needs screen-recording permission — without it you will not hear the other side. An in-room meeting can still be recorded either way.',
+    'rec.subHint': 'Records the conversation and transcribes it as it happens',
+    'rec.recheck': 'Check again',
+    'rec.openSettings': 'Open settings',
+    'rec.startCallBtn': 'Record a call',
+    'rec.startMeetingBtn': 'Record a meeting',
+    'rec.meetingTitle': 'Every voice goes through one microphone — like sitting around a table',
+    'rec.cancel': 'Cancel',
+    'rec.stop': 'Stop',
+    'rec.willAppearCall': 'Speech will show up here about half a minute after the call starts.',
+    'rec.willAppearRoom': 'Speech will show up here about half a minute after the meeting starts.',
+    'rec.notesHeading': 'Running notes',
+    'rec.notesEmpty': 'The first summary will appear in a few minutes.',
+    'rec.whoOnMeeting': "Who's in the meeting:",
+    'rec.whoOnCall': "Who's on the call:",
+    'rec.addNamePh': '+ name',
+    'rec.tagLastTitle': 'Tag the last line with this name',
+    'rec.peopleHint': 'Click a line and pick who said it — or click a name to tag the most recent one. Once a voice is tagged, the app recognizes it and labels the whole recording with it.',
+    'rec.pickbarEmpty': 'Add a participant in the "+ name" field above first.',
+    'rec.untag': 'clear',
+    'rec.pickLineTitle': "Tag who's speaking",
+    'rec.privacyEnable': 'Enable "Transcripts" in the list and restart the app',
+    'rec.privacyFailed': 'Could not open settings — open them manually',
+    'rec.permOk': 'Permission granted',
+    'rec.permMissing': 'No permission yet',
+    'rec.permRequesting': 'Opening the system prompt…',
+    'rec.permGranted': 'Permission granted',
+    'rec.permDenied': 'Allow "Screen Recording" in Settings and restart the app',
+    'rec.startFailed': 'Could not start',
+    'rec.roomStartedToast': "Recording the meeting from the mic — I'll sort out the voices after you stop",
+    'rec.nothingToTag': 'Nothing to tag yet',
+  },
+};
+// До ответа настроек берём язык браузера: в окне приложения это язык системы.
+let LANG = (navigator.language || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+function T(key, vars){
+  let s = (STR[LANG] && STR[LANG][key]) || (STR.en && STR.en[key]) || key;
+  if(vars) for(const k in vars) s = s.split('{'+k+'}').join(vars[k]);
+  return s;
+}
+// Явного выбора языка может не быть вовсе (старые настройки без поля) —
+// тогда язык не трогаем и оставляем то, что было. 'auto' разворачиваем
+// по языку системы, а 'ru'/'en' — ставим как есть.
+function resolveLanguage(s){
+  const v = s && s.ui_language;
+  if(v==='ru' || v==='en') LANG=v;
+  else if(v==='auto') LANG = navigator.language.startsWith('ru') ? 'ru' : 'en';
+}
+// Статическая разметка в <body> размечена атрибутами data-t / data-t-ph /
+// data-t-title — здесь подставляем в неё текст текущего языка. Русский,
+// который стоит в самом HTML, — просто заглушка на случай, если скрипт
+// почему-то не выполнился.
+function applyStatic(){
+  document.title = T('app.title');
+  document.querySelectorAll('[data-t]').forEach(el=>{ el.textContent = T(el.dataset.t); });
+  document.querySelectorAll('[data-t-ph]').forEach(el=>{ el.placeholder = T(el.dataset.tPh); });
+  document.querySelectorAll('[data-t-title]').forEach(el=>{ el.title = T(el.dataset.tTitle); });
+}
+
 /* ========== мини-рендер markdown ========== */
 function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 function inline(s){
@@ -434,8 +924,8 @@ function hhmmss(sec){
    стороне Python. Какой-нибудь да сработает. */
 async function copyText(text){
   text=String(text||'').trim();
-  if(!text){ toast('Нечего копировать'); return false; }
-  try{ await navigator.clipboard.writeText(text); toast('Скопировано'); return true; }catch(e){}
+  if(!text){ toast(T('toast.nothingToCopy')); return false; }
+  try{ await navigator.clipboard.writeText(text); toast(T('toast.copied')); return true; }catch(e){}
   try{
     const ta=document.createElement('textarea');
     ta.value=text;
@@ -444,10 +934,10 @@ async function copyText(text){
     ta.select();
     const ok=document.execCommand('copy');
     ta.remove();
-    if(ok){ toast('Скопировано'); return true; }
+    if(ok){ toast(T('toast.copied')); return true; }
   }catch(e){}
-  try{ if(await api().copy(text)){ toast('Скопировано'); return true; } }catch(e){}
-  toast('Не удалось скопировать');
+  try{ if(await api().copy(text)){ toast(T('toast.copied')); return true; } }catch(e){}
+  toast(T('toast.copyFailed'));
   return false;
 }
 
@@ -455,7 +945,7 @@ async function copySelection(){
   const text=String(window.getSelection()||'').trim();
   if(!text) return false;
   // Выделение уже живое — сначала пробуем скопировать именно его, не подменяя.
-  try{ if(document.execCommand('copy')){ toast('Скопировано'); return true; } }catch(e){}
+  try{ if(document.execCommand('copy')){ toast(T('toast.copied')); return true; } }catch(e){}
   return copyText(text);
 }
 
@@ -467,15 +957,19 @@ const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
 
 /* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
    Python присылает их вместе с саммари; список ниже — запасной вариант. */
+/* В качестве label здесь лежит не готовый текст, а ключ словаря T() —
+   подставляется он уже при отрисовке, чтобы вкладки не застревали
+   в языке, в котором окно было открыто. Свои вкладки (own) присылает
+   Python готовыми строками; T() на них просто возвращает то, что дали. */
 const TABS=[
-  ['summary','Саммари'], ['brief','Бриф'], ['tasks','Задачи'],
-  ['decisions','Решения'], ['risks','Риски'], ['transcript','Транскрипт'],
+  ['summary','tab.summary'], ['brief','tab.brief'], ['tasks','tab.tasks'],
+  ['decisions','tab.decisions'], ['risks','tab.risks'], ['transcript','tab.transcript'],
 ];
 
 function tabsOf(j, withTranscript){
   const own=(j.summary_tabs||[]).filter(x=>x&&x.length===2);
   const list=own.length ? own.map(([k,label])=>[k,label]) : TABS.filter(([k])=>k!=='transcript');
-  return withTranscript ? list.concat([['transcript','Транскрипт']]) : list;
+  return withTranscript ? list.concat([['transcript','tab.transcript']]) : list;
 }
 
 /* ========== отрисовка ========== */
@@ -483,20 +977,20 @@ function renderChips(){
   const e=state.env, c=[];
   const add=(ok,label,title)=>c.push(
     `<span class="chip" title="${esc(title||'')}"><span class="dot ${ok}"></span>${esc(label)}</span>`);
-  add(e.ffmpeg?'ok':'err','ffmpeg', e.ffmpeg?'Найден':'Не найден: brew install ffmpeg');
-  const asr = e.mlx ? 'Whisper (MLX)' : (e.faster ? 'Whisper (CPU)' : 'Whisper');
-  add((e.mlx||e.faster)?'ok':'err', asr, e.mlx?'Ускорение Apple Silicon':'');
-  add(e.sherpa ? (e.diar_models?'ok':'warn') : 'err', 'Спикеры',
-      e.diar_models?'Модели на месте':'Модели ещё не скачаны — скачаются при первом запуске');
+  add(e.ffmpeg?'ok':'err','ffmpeg', e.ffmpeg?T('chips.ffmpegFound'):T('chips.ffmpegMissing'));
+  const asr = e.mlx ? T('chips.whisperMlx') : (e.faster ? T('chips.whisperCpu') : T('chips.whisper'));
+  add((e.mlx||e.faster)?'ok':'err', asr, e.mlx?T('chips.mlxAccel'):'');
+  add(e.sherpa ? (e.diar_models?'ok':'warn') : 'err', T('chips.speakers'),
+      e.diar_models?T('chips.diarModelsOk'):T('chips.diarModelsMissing'));
   const ollama=e.ollama_models||[], api=e.openai_models||[];
-  let label='Модель', ok='err', title='';
-  if(e.gguf_path_ok && e.llama_cpp){ label='Модель · файл'; ok='ok'; title=`${e.gguf_size_gb} ГБ`; }
-  else if(ollama.length){ label=`Модель · Ollama ${ollama.length}`; ok='ok'; title=ollama.join(', '); }
-  else if(api.length){ label='Модель · API'; ok='ok'; title=api.join(', '); }
-  else { title=e.ollama_error||'Не подключена ни одна языковая модель'; }
+  let label=T('chips.model'), ok='err', title='';
+  if(e.gguf_path_ok && e.llama_cpp){ label=T('chips.modelFile'); ok='ok'; title=T('chips.modelFileTitle',{gb:e.gguf_size_gb}); }
+  else if(ollama.length){ label=T('chips.modelOllama',{n:ollama.length}); ok='ok'; title=ollama.join(', '); }
+  else if(api.length){ label=T('chips.modelApi'); ok='ok'; title=api.join(', '); }
+  else { title=e.ollama_error||T('chips.modelNone'); }
   add(ok,label,title);
   $('#chips').innerHTML=c.join('');
-  $('#chips').title='Нажмите, чтобы проверить заново';
+  $('#chips').title=T('chips.recheckTitle');
 }
 
 function jobCard(j){
@@ -504,40 +998,40 @@ function jobCard(j){
   const cls = j.status==='error'?'err':(j.status==='done'?'done':'');
   const spk = Object.keys(j.speakers||{}).length;
   const sub = j.status==='done'
-    ? `${hhmmss((j.meta||{}).duration)} · ${spk?spk+' спикер(ов)':'без разделения'} · ${esc((j.meta||{}).language||'')}`
-    : esc(j.message||'В очереди');
+    ? `${hhmmss((j.meta||{}).duration)} · ${spk?T('job.speakerCount',{n:spk}):T('job.noSplit')} · ${esc((j.meta||{}).language||'')}`
+    : esc(j.message||T('job.queued'));
 
   let body='';
   if(j.status==='done'){
     const active = state.tabs.get(j.id) || firstTab(j);
     const tabs = tabsOf(j,true).filter(([k])=>hasTab(j,k)).map(([k,label])=>
-      `<button class="tab ${k===active?'active':''}" data-tab="${k}" data-job="${j.id}">${label}${
+      `<button class="tab ${k===active?'active':''}" data-tab="${k}" data-job="${j.id}">${T(label)}${
         k==='transcript'?`<span class="count">${(j.turns||[]).length}</span>`:''}</button>`).join('');
     const editable = active!=='transcript' && ((j.summary_sections||{})[active]||'').trim();
     const editing = state.editing.get(j.id)===active;
     const copy = `<button class="btn sm ghost tab-copy" data-copytab="${j.id}"
-      title="Скопировать текст этой вкладки">Копировать</button>` + (editable
+      title="${T('job.copyTitle')}">${T('job.copy')}</button>` + (editable
       ? `<button class="btn sm ghost tab-edit ${editing?'on':''}" data-edittab="${j.id}"
-           title="Убрать лишнее или поправить формулировку">Править</button>` : '');
+           title="${T('job.editTitle')}">${T('job.edit')}</button>` : '');
     body = `<div class="tabs">${tabs}${copy}</div>` +
            `<div class="pane ${editing?'':'md'}" id="pane-${j.id}">${
              editing ? editorHTML(j,active) : paneHTML(j,active)}</div>`;
     if(spk){
-      body += `<div class="speakers"><span class="lbl">Кто есть кто:</span>` +
+      body += `<div class="speakers"><span class="lbl">${T('job.whoIsWho')}</span>` +
         Object.entries(j.speakers).map(([key,v])=>
           `<span class="spk"><input data-job="${j.id}" data-spk="${key}" value="${esc(v.label)}"
-            placeholder="Имя"><span class="m">${Math.round((v.seconds||0)/60)} мин</span></span>`).join('') +
-        `<button class="btn sm" data-rename="${j.id}">Применить имена</button></div>`;
+            placeholder="${T('job.namePh')}"><span class="m">${T('job.minutes',{n:Math.round((v.seconds||0)/60)})}</span></span>`).join('') +
+        `<button class="btn sm" data-rename="${j.id}">${T('job.applyNames')}</button></div>`;
     }
     const files = Object.entries(j.files||{});
     if(files.length){
       body += `<div class="files">` +
-        `<button class="btn sm" data-reveal="${esc(files[0][1])}">Показать в Finder</button>` +
+        `<button class="btn sm" data-reveal="${esc(files[0][1])}">${T('job.revealFinder')}</button>` +
         files.map(([k,p])=>{
           const name=p.split('/').pop().split('.').slice(-2).join('.');
           return `<button class="btn sm ghost" data-open="${esc(p)}" title="${esc(p)}">${esc(name)}</button>`;
         }).join('') +
-        `<button class="btn sm ghost" data-copy="${j.id}">Скопировать саммари</button></div>`;
+        `<button class="btn sm ghost" data-copy="${j.id}">${T('job.copySummary')}</button></div>`;
     }
   }
 
@@ -550,9 +1044,9 @@ function jobCard(j){
       </div>
       <div class="job-actions">
         ${running?`<span class="pct">${Math.round(j.progress*100)}%</span>
-          <button class="btn sm ghost" data-cancel="${j.id}">Отменить</button>`:''}
-        ${j.status==='done'?'<span class="pct" style="color:var(--ok)">готово</span>':''}
-        ${j.status==='cancelled'?'<span class="pct">отменено</span>':''}
+          <button class="btn sm ghost" data-cancel="${j.id}">${T('job.cancel')}</button>`:''}
+        ${j.status==='done'?`<span class="pct" style="color:var(--ok)">${T('job.done')}</span>`:''}
+        ${j.status==='cancelled'?`<span class="pct">${T('job.cancelled')}</span>`:''}
         ${j.status!=='running'&&j.status!=='pending'?`<button class="btn sm ghost" data-remove="${j.id}">×</button>`:''}
       </div>
     </div>
@@ -583,14 +1077,14 @@ function paneHTML(j,key){
   if(key==='transcript'){
     const labels={};
     Object.entries(j.speakers||{}).forEach(([k,v])=>labels[k]=v.label);
-    if(!(j.turns||[]).length) return '<div class="pane empty">Транскрипт пуст</div>';
+    if(!(j.turns||[]).length) return `<div class="pane empty">${T('edit.transcriptEmpty')}</div>`;
     return j.turns.map(t=>`<div class="turn">
         <span class="t">${hhmmss(t.start)}</span>
-        <span class="s">${esc(labels[t.speaker]|| (t.speaker==='unknown'?'Неизвестный':t.speaker))}</span>
+        <span class="s">${esc(labels[t.speaker]|| (t.speaker==='unknown'?T('job.unknownSpeaker'):t.speaker))}</span>
         <span class="x">${esc(t.text)}</span></div>`).join('');
   }
   const text=((j.summary_sections||{})[key]||'').trim();
-  return text ? md(text) : '<div class="pane empty">Раздел пуст</div>';
+  return text ? md(text) : `<div class="pane empty">${T('edit.sectionEmpty')}</div>`;
 }
 
 /* ========== правка саммари ==========
@@ -629,7 +1123,7 @@ function parseSection(text){
 
 function editorHTML(j,key){
   const blocks=parseSection((j.summary_sections||{})[key]||'');
-  if(!blocks.length) return '<div class="pane empty">Раздел пуст</div>';
+  if(!blocks.length) return `<div class="pane empty">${T('edit.sectionEmpty')}</div>`;
   const out=blocks.map(b=>{
     if(b.type==='table'){
       const head=`<div class="row">${b.header.map(c=>
@@ -637,19 +1131,18 @@ function editorHTML(j,key){
         <button class="kill" style="visibility:hidden">×</button></div>`;
       const rows=b.rows.map(cells=>`<div class="row" data-row="1">${
         cells.map(c=>`<span class="cell" contenteditable="true">${esc(c)}</span>`).join('')}
-        <button class="kill" data-strike="1" title="Убрать строку">×</button></div>`).join('');
+        <button class="kill" data-strike="1" title="${T('edit.removeRowTitle')}">×</button></div>`).join('');
       return `<div class="edit-table" data-sep="${esc(b.sep)}">${head}${rows}</div>`;
     }
     const heading=/^\s*#{2,4}\s/.test(b.text);
     return `<div class="edit-item${heading?' head':''}" data-line="1">
       <span class="body${heading?' edit-head':''}" contenteditable="true">${esc(b.text)}</span>
-      <button class="kill" data-strike="1" title="Убрать пункт">×</button></div>`;
+      <button class="kill" data-strike="1" title="${T('edit.removePointTitle')}">×</button></div>`;
   }).join('');
   return out + `<div class="edit-foot">
-      <button class="btn sm primary" data-editsave="${j.id}">Сохранить</button>
-      <button class="btn sm ghost" data-editcancel="${j.id}">Отмена</button>
-      <span class="note">Вычеркнутое исчезнет из саммари и файлов. В транскрипте
-        всё останется как было. Суммы в таблицах пересчитаются.</span>
+      <button class="btn sm primary" data-editsave="${j.id}">${T('btn.save')}</button>
+      <button class="btn sm ghost" data-editcancel="${j.id}">${T('btn.cancel')}</button>
+      <span class="note">${T('edit.note')}</span>
     </div>`;
 }
 
@@ -680,9 +1173,9 @@ function collectSection(pane){
 function libSub(it){
   // Длительность уже стоит справа от названия — здесь её повторять незачем.
   const bits=[it.when];
-  if(it.kind==='call') bits.push('созвон');
-  else if(it.preset==='estimate') bits.push('смета');
-  if(it.speakers>1) bits.push(it.speakers+' голоса');
+  if(it.kind==='call') bits.push(T('lib.call'));
+  else if(it.preset==='estimate') bits.push(T('lib.estimate'));
+  if(it.speakers>1) bits.push(T('lib.voices',{n:it.speakers}));
   return bits.join(' · ');
 }
 
@@ -690,12 +1183,12 @@ function renderLib(){
   const list=$('#lib-list'), count=$('#lib-count');
   const items=state.lib||[];
   count.textContent = state.libQuery
-    ? (items.length ? `нашлось: ${items.length}` : 'ничего не нашлось')
-    : (items.length ? `записей: ${items.length}` : '');
+    ? (items.length ? T('lib.foundCount',{n:items.length}) : T('lib.nothingFound'))
+    : (items.length ? T('lib.countRecords',{n:items.length}) : '');
   if(!items.length){
     list.innerHTML=`<div class="side-empty">${state.libQuery
-      ? 'По этому запросу ничего нет'
-      : 'Здесь появятся разобранные записи — и файлы, и созвоны.'}</div>`;
+      ? T('lib.noResultsForQuery')
+      : T('lib.emptyHint')}</div>`;
     return;
   }
   list.innerHTML=items.map(it=>{
@@ -705,9 +1198,9 @@ function renderLib(){
         ${it.duration?`<span class="lib-dur">${hhmmss(it.duration).replace(/^00:/,'')}</span>`:''}</div>
       <span class="lib-sub">${esc(libSub(it))}</span>
       ${it.preview?`<span class="lib-prev">${esc(it.preview)}${
-        it.matched?` <span class="lib-hit">· найдено ${esc(it.matched)}</span>`:''}</span>`:''}
+        it.matched?` <span class="lib-hit">· ${T('lib.matched')} ${esc(it.matched)}</span>`:''}</span>`:''}
       <button class="lib-del ${ask?'ask':''}" data-libdel="${it.id}"
-        title="Убрать запись в Корзину">${ask?'удалить?':'×'}</button>
+        title="${T('lib.deleteTitle')}">${ask?T('lib.confirmDelete'):'×'}</button>
     </div>`;
   }).join('');
 }
@@ -728,7 +1221,7 @@ function loadLibSoon(delay){
 
 async function openLib(id){
   const snap=await api().library_open(id);
-  if(!snap){ toast('Файлы этой записи не найдены'); loadLib(); return; }
+  if(!snap){ toast(T('lib.filesNotFound')); loadLib(); return; }
   state.libOpen=id;
   state.jobs.set(snap.id, snap);
   render();
@@ -746,8 +1239,8 @@ async function deleteLib(id){
   if(r && r.ok){
     state.jobs.delete(id);                  // id записи и id карточки совпадают
     if(state.libOpen===id) state.libOpen=null;
-    toast('Запись убрана в Корзину');
-  } else toast((r&&r.error)||'Не удалось удалить');
+    toast(T('lib.deletedToast'));
+  } else toast((r&&r.error)||T('lib.deleteFailed'));
   await loadLib();
   render();
 }
@@ -762,13 +1255,13 @@ function renderPicker(){
   const cur=currentPreset();
   const chosen=items.find(i=>i.key===cur)||items[0];
   el.style.display='';
-  el.innerHTML=`<label for="preset-pick">Что готовить из записи</label>
+  el.innerHTML=`<label for="preset-pick">${T('preset.groupLabel')}</label>
     <select id="preset-pick">${items.map(i=>
       `<option value="${esc(i.key)}" ${i.key===cur?'selected':''}>${esc(i.title)}</option>`).join('')}</select>
     <span class="why">${esc(chosen?chosen.hint:'')}</span>
     <span class="acts">
-      ${cur==='custom'?'<button class="btn sm ghost" id="preset-edit">Изменить правила</button>':''}
-      <button class="btn sm primary" id="btn-pick-top">Выбрать запись</button>
+      ${cur==='custom'?`<button class="btn sm ghost" id="preset-edit">${T('preset.editRules')}</button>`:''}
+      <button class="btn sm primary" id="btn-pick-top">${T('btn.pick')}</button>
     </span>`;
   $('#preset-pick').onchange=async e=>{
     state.preset=e.target.value;
@@ -812,149 +1305,162 @@ function settingsHTML(){
   const opt=(list,val)=>list.map(v=>`<option value="${esc(String(v))}" ${String(v)===String(val)?'selected':''}>${esc(String(v))}</option>`).join('');
   const models=['auto',...(e.ollama_models||[])];
   return `
-  <div class="group"><h3>Распознавание</h3>
-    <div class="field"><label>Язык записи</label>
+  <div class="group"><h3>${T('settings.group.language')}</h3>
+    <div class="field"><label>${T('settings.uiLanguage')}</label>
+      <select data-k="ui_language">
+        <option value="auto" ${(!s.ui_language||s.ui_language==='auto')?'selected':''}>${T('settings.langAutoSystem')}</option>
+        <option value="ru" ${s.ui_language==='ru'?'selected':''}>${T('settings.langRu')}</option>
+        <option value="en" ${s.ui_language==='en'?'selected':''}>${T('settings.langEn')}</option>
+      </select>
+      <div class="hint">${T('settings.uiLanguageHint')}</div>
+    </div>
+    <div class="field"><label>${T('settings.docLanguage')}</label>
+      <select data-k="doc_language">
+        <option value="auto" ${(!s.doc_language||s.doc_language==='auto')?'selected':''}>${T('settings.langAutoInterface')}</option>
+        <option value="ru" ${s.doc_language==='ru'?'selected':''}>${T('settings.langRu')}</option>
+        <option value="en" ${s.doc_language==='en'?'selected':''}>${T('settings.langEn')}</option>
+      </select>
+      <div class="hint">${T('settings.docLanguageHint')}</div>
+    </div>
+  </div>
+  <div class="group"><h3>${T('settings.group.asr')}</h3>
+    <div class="field"><label>${T('settings.recLanguage')}</label>
       <select data-k="language">${opt(['auto','ru','en','de','fr','es','it','uk','kk'],s.language)}</select>
-      <div class="hint">«auto» определяет язык сам. Если язык известен — укажите его, так точнее.</div>
+      <div class="hint">${T('settings.recLanguageHint')}</div>
     </div>
-    <div class="field"><label>Модель Whisper</label>
+    <div class="field"><label>${T('settings.whisperModel')}</label>
       <select data-k="whisper_model">${opt(e.whisper_models||[],s.whisper_model)}</select>
-      <div class="hint">large-v3-turbo — лучший баланс скорости и качества. small/base быстрее, но с ошибками.</div>
+      <div class="hint">${T('settings.whisperModelHint')}</div>
     </div>
-    <div class="field"><label>Движок</label>
+    <div class="field"><label>${T('settings.engine')}</label>
       <select data-k="asr_backend">${opt(['auto','mlx','faster'],s.asr_backend)}</select>
-      <div class="hint">${e.mlx?'MLX доступен — используется ускорение Apple Silicon.':'MLX не установлен, работает CPU-движок.'}</div>
+      <div class="hint">${e.mlx?T('settings.engineHintMlx'):T('settings.engineHintNoMlx')}</div>
     </div>
   </div>
-  <div class="group"><h3>Спикеры</h3>
-    <div class="row"><input type="checkbox" data-k="diarization_enabled" ${s.diarization_enabled?'checked':''}><span>Разделять по спикерам</span></div>
-    <div class="field"><label>Сколько спикеров ожидается</label>
+  <div class="group"><h3>${T('settings.group.speakers')}</h3>
+    <div class="row"><input type="checkbox" data-k="diarization_enabled" ${s.diarization_enabled?'checked':''}><span>${T('settings.diarizationEnabled')}</span></div>
+    <div class="field"><label>${T('settings.numSpeakers')}</label>
       <input type="number" min="0" max="20" data-k="num_speakers" value="${s.num_speakers}">
-      <div class="hint">0 — определить автоматически по порогу ниже. Любое другое число задаёт количество жёстко,
-        и порог тогда не работает: ставьте его, только если точно знаете, сколько человек говорит.</div>
+      <div class="hint">${T('settings.numSpeakersHint')}</div>
     </div>
-    <div class="field"><label>Порог разделения — ${s.cluster_threshold}</label>
+    <div class="field"><label>${T('settings.clusterThreshold',{val:s.cluster_threshold})}</label>
       <input type="number" step="0.05" min="0.2" max="0.95" data-k="cluster_threshold" value="${s.cluster_threshold}">
-      <div class="hint">Меньше — больше спикеров. Если голоса склеились, уменьшите до 0.5; если один человек разбился на нескольких — поднимите до 0.7.</div>
+      <div class="hint">${T('settings.clusterThresholdHint')}</div>
     </div>
-    <div class="row"><input type="checkbox" data-k="speaker_merge_auto" ${s.speaker_merge_auto?'checked':''}><span>Подбирать похожесть голосов по записи</span></div>
-    <div class="hint">После разделения похожие голоса сводятся в одного человека. Насколько «похожие» — приложение
-      меряет по самой записи: режет речь каждого голоса пополам и смотрит, насколько человек похож сам на себя
-      здесь и сейчас. Порог от этого только строже, чем ${s.speaker_merge_similarity}, — хуже не станет.</div>
+    <div class="row"><input type="checkbox" data-k="speaker_merge_auto" ${s.speaker_merge_auto?'checked':''}><span>${T('settings.speakerMergeAuto')}</span></div>
+    <div class="hint">${T('settings.speakerMergeHint',{val:s.speaker_merge_similarity})}</div>
   </div>
-  <div class="group"><h3>Что готовить из записи</h3>
-    <div class="field"><label>Профиль</label>
+  <div class="group"><h3>${T('preset.groupLabel')}</h3>
+    <div class="field"><label>${T('settings.presetLabel')}</label>
       <select data-k="preset" id="preset-select">${(state.presets.items||[]).map(i=>
         `<option value="${esc(i.key)}" ${i.key===currentPreset()?'selected':''}>${esc(i.title)}</option>`).join('')}</select>
       <div class="hint">${(state.presets.items||[]).map(i=>
         `<div style="margin-top:4px"><b>${esc(i.title)}</b> — ${esc(i.hint)}</div>`).join('')}</div>
     </div>
     <div id="custom-block">
-      <div class="field"><label>Правила для модели</label>
-        <textarea data-k="custom_rules" rows="5" placeholder="Например: собери из записи список работ, ставки бери из слов заказчика, ничего не придумывай.">${esc(s.custom_rules||'')}</textarea>
-        <div class="hint">Напишите обычными словами, что нужно получить и чего делать нельзя.</div>
+      <div class="field"><label>${T('settings.customRules')}</label>
+        <textarea data-k="custom_rules" rows="5" placeholder="${esc(T('settings.customRulesPh'))}">${esc(s.custom_rules||'')}</textarea>
+        <div class="hint">${T('settings.customRulesHint')}</div>
       </div>
-      <div class="field"><label>Шаблон документа</label>
+      <div class="field"><label>${T('settings.customTemplate')}</label>
         <textarea data-k="custom_template" rows="10" placeholder="${esc(state.presets.example||'')}">${esc(s.custom_template||'')}</textarea>
-        <div class="hint">Заголовки <code>##</code> становятся вкладками и разделами файла. Оставьте пустым — возьмётся пример.
-          Колонки «Количество» и «Ставка» приложение перемножит само и добавит строку «Итого»:
-          модель считает плохо, поэтому арифметику она не делает.
-          <button class="btn sm" id="btn-example" style="margin-top:6px">Подставить пример</button></div>
+        <div class="hint">${T('settings.customTemplateHint')}
+          <button class="btn sm" id="btn-example" style="margin-top:6px">${T('settings.insertExample')}</button></div>
       </div>
     </div>
   </div>
-  <div class="group"><h3>Языковая модель для саммари</h3>
-    <div class="row"><input type="checkbox" data-k="summary_enabled" ${s.summary_enabled?'checked':''}><span>Составлять саммари и бриф</span></div>
+  <div class="group"><h3>${T('settings.group.llm')}</h3>
+    <div class="row"><input type="checkbox" data-k="summary_enabled" ${s.summary_enabled?'checked':''}><span>${T('settings.summaryEnabled')}</span></div>
 
-    <div class="field"><label>Как подключена модель</label>
+    <div class="field"><label>${T('settings.llmBackend')}</label>
       <select data-k="llm_backend" id="llm-backend">
-        <option value="auto" ${s.llm_backend==='auto'?'selected':''}>Автоматически</option>
+        <option value="auto" ${s.llm_backend==='auto'?'selected':''}>${T('settings.optAuto')}</option>
         <option value="ollama" ${s.llm_backend==='ollama'?'selected':''}>Ollama</option>
-        <option value="gguf" ${s.llm_backend==='gguf'?'selected':''}>Файл .gguf на диске</option>
-        <option value="openai" ${s.llm_backend==='openai'?'selected':''}>Сервер с OpenAI API</option>
+        <option value="gguf" ${s.llm_backend==='gguf'?'selected':''}>${T('settings.optGgufFile')}</option>
+        <option value="openai" ${s.llm_backend==='openai'?'selected':''}>${T('settings.optOpenaiServer')}</option>
       </select>
-      <div class="hint">Автоматически — сначала файл .gguf, если он указан, затем Ollama, затем сервер.</div>
+      <div class="hint">${T('settings.llmBackendHint')}</div>
     </div>
 
     <div class="llm-block" data-for="ollama">
-      <div class="field"><label>Модель Ollama</label>
+      <div class="field"><label>${T('settings.ollamaModel')}</label>
         <select data-k="ollama_model">${opt(models,s.ollama_model)}</select>
         <div class="hint">${(e.ollama_models||[]).length
-          ?'«auto» выберет лучшую из установленных.'
-          :esc(e.ollama_error||'Ollama не запущена.')}</div>
+          ?T('settings.ollamaModelHintAuto')
+          :esc(e.ollama_error||T('settings.ollamaNotRunning'))}</div>
       </div>
-      <div class="field"><label>Адрес Ollama</label>
+      <div class="field"><label>${T('settings.ollamaUrl')}</label>
         <input type="text" data-k="ollama_url" value="${esc(s.ollama_url)}">
       </div>
     </div>
 
     <div class="llm-block" data-for="gguf">
-      <div class="field"><label>Файл модели (.gguf)</label>
+      <div class="field"><label>${T('settings.ggufPath')}</label>
         <input type="text" data-k="gguf_path" id="gguf-path" value="${esc(s.gguf_path||'')}"
-               placeholder="например ~/Models/gemma-4-12b-Q4_K_M.gguf">
+               placeholder="${esc(T('settings.ggufPathPh'))}">
         <div class="hint">
-          <button class="btn sm" id="btn-gguf" style="margin-top:6px">Выбрать файл…</button>
-          ${e.gguf_path_ok?` <span style="color:var(--ok)">файл на месте, ${e.gguf_size_gb} ГБ</span>`:''}
+          <button class="btn sm" id="btn-gguf" style="margin-top:6px">${T('settings.chooseFile')}</button>
+          ${e.gguf_path_ok?` <span style="color:var(--ok)">${T('settings.fileOk',{gb:e.gguf_size_gb})}</span>`:''}
           <div style="margin-top:6px">${e.llama_cpp
-            ? 'Библиотека для чтения .gguf установлена.'
-            : 'Понадобится библиотека llama-cpp-python — установите её командой из README.'}</div>
+            ? T('settings.llamaCppOk')
+            : T('settings.llamaCppMissing')}</div>
         </div>
       </div>
-      <div class="field"><label>Слоёв на видеоядро</label>
+      <div class="field"><label>${T('settings.gpuLayers')}</label>
         <input type="number" data-k="gguf_gpu_layers" value="${s.gguf_gpu_layers}">
-        <div class="hint">−1 — вся модель на GPU (для Apple Silicon это правильный выбор). Уменьшайте, если не хватает памяти.</div>
+        <div class="hint">${T('settings.gpuLayersHint')}</div>
       </div>
     </div>
 
     <div class="llm-block" data-for="openai">
-      <div class="field"><label>Адрес сервера</label>
+      <div class="field"><label>${T('settings.serverUrl')}</label>
         <input type="text" data-k="openai_base_url" value="${esc(s.openai_base_url||'')}"
                placeholder="http://127.0.0.1:1234/v1">
-        <div class="hint">LM Studio — порт 1234, llama-server — 8080. Адрес должен заканчиваться на /v1.
-          ${(e.openai_models||[]).length?`Сервер отвечает, моделей: ${e.openai_models.length}.`:''}</div>
+        <div class="hint">${T('settings.serverUrlHint')}
+          ${(e.openai_models||[]).length?` ${T('settings.serverRespondingHint',{n:e.openai_models.length})}`:''}</div>
       </div>
-      <div class="field"><label>Модель</label>
+      <div class="field"><label>${T('settings.modelLabel')}</label>
         <select data-k="openai_model">${opt(['auto',...(e.openai_models||[])],s.openai_model)}</select>
       </div>
-      <div class="field"><label>Ключ доступа</label>
+      <div class="field"><label>${T('settings.apiKey')}</label>
         <input type="text" data-k="openai_api_key" value="${esc(s.openai_api_key||'')}"
-               placeholder="для локального сервера не нужен">
+               placeholder="${esc(T('settings.apiKeyPh'))}">
       </div>
     </div>
 
-    <div class="field"><label>Размер контекста</label>
+    <div class="field"><label>${T('settings.contextSize')}</label>
       <input type="number" step="4096" data-k="llm_num_ctx" value="${s.llm_num_ctx}">
-      <div class="hint">Сколько текста модель держит за раз. Больше — качественнее свод, но нужнее память.</div>
+      <div class="hint">${T('settings.contextSizeHint')}</div>
     </div>
 
-    <button class="btn sm" id="btn-test-llm">Проверить связь</button>
+    <button class="btn sm" id="btn-test-llm">${T('settings.testConnection')}</button>
     <div class="hint" id="llm-test-result" style="margin-top:8px"></div>
   </div>
-  <div class="group"><h3>Транскрипт</h3>
-    <div class="row"><input type="checkbox" data-k="transcript_cleanup" ${s.transcript_cleanup?'checked':''}><span>Убирать эканье и слова-паразиты</span></div>
-    <div class="field"><div class="hint" style="margin-top:-4px">Вычищает «э-э», «ну», «вот», «как бы», «типа» и повторы слов. Осмысленные обороты вроде «вот здесь» и «ну и что» остаются. Дословный текст сохраняется в файле .result.json.</div></div>
+  <div class="group"><h3>${T('settings.group.transcript')}</h3>
+    <div class="row"><input type="checkbox" data-k="transcript_cleanup" ${s.transcript_cleanup?'checked':''}><span>${T('settings.cleanupFillers')}</span></div>
+    <div class="field"><div class="hint" style="margin-top:-4px">${T('settings.cleanupHint')}</div></div>
   </div>
-  <div class="group"><h3>Запись созвонов</h3>
-    <div class="row"><input type="checkbox" data-k="record_autodetect" ${s.record_autodetect?'checked':''}><span>Предлагать запись, когда начинается созвон</span></div>
-    <div class="row"><input type="checkbox" data-k="record_split_speakers" ${s.record_split_speakers?'checked':''}><span>Различать собеседников по голосам</span></div>
-    <div class="field"><div class="hint" style="margin-top:-4px">Во время разговора все, кроме вас, подписаны просто «Собеседник»: дорожка знает только «я / не я». После звонка их голоса разбираются отдельно, и в готовом транскрипте появляются «Собеседник 1», «Собеседник 2». Занимает около двух минут на час разговора.</div></div>
-    <div class="row"><input type="checkbox" data-k="record_dedupe" ${s.record_dedupe?'checked':''}><span>Убирать эхо между дорожками</span></div>
-    <div class="field"><div class="hint" style="margin-top:-4px">Один и тот же голос попадает и в микрофон, и в системный звук. Приложение оставляет ту дорожку, где он громче, — иначе каждая фраза показывалась бы дважды.</div></div>
-    <div class="field"><label>Заметки по ходу, раз в N минут</label>
+  <div class="group"><h3>${T('settings.group.recording')}</h3>
+    <div class="row"><input type="checkbox" data-k="record_autodetect" ${s.record_autodetect?'checked':''}><span>${T('settings.autoDetect')}</span></div>
+    <div class="row"><input type="checkbox" data-k="record_split_speakers" ${s.record_split_speakers?'checked':''}><span>${T('settings.splitSpeakers')}</span></div>
+    <div class="field"><div class="hint" style="margin-top:-4px">${T('settings.splitSpeakersHint')}</div></div>
+    <div class="row"><input type="checkbox" data-k="record_dedupe" ${s.record_dedupe?'checked':''}><span>${T('settings.dedupe')}</span></div>
+    <div class="field"><div class="hint" style="margin-top:-4px">${T('settings.dedupeHint')}</div></div>
+    <div class="field"><label>${T('settings.notesInterval')}</label>
       <input type="number" min="0" max="60" data-k="record_notes_minutes" value="${s.record_notes_minutes}">
-      <div class="hint">0 — не делать промежуточных сводок. Итоговый бриф собирается в любом случае.</div>
+      <div class="hint">${T('settings.notesIntervalHint')}</div>
     </div>
-    <div class="field"><label>Разбирать звук кусками по N секунд</label>
+    <div class="field"><label>${T('settings.chunkSeconds')}</label>
       <input type="number" min="10" max="120" data-k="record_chunk_seconds" value="${s.record_chunk_seconds}">
-      <div class="hint">Меньше — текст появляется быстрее, но машина работает чаще.</div>
+      <div class="hint">${T('settings.chunkSecondsHint')}</div>
     </div>
   </div>
-  <div class="group"><h3>Файлы</h3>
-    <div class="field"><label>Папка результатов</label>
-      <input type="text" data-k="output_dir" value="${esc(s.output_dir||e.output_dir||'')}" placeholder="по умолчанию — output рядом с приложением">
-      <div class="hint"><button class="btn sm" id="btn-outdir" style="margin-top:6px">Выбрать папку…</button></div>
+  <div class="group"><h3>${T('settings.group.files')}</h3>
+    <div class="field"><label>${T('settings.outputDir')}</label>
+      <input type="text" data-k="output_dir" value="${esc(s.output_dir||e.output_dir||'')}" placeholder="${esc(T('settings.outputDirPh'))}">
+      <div class="hint"><button class="btn sm" id="btn-outdir" style="margin-top:6px">${T('settings.chooseFolder')}</button></div>
     </div>
-    <div class="row"><input type="checkbox" data-k="keep_wav" ${s.keep_wav?'checked':''}><span>Сохранять извлечённый WAV</span></div>
+    <div class="row"><input type="checkbox" data-k="keep_wav" ${s.keep_wav?'checked':''}><span>${T('settings.keepWav')}</span></div>
   </div>`;
 }
 
@@ -1005,11 +1511,11 @@ function openSettings(){
   const test=$('#btn-test-llm');
   if(test) test.onclick=async()=>{
     const out=$('#llm-test-result');
-    out.innerHTML='<span class="spin" style="display:inline-block;vertical-align:-2px"></span> проверяю…';
+    out.innerHTML=`<span class="spin" style="display:inline-block;vertical-align:-2px"></span> ${T('settings.testing')}`;
     const r=await api().test_llm(formValues());
     out.innerHTML = r.ok
-      ? `<span style="color:var(--ok)">✓ ${esc(r.backend)} отвечает: «${esc(r.answer||'')}»</span>`
-      : `<span style="color:var(--err)">✗ ${esc(r.error||'не отвечает')}</span>`;
+      ? `<span style="color:var(--ok)">${esc(T('settings.testOk',{backend:r.backend,answer:r.answer||''}))}</span>`
+      : `<span style="color:var(--err)">${esc(T('settings.testFail',{error:r.error||T('settings.testNoAnswer')}))}</span>`;
   };
 }
 function closeSettings(){ $('#drawer').classList.remove('show'); $('#backdrop').classList.remove('show'); }
@@ -1019,7 +1525,12 @@ async function saveSettings(){
   state.settings = await api().save_settings(values);
   state.preset = state.settings.preset || state.preset;
   state.env = await api().environment();
-  renderChips(); renderPicker(); closeSettings(); loadLib(); toast('Настройки сохранены');
+  // Язык мог смениться прямо в этой форме — перерисовываем всё окно заново.
+  resolveLanguage(state.settings);
+  applyStatic();
+  renderChips(); renderPicker(); closeSettings(); loadLib();
+  render();
+  toast(T('settings.savedToast'));
 }
 
 /* ========== действия ========== */
@@ -1054,7 +1565,7 @@ document.addEventListener('click', async ev=>{
     const pane=$('#pane-'+id);
     if(!pane||!key) return;
     const markdown=collectSection(pane);
-    t.disabled=true; t.textContent='Сохраняю…';
+    t.disabled=true; t.textContent=T('edit.saving');
     const r=await api().edit_summary(id,key,markdown);
     if(r && r.ok){
       const job=state.jobs.get(id);
@@ -1064,10 +1575,10 @@ document.addEventListener('click', async ev=>{
       }
       state.editing.delete(id);
       render(); loadLib();
-      toast('Раздел обновлён, файлы перезаписаны');
+      toast(T('edit.saved'));
     } else {
-      t.disabled=false; t.textContent='Сохранить';
-      toast((r&&r.error)||'Не удалось сохранить');
+      t.disabled=false; t.textContent=T('btn.save');
+      toast((r&&r.error)||T('edit.saveFailed'));
     }
     return;
   }
@@ -1098,7 +1609,7 @@ document.addEventListener('click', async ev=>{
   if(t.dataset.person){
     // Быстрый путь: имя вешается на последнюю реплику — обычно её и слышно.
     const lines=(state.rec&&state.rec.lines)||[];
-    if(!lines.length){ toast('Пока нечего отмечать'); return; }
+    if(!lines.length){ toast(T('rec.nothingToTag')); return; }
     const session=await api().rec_tag(lines[lines.length-1].index, t.dataset.person);
     if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
       if(keep) state.rec._t=keep; }
@@ -1127,8 +1638,8 @@ document.addEventListener('click', async ev=>{
     const j = card && card.archived
       ? await api().library_rename(id,names)
       : await api().rename_speakers(id,names);
-    if(j){ state.jobs.set(j.id,j); loadLib(); render(); toast('Имена применены, файлы обновлены'); }
-    else toast('Не удалось обновить имена');
+    if(j){ state.jobs.set(j.id,j); loadLib(); render(); toast(T('job.renamedToast')); }
+    else toast(T('job.renameFailed'));
   }
 });
 
@@ -1180,13 +1691,13 @@ document.addEventListener('drop', ev=>{
   const files=[...(ev.dataTransfer?.files||[])];
   const paths=files.map(f=>f.path).filter(Boolean);
   if(paths.length) startJobs(paths);
-  else if(files.length) toast('Перетаскивание не сработало — нажмите «Выбрать запись»');
+  else if(files.length) toast(T('drop.dragFailed'));
 });
 
 $('#btn-pick').onclick=pick;
 $('#btn-side').onclick=()=>document.body.classList.toggle('no-side');
 $('#btn-lib-folder').onclick=async()=>{
-  if(!(await api().open_file(state.libDir))) toast('Папка ещё не создана');
+  if(!(await api().open_file(state.libDir))) toast(T('lib.folderNotCreated'));
 };
 let searchTimer=null;
 $('#lib-search').oninput=ev=>{
@@ -1199,10 +1710,10 @@ $('#btn-close').onclick=closeSettings;
 $('#backdrop').onclick=closeSettings;
 $('#btn-save').onclick=saveSettings;
 $('#btn-models').onclick=async()=>{
-  toast('Скачиваю модели…');
+  toast(T('models.downloading'));
   const r=await api().prepare_models();
   state.env=await api().environment(); renderChips();
-  toast(r.ok?'Модели готовы':'Ошибка: '+r.error);
+  toast(r.ok?T('models.ready'):T('models.error',{error:r.error}));
 };
 
 
@@ -1222,9 +1733,9 @@ function renderRec(){
   let html='';
 
   if(state.callPrompt && (!r || r.state==='done')){
-    html+=`<div class="banner"><span>Похоже, начался созвон — записать его?</span>
-      <span class="sp"><button class="btn sm" data-rec="dismiss">Не сейчас</button>
-      <button class="btn sm primary" data-rec="start">Записывать</button></span></div>`;
+    html+=`<div class="banner"><span>${T('rec.detectedPrompt')}</span>
+      <span class="sp"><button class="btn sm" data-rec="dismiss">${T('rec.notNow')}</button>
+      <button class="btn sm primary" data-rec="start">${T('rec.startCall')}</button></span></div>`;
   }
 
   if(!r || r.state==='done'){
@@ -1232,24 +1743,24 @@ function renderRec(){
     if(state.recError){
       html+=`<div class="banner" style="background:var(--panel);border-color:var(--err)">
         <span>${esc(state.recError)}</span>
-        <span class="sp"><button class="btn sm primary" data-rec="privacy">Открыть настройки</button></span></div>`;
+        <span class="sp"><button class="btn sm primary" data-rec="privacy">${T('rec.openSettings')}</button></span></div>`;
     }
     const noHelper = p.helper===false;
     html+=`<div class="rec-card"><div class="rec-head">
         <div style="min-width:0">
-          <div class="rec-title">Стенографист</div>
+          <div class="rec-title">${T('rec.title')}</div>
           <div class="rec-sub">${blocked
-            ? 'Созвон требует разрешения на запись экрана — без него не слышно собеседников. Встречу в комнате можно писать и так.'
-            : 'Записывает разговор и расшифровывает его прямо по ходу'}</div>
+            ? T('rec.blockedHint')
+            : T('rec.subHint')}</div>
         </div>
         <div class="rec-actions">
           ${blocked
-            ? `<button class="btn sm ghost" data-rec="recheck">Проверить снова</button>
-               <button class="btn sm" data-rec="privacy">Открыть настройки</button>`
-            : `<button class="btn primary" data-rec="start">Начать запись созвона</button>`}
+            ? `<button class="btn sm ghost" data-rec="recheck">${T('rec.recheck')}</button>
+               <button class="btn sm" data-rec="privacy">${T('rec.openSettings')}</button>`
+            : `<button class="btn primary" data-rec="start">${T('rec.startCallBtn')}</button>`}
           <button class="btn ${blocked?'primary':''}" data-rec="start-room"
-            title="Все голоса идут в один микрофон — как на совещании за столом"
-            ${noHelper?'disabled':''}>Записать встречу</button>
+            title="${T('rec.meetingTitle')}"
+            ${noHelper?'disabled':''}>${T('rec.startMeetingBtn')}</button>
         </div>
       </div>`;
     if(r && r.state==='done' && r.line_count) html+=recResult(r);
@@ -1266,30 +1777,29 @@ function renderRec(){
       </div>
       <div class="rec-actions">
         <span class="rec-timer" id="rec-timer">${recTime()}</span>
-        ${live?`<button class="btn sm ghost" data-rec="cancel">Отменить</button>
-                <button class="btn primary" data-rec="stop">Остановить</button>`:''}
+        ${live?`<button class="btn sm ghost" data-rec="cancel">${T('rec.cancel')}</button>
+                <button class="btn primary" data-rec="stop">${T('rec.stop')}</button>`:''}
       </div>
     </div>`;
 
   html+=peopleHTML(r);
   html+=`<div class="rec-body"><div class="rec-live" id="rec-live">`;
   if(!(r.lines||[]).length){
-    html+=`<div class="rec-empty">Речь появится здесь через полминуты после начала${
-      r.mode==='room' ? ' встречи' : ' разговора'}.</div>`;
+    html+=`<div class="rec-empty">${r.mode==='room' ? T('rec.willAppearRoom') : T('rec.willAppearCall')}</div>`;
   } else {
     html+=r.lines.map(l=>{
       const picking = state.picking===l.index;
       return `<div class="rec-line ${l.who}${l.tagged?' tagged':''}${picking?' picking':''}"
-          data-pick="${l.index}" title="Отметить, кто это говорит">
+          data-pick="${l.index}" title="${T('rec.pickLineTitle')}">
         <span class="t">${hhmmss(l.start)}</span>
         <span class="w">${esc(l.label)}</span>
         <span class="x">${esc(l.text)}</span></div>` + (picking ? pickbarHTML(r,l) : '');
     }).join('');
   }
-  html+=`</div><div class="rec-notes"><h4>Заметки по ходу</h4>`;
+  html+=`</div><div class="rec-notes"><h4>${T('rec.notesHeading')}</h4>`;
   html+=(r.notes||[]).length
     ? r.notes.map(n=>`<div class="note-item"><span class="at">${hhmmss(n.at)}</span>${md(n.text)}</div>`).join('')
-    : `<div class="rec-empty">Первая сводка появится через несколько минут.</div>`;
+    : `<div class="rec-empty">${T('rec.notesEmpty')}</div>`;
   html+=`</div></div>`;
   if(r.error) html+=`<div class="err-line">${esc(r.error)}</div>`;
   html+=`</div>`;
@@ -1313,25 +1823,23 @@ function peopleHTML(r){
   if(r.state!=='recording' && r.state!=='finishing') return '';
   const people=r.people||[];
   return `<div class="people">
-    <span class="lbl">Кто на ${r.mode==='room'?'встрече':'связи'}:</span>
+    <span class="lbl">${r.mode==='room'?T('rec.whoOnMeeting'):T('rec.whoOnCall')}</span>
     ${people.map((name,i)=>`<button class="person" data-person="${esc(name)}"
-        title="Отметить этим именем последнюю реплику">${esc(name)}
+        title="${T('rec.tagLastTitle')}">${esc(name)}
         <span class="n">${i+1}</span></button>`).join('')}
-    <input type="text" id="person-add" placeholder="+ имя" maxlength="40">
-    <span class="hint">Кликните реплику и выберите, кто её сказал — или нажмите
-      имя, чтобы отметить последнюю. Отмеченные голоса приложение узнает
-      и подпишет ими всю запись.</span>
+    <input type="text" id="person-add" placeholder="${T('rec.addNamePh')}" maxlength="40">
+    <span class="hint">${T('rec.peopleHint')}</span>
   </div>`;
 }
 
 function pickbarHTML(r,line){
   const people=r.people||[];
   if(!people.length) return `<div class="pickbar"><span class="rec-empty">
-      Сначала добавьте участника в поле «+ имя» наверху.</span></div>`;
+      ${T('rec.pickbarEmpty')}</span></div>`;
   return `<div class="pickbar">` + people.map(name=>
       `<button class="person ${line.label===name?'on':''}"
          data-tag="${line.index}" data-name="${esc(name)}">${esc(name)}</button>`).join('') +
-    (line.tagged ? `<button class="person" data-tag="${line.index}" data-name="">снять</button>` : '') +
+    (line.tagged ? `<button class="person" data-tag="${line.index}" data-name="">${T('rec.untag')}</button>` : '') +
     `</div>`;
 }
 
@@ -1341,14 +1849,14 @@ function recResult(r){
   let h='';
   if(active){
     h+=`<div class="tabs">`+tabs.map(([k,label])=>
-      `<button class="tab ${k===active?'active':''}" data-rectab="${k}">${label}</button>`).join('')+
+      `<button class="tab ${k===active?'active':''}" data-rectab="${k}">${T(label)}</button>`).join('')+
       `<button class="btn sm ghost tab-copy" data-reccopy="${active}"
-        title="Скопировать текст этой вкладки">Копировать</button></div>`;
+        title="${T('job.copyTitle')}">${T('job.copy')}</button></div>`;
     h+=`<div class="pane md">${md((r.summary_sections||{})[active]||'')}</div>`;
   }
   const files=Object.entries(r.files||{});
   if(files.length){
-    h+=`<div class="files"><button class="btn sm" data-reveal="${esc(files[0][1])}">Показать в Finder</button>`+
+    h+=`<div class="files"><button class="btn sm" data-reveal="${esc(files[0][1])}">${T('job.revealFinder')}</button>`+
       files.map(([k,f])=>{const n=f.split('/').pop().split('.').slice(-2).join('.');
         return `<button class="btn sm ghost" data-open="${esc(f)}" title="${esc(f)}">${esc(n)}</button>`;}).join('')+
       `</div>`;
@@ -1360,24 +1868,24 @@ async function recAction(what){
   if(what==='dismiss'){ state.callPrompt=false; renderRec(); return; }
   if(what==='privacy'){
     const ok=await api().open_privacy('screen');
-    toast(ok ? 'Включите «Расшифровка» в списке и перезапустите приложение'
-             : 'Не удалось открыть настройки — откройте их вручную');
+    toast(ok ? T('rec.privacyEnable')
+             : T('rec.privacyFailed'));
     return;
   }
   if(what==='recheck'){
     state.recPerms=await api().rec_permissions();
     state.recError='';
     renderRec();
-    toast(state.recPerms.screen ? 'Разрешение на месте' : 'Разрешения пока нет');
+    toast(state.recPerms.screen ? T('rec.permOk') : T('rec.permMissing'));
     return;
   }
   if(what==='perms'){
-    toast('Открываю системный запрос…');
+    toast(T('rec.permRequesting'));
     state.recPerms=await api().rec_request();
     renderRec();
     toast(state.recPerms.screen
-      ? 'Разрешение выдано'
-      : 'Разрешите «Запись экрана» в настройках и перезапустите приложение');
+      ? T('rec.permGranted')
+      : T('rec.permDenied'));
     return;
   }
   if(what==='start' || what==='start-room'){
@@ -1385,12 +1893,12 @@ async function recAction(what){
     state.callPrompt=false;
     const res=await api().rec_start('', currentPreset(), room?'room':'call');
     if(!res.ok){
-      state.recError=res.error||'Не удалось начать';
+      state.recError=res.error||T('rec.startFailed');
       state.recPerms=await api().rec_permissions();
       renderRec(); toast(state.recError.slice(0,90));
       return;
     }
-    if(room) toast('Пишу встречу с микрофона — голоса разберу после остановки');
+    if(room) toast(T('rec.roomStartedToast'));
     state.recError='';
     state.rec=res.session; state.rec._t=Date.now(); renderRec();
     clearInterval(recTicker);
@@ -1430,13 +1938,15 @@ async function refreshEnv(){
   catch(e){}
   finally{ envBusy=false; }
 }
-$('#chips').onclick=async()=>{ await refreshEnv(); toast('Проверено'); };
+$('#chips').onclick=async()=>{ await refreshEnv(); toast(T('chips.checked')); };
 window.addEventListener('focus', refreshEnv);
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refreshEnv(); });
 setInterval(()=>{ if(!document.hidden) refreshEnv(); }, 30000);
 
 window.addEventListener('pywebviewready', async()=>{
   state.settings=await api().get_settings();
+  resolveLanguage(state.settings);
+  applyStatic();
   try{ state.presets=await api().presets(); }catch(e){}
   state.preset=state.settings.preset||state.presets.current||'meeting';
   state.env=await api().environment();
