@@ -4,25 +4,10 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
-## [1.3.0] — 2026-08-27
-
-### Added
-
-- **Voices are numbered while the recording runs.** Every line long enough to
-  leave a voice print is compared against the voices heard so far and gets a
-  label immediately — “Speaker 1”, “Person 2” — instead of a blank or a single
-  “Them” for everyone until the end. Clicking a voice in the row above the
-  transcript names it, and every line that person said, before and after, takes
-  the name. Correcting a name is a click; tagging from scratch was a dozen.
-- **The live threshold errs towards too many voices, not too few.** Two chips
-  with the same name merge in one click, two people fused into one voice cannot
-  be separated. Measured on a public four-speaker sample with 2–5 second lines:
-  at 0.50 it found two voices and merged different people 22 times; at the
-  default 0.62, five voices and four merges. `live_speakers: false` turns the
-  whole thing off; the full separation after the recording stops is unchanged
-  and still more accurate.
-
 ## [1.2.0] — 2026-08-27
+
+Two things shipped together: the app learned English, and it stopped waiting
+until the end of a recording to tell voices apart.
 
 ### Added
 
@@ -45,6 +30,22 @@ and the project uses [semantic versioning](https://semver.org/).
 - **English filler cleanup** — “um”, “you know”, “I mean”, “sort of” and their
   neighbours are removed from transcripts, with the same protection against
   cutting meaningful phrases.
+- **Voices are numbered while the recording runs.** Every line long enough to
+  leave a voice print is compared against the voices heard so far and gets a
+  label immediately — “Speaker 1”, “Person 2” — instead of a blank or a single
+  “Them” for everyone until the end. Clicking a voice in the row above the
+  transcript names it, and every line that person said, before and after, takes
+  the name. Correcting a name is a click; tagging from scratch was a dozen.
+- **The live threshold errs towards too many voices, not too few.** Two chips
+  with the same name merge in one click, two people fused into one voice cannot
+  be separated. Measured on a public four-speaker sample with 2–5 second lines:
+  at 0.50 it found two voices and merged different people 22 times; at the
+  default 0.62, five voices and four merges. `live_speakers: false` turns the
+  whole thing off; the full separation after the recording stops is unchanged
+  and still more accurate.
+- **A roadmap** — [docs/roadmap.md](docs/roadmap.md) and
+  [docs/roadmap.ru.md](docs/roadmap.ru.md): what comes next, what breaks at
+  scale, and the three things we do not yet know about our own app.
 - `tools/uicheck.py --docs` now shoots the README screenshots in both languages
   as part of the interface check, so the pictures cannot fall a version behind
   the code again — which is exactly what had happened by 1.1.0.
