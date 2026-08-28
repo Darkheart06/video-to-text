@@ -307,6 +307,10 @@
   .rec-line:hover{background:var(--panel-2); border-radius:7px}
   .rec-line.tagged .w{color:var(--accent); font-weight:700}
   .rec-line.picking{background:var(--accent-soft); border-radius:7px}
+  .rec-down{position:sticky; bottom:2px; width:max-content; margin:6px auto 0;
+    padding:5px 12px; border-radius:999px; background:var(--accent); color:#fff;
+    font-size:12px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.22)}
+  .rec-down[hidden]{display:none}
   .people.voices .lbl{color:var(--muted)}
   .voice-input{font:inherit; font-size:12px; padding:3px 9px; border-radius:999px;
     border:1px solid var(--accent); background:var(--panel); color:var(--fg); width:130px}
@@ -618,6 +622,7 @@ const STR = {
     'rec.pickbarEmpty': 'Сначала добавьте участника в поле «+ имя» наверху.',
     'rec.untag': 'снять',
     'rec.pickLineTitle': 'Отметить, кто это говорит',
+    'rec.toLatest': '↓ к последним репликам',
     'rec.privacyEnable': 'Включите «Расшифровка» в списке и перезапустите приложение',
     'rec.privacyFailed': 'Не удалось открыть настройки — откройте их вручную',
     'rec.permOk': 'Разрешение на месте',
@@ -865,6 +870,7 @@ const STR = {
     'rec.pickbarEmpty': 'Add a participant in the "+ name" field above first.',
     'rec.untag': 'clear',
     'rec.pickLineTitle': "Tag who's speaking",
+    'rec.toLatest': '↓ to the latest lines',
     'rec.privacyEnable': 'Enable "Transcripts" in the list and restart the app',
     'rec.privacyFailed': 'Could not open settings — open them manually',
     'rec.permOk': 'Permission granted',
@@ -1679,8 +1685,7 @@ document.addEventListener('click', async ev=>{
   if(t.dataset.tag!==undefined && t.dataset.name!==undefined){
     const session=await api().rec_tag(Number(t.dataset.tag), t.dataset.name);
     state.picking=null;
-    if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
-      if(keep) state.rec._t=keep; }
+    setRec(session);
     renderRec(); return;
   }
   if(t.dataset.person){
@@ -1688,8 +1693,7 @@ document.addEventListener('click', async ev=>{
     const lines=(state.rec&&state.rec.lines)||[];
     if(!lines.length){ toast(T('rec.nothingToTag')); return; }
     const session=await api().rec_tag(lines[lines.length-1].index, t.dataset.person);
-    if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
-      if(keep) state.rec._t=keep; }
+    setRec(session);
     renderRec(); return;
   }
   if(t.dataset.rec){ await recAction(t.dataset.rec); return; }
@@ -1754,7 +1758,7 @@ document.addEventListener('keydown', async ev=>{
       if(lines.length){
         const session=await api().rec_tag(lines[lines.length-1].index,
                                           r.people[Number(ev.key)-1]);
-        if(session){ const keep=r._t; state.rec=session; if(keep) state.rec._t=keep; }
+        setRec(session);
         renderRec();
         ev.preventDefault();
         return;
@@ -1819,6 +1823,16 @@ $('#btn-models').onclick=async()=>{
 state.rec=null; state.recPerms={}; state.callPrompt=false; state.recTab='live'; state.recError='';
 let recTicker=null;
 
+/* Часы идут от последнего снимка: `duration` считает Python от начала записи,
+   а `_t` — когда этот снимок пришёл. Если оставить `_t` от старта, к времени
+   записи прибавится всё то же время ещё раз, и часы побегут вдвое быстрее. */
+function setRec(session){
+  if(!session) return null;
+  state.rec = session;
+  state.rec._t = Date.now();
+  return state.rec;
+}
+
 function recTime(){
   if(!state.rec) return '00:00:00';
   const base=state.rec.duration||0;
@@ -1826,8 +1840,17 @@ function recTime(){
   return hhmmss(base+extra);
 }
 
+/* «Стоит внизу» с запасом в полстроки: доскроллить пиксель в пиксель мышью
+   невозможно, а прилипать к последним репликам хочется. */
+function atBottom(pane){
+  return pane.scrollHeight - pane.scrollTop - pane.clientHeight < 40;
+}
+
 function renderRec(){
   const el=$('#rec'); const r=state.rec; const p=state.recPerms||{};
+  // Где человек стоял до перерисовки — чтобы вернуть его туда же.
+  const was=$('#rec-live');
+  const seen=was ? {top: was.scrollTop, stick: atBottom(was)} : null;
   let html='';
 
   if(state.callPrompt && (!r || r.state==='done')){
@@ -1895,6 +1918,7 @@ function renderRec(){
         <span class="x">${esc(l.text)}</span></div>` + (picking ? pickbarHTML(r,l) : '');
     }).join('');
   }
+  html+=`<div class="rec-down" id="rec-down" hidden>${T('rec.toLatest')}</div>`;
   html+=`</div><div class="rec-notes"><h4>${T('rec.notesHeading')}</h4>`;
   html+=(r.notes||[]).length
     ? r.notes.map(n=>`<div class="note-item"><span class="at">${hhmmss(n.at)}</span>${md(n.text)}</div>`).join('')
@@ -1904,7 +1928,19 @@ function renderRec(){
   html+=`</div>`;
   el.innerHTML=html;
 
-  const pane=$('#rec-live'); if(pane) pane.scrollTop=pane.scrollHeight;
+  const pane=$('#rec-live');
+  if(pane){
+    // Раньше окно после каждой перерисовки прыгало вниз — и стоило кликнуть
+    // реплику в середине разговора, как её приходилось искать заново.
+    // Вниз уезжаем только если человек и так стоял внизу.
+    if(!seen || seen.stick) pane.scrollTop=pane.scrollHeight;
+    else pane.scrollTop=seen.top;
+    const down=$('#rec-down');
+    const toggle=()=>{ if(down) down.hidden = atBottom(pane); };
+    toggle();
+    pane.onscroll=toggle;
+    if(down) down.onclick=()=>{ pane.scrollTop=pane.scrollHeight; toggle(); };
+  }
 
   const rename=$('#voice-rename');
   if(rename){
@@ -1914,8 +1950,7 @@ function renderRec(){
       state.renaming=null;
       if(ok){
         const session=await api().rec_name_voice(key, rename.value.trim());
-        if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
-          if(keep) state.rec._t=keep; }
+        setRec(session);
       }
       renderRec();
     };
@@ -1931,8 +1966,7 @@ function renderRec(){
     if(!name) return;
     add.value='';
     const session=await api().rec_people([...(state.rec.people||[]), name]);
-    if(session){ const keep=state.rec&&state.rec._t; state.rec=session;
-      if(keep) state.rec._t=keep; renderRec(); }
+    if(session){ setRec(session); renderRec(); }
   };
 }
 
@@ -2033,7 +2067,7 @@ async function recAction(what){
     }
     if(room) toast(T('rec.roomStartedToast'));
     state.recError='';
-    state.rec=res.session; state.rec._t=Date.now(); renderRec();
+    setRec(res.session); renderRec();
     clearInterval(recTicker);
     recTicker=setInterval(()=>{ const el=$('#rec-timer'); if(el) el.textContent=recTime(); },1000);
     return;
@@ -2050,8 +2084,7 @@ window.__bridge=function(msg){
     if(msg.data && msg.data.status==='done') loadLibSoon(600);
   }
   if(msg.event==='record'){
-    const keep=state.rec&&state.rec._t;
-    state.rec=msg.data; if(keep&&state.rec.state==='recording') state.rec._t=keep;
+    setRec(msg.data);
     if(state.rec.state!=='recording'){ clearInterval(recTicker); recTicker=null; }
     if(state.rec.state==='done') loadLibSoon(600);
     renderRec();

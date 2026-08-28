@@ -460,6 +460,46 @@ def main() -> int:
                                   for line in fresh if line.voice == key),
                               next(line.speaker for line in fresh if line.voice == key))
 
+    # --- голоса, которые оказались одним человеком ---
+    # Два чипа с одним именем — это один человек, и сказал это не алгоритм, а
+    # тот, кто их назвал. Проверяем на выдуманных отпечатках: важно правило, а
+    # не звук.
+    folder = record.Stenographer(settings)
+    folder.session = record.Session(id="fold", started_at=time.time(),
+                                    directory=Path("/tmp/selftest-rec"),
+                                    title="Свод", mode="call")
+    import numpy as np
+
+    def _vector(seed: int):
+        v = np.random.default_rng(seed).normal(size=192).astype("float32")
+        return v / np.linalg.norm(v)
+
+    folder.session.voices = {f"V{i}": [_vector(i)] for i in (1, 2, 3)}
+    folder.session.voice_names = {f"V{i}": f"Собеседник {i}" for i in (1, 2, 3)}
+    folder.session.lines = [record.Line(i * 2, i * 2 + 2, "them", "речь") for i in range(3)]
+    for line, key in zip(folder.session.lines, ("V1", "V2", "V3")):
+        line.voice, line.speaker = key, folder.session.voice_names[key]
+    folder.rename_voice("V1", "Венера")
+    folder.rename_voice("V3", " венера ")
+    failures += not check("два чипа с одним именем сводятся в один голос",
+                          len(folder.session.voices) == 2,
+                          ", ".join(folder.session.voice_names.values()))
+    failures += not check("реплики слитого голоса подписаны одинаково",
+                          {line.speaker for line in folder.session.lines
+                           if line.voice == "V1"} == {"Венера"},
+                          str([line.speaker for line in folder.session.lines]))
+    failures += not check("номера безымянных идут подряд",
+                          folder.session.voice_names.get("V2") == "Собеседник 1",
+                          folder.session.voice_names.get("V2", ""))
+    same = [_vector(7), _vector(7) * 0.9 + _vector(8) * 0.1]
+    folder.session.voices = {"V1": [same[0]], "V2": [same[1] / np.linalg.norm(same[1])]}
+    folder.session.voice_names = {"V1": "Собеседник 1", "V2": "Собеседник 2"}
+    folder.session.named = set()
+    folder._fold_voices()
+    failures += not check("похожие безымянные голоса тоже сводятся",
+                          len(folder.session.voices) == 1,
+                          ", ".join(folder.session.voices))
+
     # Узнавание голоса на настоящем звуке: берём куски двух разных голосов,
     # один кусок каждого помечаем именем и смотрим, разойдутся ли имена верно.
     voiced = diarize.diarize(str(wav), settings)

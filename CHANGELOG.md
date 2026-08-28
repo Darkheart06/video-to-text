@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.3.1] — 2026-08-28
+
+### Fixed
+
+- **Tagging a line no longer throws you to the end of the call.** Every redraw
+  scrolled the live transcript to the newest line, so clicking a line in the
+  middle of a conversation meant scrolling back to find it again. The transcript
+  now stays where you left it and only follows the newest lines when you are
+  already at the bottom; a “↓ to the latest lines” button appears when you are
+  not.
+- **The recording clock ran at double speed.** It added the elapsed time since
+  the start to a duration that already counted from the start — an hour showing
+  for a half-hour call. The clock now ticks from the last update it received.
+
+### Changed
+
+- **One person is no longer split across three voices.** Three rules, in the
+  order they help: a voice that spoke a moment ago gets a head start, because
+  people do not change in the middle of a sentence; voices whose prints turn out
+  to be the same person are folded together as evidence accumulates; and when
+  you have listed who is on the call, the app stops inventing more voices than
+  there are people (plus one spare for someone you did not list).
+- **Two chips with the same name become one voice.** The hint under the voices
+  said so all along; now it is true — naming a second chip “Vera” merges it into
+  the Vera that already exists, and the remaining numbers close the gap instead
+  of jumping from 1 to 5 to 8.
+
 ## [1.3.0] — 2026-08-28
 
 ### Added

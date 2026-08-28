@@ -542,6 +542,45 @@ def main() -> int:
             if "Сергей" not in people:
                 errors.append(f"{scheme}: участник не добавился: {people}")
             page.screenshot(path=str(out_dir / f"6-record-{scheme}.png"))
+
+            # --- длинный разговор: прокрутка не убегает вниз ---
+            # Раньше любой клик по реплике перерисовывал окно и швырял человека
+            # в конец записи — приходилось искать реплику заново.
+            page.evaluate("""() => {
+              const lines = [];
+              for (let i = 0; i < 80; i++) {
+                lines.push({start: i * 5, who: 'them', label: 'Собеседник',
+                            text: 'реплика номер ' + i, tagged: false,
+                            voice: 'V1', index: i});
+              }
+              setRec(Object.assign({}, state.rec, {lines: lines, line_count: 80}));
+              renderRec();
+            }""")
+            page.wait_for_timeout(200)
+            page.evaluate("document.querySelector('#rec-live').scrollTop = 300")
+            page.wait_for_timeout(120)
+            page.click('.rec-line[data-pick="12"]')
+            page.wait_for_timeout(250)
+            top = page.evaluate("document.querySelector('#rec-live').scrollTop")
+            if abs(top - 300) > 40:
+                errors.append(f"{scheme}: после клика по реплике прокрутка уехала: {top}")
+            if not page.locator(".pickbar").count():
+                errors.append(f"{scheme}: выбор имени не открылся на середине записи")
+            if page.locator("#rec-down").is_hidden():
+                errors.append(f"{scheme}: нет кнопки возврата к последним репликам")
+            page.click("#rec-down")
+            page.wait_for_timeout(200)
+            if not page.evaluate(
+                    "atBottom(document.querySelector('#rec-live'))"):
+                errors.append(f"{scheme}: кнопка не вернула к последним репликам")
+
+            # --- часы записи идут вровень со временем разговора ---
+            shown = page.evaluate(
+                "setRec({state:'recording', duration:600, lines:[], people:[],"
+                " voices:[], notes:[], title:'т', message:''}) && recTime()")
+            if shown != "00:10:00":
+                errors.append(f"{scheme}: часы записи врут: {shown} вместо 00:10:00")
+
             page.click('[data-rec="cancel"]')
             page.wait_for_timeout(150)
 

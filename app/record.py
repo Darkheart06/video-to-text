@@ -113,6 +113,8 @@ class Session:
     # лучшим из них, а не со средним: усреднение смазывает короткие реплики).
     voices: dict = field(default_factory=dict)
     voice_names: dict = field(default_factory=dict)   # «V2» -> «Спикер 2» или имя
+    # Голоса с настоящим именем: их не сводят между собой и не перенумеровывают.
+    named: set = field(default_factory=set)
     stamp: str = ""          # «2026-08-27 13-32» — дата и время начала
     renamed: bool = False    # название уже подобрано по теме разговора
     stalled: str = ""        # какая дорожка встала: «mic», «sys» или никакая
@@ -621,10 +623,25 @@ class Stenographer:
             return
         floor = float(self.settings.get("live_voice_floor", 0.5))
         limit = int(self.settings.get("live_voice_limit", 9))
+        # Человек сказал, кто на связи, — значит, столько людей и есть. Одно
+        # место про запас на того, кого он не назвал; больше голосов заводить
+        # незачем: лишний чип не помогает, а сбивает с толку.
+        if session.people:
+            limit = min(limit, len(session.people) + 1)
+        sticky = float(self.settings.get("live_voice_sticky", 0.08))
+        gap = float(self.settings.get("live_voice_gap", 2.0))
         try:
             extractor = self._extractor()
         except Exception:
             return
+
+        # Кто говорил последним и когда закончил — отсюда берётся фора для
+        # продолжения фразы. Свежие реплики ещё не в session.lines.
+        last_key, last_end = "", -1e9
+        for earlier in reversed(session.lines):
+            if earlier.voice:
+                last_key, last_end = earlier.voice, earlier.end
+                break
 
         for line in fresh:
             if line.tagged or (line.who == "me" and not room):
@@ -652,6 +669,12 @@ class Stenographer:
             best, score = "", 0.0
             for key, prints in session.voices.items():
                 near = max(float(print_ @ other) for other in prints)
+                # Человек не меняется в середине фразы. Если предыдущий кусок
+                # речи кончился только что, продолжает почти наверняка он же —
+                # его голосу даётся фора, иначе одна фраза, разрезанная на
+                # части, разъезжается по трём «спикерам».
+                if key == last_key and line.start - last_end <= gap:
+                    near += sticky
                 if near > score:
                     best, score = key, near
 
@@ -663,8 +686,10 @@ class Stenographer:
                 known, _ = voices.match(print_, people=self._known())
                 session.voice_names[best] = known or self._voice_title(
                     len(session.voices), room)
-                if known and known not in session.people:
-                    session.people.append(known)
+                if known:
+                    session.named.add(best)
+                    if known not in session.people:
+                        session.people.append(known)
             elif not best:
                 continue
             else:
@@ -676,6 +701,93 @@ class Stenographer:
 
             line.voice = best
             line.speaker = session.voice_names.get(best, "")
+            last_key, last_end = best, line.end
+
+        self._fold_voices()
+
+    def _fold_voices(self) -> None:
+        """Сводит живые голоса, которые оказались одним человеком.
+
+        По одной короткой реплике голос узнать трудно, и человек разъезжается
+        на «Собеседника 2» и «Собеседника 3». Но отпечатков со временем
+        набирается больше, и то, что вначале было неочевидно, потом видно:
+        такие голоса складываются в один, а реплики переподписываются.
+
+        Сравнение — полной связью, как в разборе записи: две группы сходятся,
+        только если *каждый* отпечаток одной похож на *каждый* отпечаток
+        другой. По ближайшей паре голоса склеивались бы цепочкой.
+        """
+        session = self.session
+        limit = float(self.settings.get("live_voice_fold", 0.72))
+        if not session or len(session.voices) < 2:
+            return
+        keys = list(session.voices)
+        into: dict[str, str] = {}
+
+        # Два чипа с одним именем — это один человек, и сказал это не алгоритм,
+        # а человек, который их назвал. Такие сводим независимо от похожести:
+        # ровно так и написано в подсказке под голосами.
+        seen: dict[str, str] = {}
+        for key in keys:
+            name = session.voice_names.get(key, "").strip().lower()
+            if not name or key not in session.named:
+                continue
+            if name in seen:
+                into[key] = seen[name]
+            else:
+                seen[name] = key
+
+        if limit >= 1.0:
+            self._apply_fold(into)
+            return
+        for i, first in enumerate(keys):
+            if first in into:
+                continue
+            for second in keys[i + 1:]:
+                if second in into:
+                    continue
+                # Названный человек — не кандидат на слияние: имя дал живой
+                # человек, и молча переносить его на другой голос нельзя.
+                if second in session.named or first in session.named:
+                    continue
+                pairs = [float(a @ b) for a in session.voices[first]
+                         for b in session.voices[second]]
+                if pairs and min(pairs) >= limit:
+                    into[second] = first
+        self._apply_fold(into)
+
+    def _apply_fold(self, into: dict[str, str]) -> None:
+        """Переносит отпечатки и реплики слитых голосов и наводит порядок."""
+        session = self.session
+        if not session or not into:
+            return
+        for second, first in into.items():
+            session.voices[first] = (session.voices[first]
+                                     + session.voices.pop(second))[-VOICE_PRINTS:]
+            session.voice_names.pop(second, None)
+            session.named.discard(second)
+        for line in session.lines:
+            if line.voice in into:
+                line.voice = into[line.voice]
+                # Подпись берём у того голоса, в который влились: человек мог
+                # написать имя со строчной буквы или с лишним пробелом.
+                line.speaker = session.voice_names.get(line.voice, line.speaker)
+        self._renumber_voices()
+
+    def _renumber_voices(self) -> None:
+        """После слияния номера идут подряд: «Собеседник 1, 3» сбивает с толку."""
+        session = self.session
+        assert session is not None
+        room = session.mode == "room"
+        number = 0
+        for key in session.voices:
+            if key in session.named:
+                continue
+            number += 1
+            session.voice_names[key] = self._voice_title(number, room)
+        for line in session.lines:
+            if line.voice and not line.tagged:
+                line.speaker = session.voice_names.get(line.voice, line.speaker)
 
     def _known(self) -> dict:
         """Запомненные голоса — читаем один раз на запись, не на реплику."""
@@ -805,16 +917,21 @@ class Stenographer:
             number = int(key[1:]) if key[1:].isdigit() else 1
             value = self._voice_title(number, session.mode == "room")
             session.voice_names[key] = value
+            session.named.discard(key)
             for line in session.lines:
                 if line.voice == key:
                     line.speaker, line.tagged = value, False
         else:
             session.voice_names[key] = value
+            session.named.add(key)
             if value not in session.people:
                 session.people.append(value)
             for line in session.lines:
                 if line.voice == key:
                     line.speaker, line.tagged = value, True
+        # Назвали второй чип тем же именем — значит, это один человек, и держать
+        # два голоса больше незачем.
+        self._fold_voices()
         self._emit()
         return session.snapshot()
 

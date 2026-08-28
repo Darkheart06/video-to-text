@@ -176,6 +176,38 @@ Names given live are treated as tags, which is what the post-recording pass
 already knows how to use: the whole file is separated properly when the
 recording stops, and the tagged speech decides which cluster carries which name.
 
+### Why a better print model does not rescue a call
+
+The first instinct when voices get confused is to reach for a stronger model.
+Measured on a real call (8.7 minutes, four voices found): four models from the
+sherpa-onnx zoo against the current one, on non-overlapping speech, cosine
+similarity.
+
+| model | itself (halves of one utterance) | gap "same − different" |
+|---|---|---|
+| wespeaker en voxceleb CAM++ (current) | 0.83 | **+0.02** |
+| wespeaker zh cnceleb ResNet34 | 0.82 | −0.03 |
+| 3D-Speaker ERes2NetV2 | 0.69 | −0.03 |
+| 3D-Speaker CAM++ zh_en advanced | 0.59 | −0.02 |
+| NeMo TitaNet large | 0.50 | −0.05 |
+
+Read it like this: within one utterance a print is stable (0.83), but across
+utterances **no model tells one person from another** — the gap is inside the
+noise. So the model is not the problem: the audio of a call has almost no
+identity left in it. Two reasons, neither of which another model can fix: the far
+end goes through the platform's noise suppression and codec, and the saved `.wav`
+is a mix of two tracks, so every remote utterance carries the microphone's own
+room noise underneath.
+
+Hence the live rules: do not lean on the print alone, but on continuity (who was
+speaking a moment ago), on the participant list the person types anyway, and on
+their own corrections — two chips with the same name fold into one voice. The
+print still counts; it just stopped being the only argument.
+
+What is missing for an honest answer: a measurement on the **system track alone**
+— which is what the live pass actually sees, while only the mix is kept on disk.
+That is the first step for anyone taking on call voice quality.
+
 ### Memory between recordings, and why learning is a command
 
 Separation inside a recording knows no names: it only sees which fragments are

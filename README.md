@@ -205,6 +205,13 @@ at the default 0.62 it found five and merged four times. When the recording
 stops, the whole file is separated properly anyway, which is more accurate than
 anything possible live.
 
+One person should not spread across three "speakers", and three rules work
+against that: the voice that spoke a moment ago gets a head start (people do not
+change mid-sentence); voices that turn out to be the same person are folded
+together as the conversation goes; and once you have listed who is on the call,
+the app stops creating more voices than there are people (plus one spare). And
+the simplest one: two chips with the same name are one person, so they merge.
+
 Names can also be tagged by hand: type them into the “+ name” field and press a
 name to tag the latest line, or click a line and pick the person. Keys 1–9 do the
 same without reaching for the mouse.

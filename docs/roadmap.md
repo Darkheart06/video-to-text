@@ -56,12 +56,20 @@ the same, between recordings they are not, and how close a voice is to itself a
 week later has never been measured here. Two or three pairs of recordings with
 the same people would settle it.
 
-**4. An edit metric.** The app already records that a summary was edited
+**4. The two call tracks, kept apart.** Measurement showed that on a call none
+of five print models tells one person from another (the gap is inside the noise),
+and the model is not the reason — what gets saved is a mix of two tracks, and the
+far end has already been through the platform's noise suppression. The first step
+is keeping the tracks separate (at least under `keep_wav`) and measuring quality
+on the system one: without that, any discussion of call voices is guesswork. See
+[architecture.md](architecture.md).
+
+**5. An edit metric.** The app already records that a summary was edited
 (`summary["edited"]`). Showing it in the archive and counting the share of
 edited recordings makes it visible whether a profile works, and gives model
 comparisons a target beyond taste.
 
-**5. Export to .docx and .pdf.** Summaries usually travel onwards — into email,
+**6. Export to .docx and .pdf.** Summaries usually travel onwards — into email,
 into tasks, to a client. Right now they are copied out of the window by hand.
 
 ## Medium term: a month or two
