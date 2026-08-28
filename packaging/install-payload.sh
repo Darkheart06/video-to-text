@@ -150,7 +150,7 @@ step_bundle(){
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>Расшифровка записей</string>
   <key>CFBundleIdentifier</key><string>local.videototext.app</string>
-  <key>CFBundleVersion</key><string>1.2.0</string>
+  <key>CFBundleVersion</key><string>1.2.1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>launcher</string>
@@ -165,10 +165,20 @@ step_bundle(){
 </plist>
 PLIST
 
+  # Помощник захвата — внутрь приложения: разрешение на запись экрана macOS
+  # выдаёт программе, и так в списке разрешений появляется «Расшифровка», а не
+  # безымянный файл или python, который её запустил.
+  if [[ -x "$RT/bin/v2t-capture" ]]; then
+    cp -f "$RT/bin/v2t-capture" "$app/Contents/MacOS/v2t-capture"
+    chmod +x "$app/Contents/MacOS/v2t-capture"
+  fi
+
   cat > "$app/Contents/MacOS/launcher" <<LAUNCH
 #!/bin/bash
 RT="\$HOME/Library/Application Support/VideoToText"
 cd "\$RT" || exit 1
+HELPER="\$(dirname "\$0")/v2t-capture"
+[[ -x "\$HELPER" ]] && export V2T_HELPER="\$HELPER"
 exec "\$RT/python/bin/python3" -m app.main
 LAUNCH
   chmod +x "$app/Contents/MacOS/launcher"
@@ -187,7 +197,8 @@ LAUNCH
     rm -rf "$iconset"
   fi
 
-  codesign --force --deep --sign - "$app" >>"$LOG" 2>&1
+  codesign --force --deep --sign - --identifier local.videototext.app "$app" \
+    >>"$LOG" 2>&1
   touch "$app"
   log "приложение собрано: $app"
   printf '%s\n' "$app"

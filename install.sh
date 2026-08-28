@@ -211,9 +211,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Помощник захвата кладём внутрь приложения. macOS выдаёт разрешение на запись
+# экрана не процессу, а программе: пока помощник лежал отдельным файлом, в
+# списке разрешений появлялся не «Расшифровка», а тот, кто его запустил
+# (python), и после каждого обновления доступ приходилось выдавать заново.
+if [[ -x "$DIR/bin/v2t-capture" ]]; then
+  cp -f "$DIR/bin/v2t-capture" "$APP/Contents/MacOS/v2t-capture"
+  chmod +x "$APP/Contents/MacOS/v2t-capture"
+fi
+
 cat > "$APP/Contents/MacOS/launcher" <<LAUNCH
 #!/bin/bash
 cd "$DIR" || exit 1
+HELPER="\$(dirname "\$0")/v2t-capture"
+[[ -x "\$HELPER" ]] && export V2T_HELPER="\$HELPER"
 exec "$VENV/bin/python" -m app.main
 LAUNCH
 chmod +x "$APP/Contents/MacOS/launcher"
@@ -237,6 +248,13 @@ if "$VENV/bin/python" "$DIR/tools/make_icon.py" "$DIR/.work/icon.png" >/dev/null
   fi
   rm -rf "$ICONSET"
 fi
+
+# Подпись бандла — своя, без сертификата Apple. Смысл не в доверии, а в том,
+# чтобы у приложения был устойчивый опознавательный знак: по нему система
+# помнит выданные разрешения между запусками.
+codesign --force --deep --sign - --identifier local.videototext.app "$APP" >/dev/null 2>&1 \
+  && ok "Приложение подписано (своей подписью)" \
+  || warn "Подписать не удалось — разрешение на запись экрана, возможно, придётся выдать заново"
 
 touch "$APP"
 ok "Готово: $APP"

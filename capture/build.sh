@@ -6,6 +6,21 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="${1:-$HERE/../bin}"
 BIN="$OUT/v2t-capture"
+STAMP="$OUT/.v2t-capture.stamp"
+FORCE=""
+[[ "${2:-}" == "--force" || "${1:-}" == "--force" ]] && FORCE="1"
+
+# macOS выдаёт разрешение на запись экрана конкретному файлу: пересобранный
+# помощник для неё — другая программа, и разрешение приходится выдавать заново.
+# Поэтому не пересобираем то, что не менялось.
+SIGNATURE="$( { shasum -a 256 "$HERE/main.swift" "${BASH_SOURCE[0]}" 2>/dev/null;
+                uname -m; xcrun swiftc --version 2>/dev/null | head -1; } | shasum -a 256 )"
+if [[ -z "$FORCE" && -x "$BIN" && -f "$STAMP" ]] \
+   && [[ "$(cat "$STAMP" 2>/dev/null)" == "$SIGNATURE" ]] \
+   && "$BIN" check >/dev/null 2>&1; then
+  echo "  ✓ помощник не изменился — оставляю прежний (разрешение macOS сохранится)"
+  exit 0
+fi
 
 SWIFTC="$(command -v swiftc 2>/dev/null)"
 [[ -n "$SWIFTC" ]] || SWIFTC="$(xcrun --find swiftc 2>/dev/null)"
@@ -44,6 +59,9 @@ else
 fi
 
 chmod +x "$BIN"
-codesign --force --sign - "$BIN" >/dev/null 2>&1
+# Постоянный идентификатор: с ним система показывает помощника по имени, а не
+# как безымянный файл, и запись в списке разрешений остаётся узнаваемой.
+codesign --force --sign - --identifier local.videototext.capture "$BIN" >/dev/null 2>&1
+printf '%s' "$SIGNATURE" > "$STAMP"
 echo "  ✓ $BIN"
 "$BIN" check >/dev/null && echo "  ✓ запускается"

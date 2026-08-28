@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.2.1] — 2026-08-27
+
+### Fixed
+
+- **Updating took away the screen-recording permission.** `install.sh` rebuilt
+  the capture helper every time, and to macOS a rebuilt binary is a different
+  program: the granted permission no longer applied. Worse, the helper lived
+  outside the app bundle, so the permission list showed whoever launched it
+  (`python3.12`) rather than the app — there was nothing to re-grant. Now the
+  helper is copied into `Расшифровка.app/Contents/MacOS`, the bundle is
+  ad-hoc signed with a stable identifier, and the build skips recompiling a
+  helper whose source has not changed. The app finds it through `V2T_HELPER`,
+  set by the launcher.
+- The banner about the missing permission now says what to do when the app is
+  absent from the list: add it with “+” and restart, because macOS applies this
+  permission only on the next launch.
+
 ## [1.2.0] — 2026-08-27
 
 Two things shipped together: the app learned English, and it stopped waiting

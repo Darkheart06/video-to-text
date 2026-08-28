@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import signal
@@ -33,7 +34,11 @@ from .settings import WORK_DIR, Settings
 SAMPLE_RATE = media.SAMPLE_RATE
 BYTES_PER_SECOND = SAMPLE_RATE * 2
 
-HELPER = media.BUNDLED_BIN / "v2t-capture"
+# Помощник живёт внутри «Расшифровка.app»: разрешение на запись экрана macOS
+# выдаёт программе, и когда помощник лежит в бандле, в списке разрешений
+# появляется само приложение, а не тот, кто его запустил. Путь подсказывает
+# launcher; вне бандла — запасной вариант рядом с проектом.
+HELPER = Path(os.environ.get("V2T_HELPER") or (media.BUNDLED_BIN / "v2t-capture"))
 
 Listener = Callable[[str, dict], None]
 

@@ -573,6 +573,7 @@ const STR = {
     'rec.startCall': 'Записывать',
     'rec.title': 'Стенографист',
     'rec.blockedHint': 'Созвон требует разрешения на запись экрана — без него не слышно собеседников. Встречу в комнате можно писать и так.',
+    'rec.blockedMissing': 'Если «Расшифровки» нет в списке «Запись экрана и системного звука» — нажмите там «+» и добавьте её из папки «Программы», а потом перезапустите приложение: это разрешение macOS применяет только при следующем запуске.',
     'rec.subHint': 'Записывает разговор и расшифровывает его прямо по ходу',
     'rec.recheck': 'Проверить снова',
     'rec.openSettings': 'Открыть настройки',
@@ -804,6 +805,7 @@ const STR = {
     'rec.startCall': 'Record it',
     'rec.title': 'Note-taker',
     'rec.blockedHint': 'Recording a call needs screen-recording permission — without it you will not hear the other side. An in-room meeting can still be recorded either way.',
+    'rec.blockedMissing': 'If the app is not in the Screen & System Audio Recording list, press “+” there and add it from Applications, then restart the app — macOS only applies this permission on the next launch.',
     'rec.subHint': 'Records the conversation and transcribes it as it happens',
     'rec.recheck': 'Check again',
     'rec.openSettings': 'Open settings',
@@ -1760,7 +1762,7 @@ function renderRec(){
         <div style="min-width:0">
           <div class="rec-title">${T('rec.title')}</div>
           <div class="rec-sub">${blocked
-            ? T('rec.blockedHint')
+            ? T('rec.blockedHint') + ' ' + T('rec.blockedMissing')
             : T('rec.subHint')}</div>
         </div>
         <div class="rec-actions">
