@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.2.3] — 2026-08-28
+
+### Fixed
+
+- **A silent microphone held up the whole live transcript.** The call recorder
+  waited for both tracks to reach the same point before transcribing, so on a
+  call where you listen in headphones and say nothing, nothing was transcribed
+  at all — while the other side could be heard perfectly. Now a track that
+  falls more than ten seconds behind stops holding the other one up, and the
+  app says which one went quiet.
+- **Whisper's invented subtitles are filtered out.** In silence the model
+  confidently writes the end credits it saw in training — “Продолжение
+  следует”, “Субтитры сделал…”, “Thanks for watching” — and on a call where one
+  side is quiet those add up to a conversation that never happened. Such lines
+  are dropped, and only when the phrase is essentially the whole line: “thanks
+  for your attention, questions at the end” is real speech and stays.
+
 ## [1.2.2] — 2026-08-28
 
 ### Fixed

@@ -631,6 +631,38 @@ def main() -> int:
         time.sleep(0.1)
     failures += not check("несуществующий файл", bad.status == "error", bad.error[:60])
 
+    print("\n15b. Выдуманные титры и отставшая дорожка")
+    from app.asr import _is_hallucination
+    failures += not check("«Продолжение следует» отсеивается",
+                          _is_hallucination("Продолжение следует..."))
+    failures += not check("«Субтитры сделал…» отсеивается",
+                          _is_hallucination("Субтитры сделал DimaTorzok"))
+    failures += not check("настоящая речь остаётся",
+                          not _is_hallucination("Давайте пробежимся по статусам."))
+    failures += not check("длинная фраза со «спасибо» остаётся",
+                          not _is_hallucination(
+                              "Спасибо за внимание — вопросы разберём в конце доклада"))
+
+    # Дорожка может встать: не выдано разрешение на микрофон или человек весь
+    # созвон молчит. Разбор при этом должен идти по живой дорожке.
+    tracks = Path("/tmp/selftest-tracks")
+    tracks.mkdir(exist_ok=True)
+    mic_file, sys_file = tracks / "mic.pcm", tracks / "sys.pcm"
+    mic_file.write_bytes(b"\0" * record.BYTES_PER_SECOND * 2)
+    sys_file.write_bytes(b"\0" * record.BYTES_PER_SECOND * 40)
+    steno.session.mode = "call"
+    steno.session.stalled = ""
+    ready = steno._ready(mic_file, sys_file)
+    failures += not check("отставшая дорожка не держит расшифровку",
+                          ready > record.BYTES_PER_SECOND * 30,
+                          f"{ready // record.BYTES_PER_SECOND} с из 40")
+    failures += not check("про молчащую дорожку сказано один раз",
+                          steno.session.stalled == "mic")
+    sys_file.write_bytes(b"\0" * record.BYTES_PER_SECOND * 3)
+    failures += not check("пока дорожки идут вровень — ждём обе",
+                          steno._ready(mic_file, sys_file)
+                          == record.BYTES_PER_SECOND * 2)
+
     print("\n16. Английский язык")
     # Проверяем не перевод как таковой, а то, что язык доходит до всех мест,
     # где рождается текст: профили, документ, суммы, даты, подписи спикеров.

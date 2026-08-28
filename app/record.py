@@ -34,6 +34,11 @@ from .settings import WORK_DIR, Settings
 SAMPLE_RATE = media.SAMPLE_RATE
 BYTES_PER_SECOND = SAMPLE_RATE * 2
 
+# Насколько одна дорожка может отстать от другой, прежде чем мы перестанем её
+# ждать. Десять секунд — заметно больше любой буферизации и заметно меньше
+# того, что человек готов ждать, глядя на пустой транскрипт.
+LAG_LIMIT = 10
+
 # Помощник живёт внутри «Расшифровка.app»: разрешение на запись экрана macOS
 # выдаёт программе, и когда помощник лежит в бандле, в списке разрешений
 # появляется само приложение, а не тот, кто его запустил. Путь подсказывает
@@ -110,6 +115,7 @@ class Session:
     voice_names: dict = field(default_factory=dict)   # «V2» -> «Спикер 2» или имя
     stamp: str = ""          # «2026-08-27 13-32» — дата и время начала
     renamed: bool = False    # название уже подобрано по теме разговора
+    stalled: str = ""        # какая дорожка встала: «mic», «sys» или никакая
 
     @property
     def duration(self) -> float:
@@ -510,13 +516,35 @@ class Stenographer:
             self._emit()
 
     def _ready(self, mic_path: Path, sys_path: Path) -> int:
-        """Сколько байт можно разбирать: обе дорожки должны дописаться до
-        одного места, иначе реплики разъедутся. На встрече дорожка одна."""
+        """Сколько байт можно разбирать.
+
+        Обычно ждём, пока обе дорожки допишутся до одного места, — иначе
+        реплики разъедутся во времени. Но одна дорожка может встать совсем:
+        не выдано разрешение на микрофон, выбрано не то устройство ввода, а на
+        созвоне в наушниках человек и вовсе может весь час молчать. Ждать её —
+        значит не расшифровывать разговор вообще, хотя собеседники слышны
+        прекрасно. Поэтому если отставание перевалило за LAG_LIMIT, идём по
+        той дорожке, которая живёт.
+        """
         mic = mic_path.stat().st_size if mic_path.exists() else 0
         if self.session and self.session.mode == "room":
             return mic
         sys_size = sys_path.stat().st_size if sys_path.exists() else 0
-        return min(mic, sys_size)
+        together, ahead = min(mic, sys_size), max(mic, sys_size)
+        if ahead - together > LAG_LIMIT * BYTES_PER_SECOND:
+            self._note_stalled(mic < sys_size)
+            # Отступаем от самого края: последние доли секунды дописываются
+            # прямо сейчас, и читать их — значит поймать полреплики.
+            return max(together, ahead - BYTES_PER_SECOND)
+        return together
+
+    def _note_stalled(self, mic_stalled: bool) -> None:
+        """Говорим об отставшей дорожке один раз, а не каждые полсекунды."""
+        session = self.session
+        if not session or session.stalled == ("mic" if mic_stalled else "sys"):
+            return
+        session.stalled = "mic" if mic_stalled else "sys"
+        self._say(i18n.t("rec.mic_silent" if mic_stalled else "rec.sys_silent"))
 
     def _warm_model(self) -> None:
         try:

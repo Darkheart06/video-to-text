@@ -150,12 +150,42 @@ def _transcribe_faster(audio: np.ndarray, model_id: str, language: str | None,
 
 # --- постобработка -----------------------------------------------------------
 
+# Что Whisper выдумывает на тишине. В обучающих данных было много видео с
+# титрами, и в паузе модель уверенно дописывает их концовку: «Продолжение
+# следует», «Субтитры сделал…», «Спасибо за просмотр». На созвоне, где один
+# участник молчит, из этого складывается целый диалог, которого не было.
+HALLUCINATIONS = (
+    "продолжение следует", "субтитры сделал", "субтитры создавал",
+    "редактор субтитров", "корректор", "спасибо за просмотр",
+    "спасибо за внимание", "подписывайтесь на канал", "ставьте лайки",
+    "до новых встреч", "конец", "продолжение в следующей серии",
+    "subtitles by", "subs by", "thanks for watching", "thank you for watching",
+    "please subscribe", "amara.org", "www.", "subtitled by",
+)
+
+
+def _is_hallucination(text: str) -> bool:
+    """Похоже ли на выдуманные титры, а не на речь.
+
+    Решает не сам факт совпадения, а то, много ли осталось за вычетом
+    совпавшего: «Спасибо за просмотр!» — это целиком титры, а «спасибо за
+    внимание, вопросы разберём в конце» — живая фраза, где та же связка лишь
+    начало. Поэтому реплика считается выдумкой, только если кроме титров в ней
+    почти ничего нет.
+    """
+    lowered = text.lower().strip(" .!?…-—«»\"'")
+    if any(mark in lowered for mark in ("amara.org", "subtitles by", "subs by")):
+        return True
+    return any(mark in lowered and len(lowered) - len(mark) <= 14
+               for mark in HALLUCINATIONS)
+
+
 def _cleanup(segments: Iterable[Segment]) -> list[Segment]:
-    """Убирает пустые сегменты и залипшие повторы одной и той же фразы."""
+    """Убирает пустые сегменты, выдуманные титры и залипшие повторы."""
     out: list[Segment] = []
     for s in segments:
         text = s.text.strip()
-        if not text:
+        if not text or _is_hallucination(text):
             continue
         if out and text == out[-1].text and s.start - out[-1].end < 0.6:
             out[-1].end = s.end

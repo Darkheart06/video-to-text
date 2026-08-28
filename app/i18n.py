@@ -278,6 +278,14 @@ MESSAGES: dict[str, dict[str, str]] = {
     "rec.split_failed_call": {"ru": "Голоса собеседников не разобраны: {error}",
                               "en": "The other side's voices were not separated: {error}"},
     "rec.recognised": {"ru": "Узнал по голосу: {names}", "en": "Recognised by voice: {names}"},
+    "rec.mic_silent": {
+        "ru": "Микрофон молчит — пишу и разбираю только собеседников",
+        "en": "The microphone is silent — recording and transcribing the other side only",
+    },
+    "rec.sys_silent": {
+        "ru": "Системный звук молчит — пишу и разбираю только ваш микрофон",
+        "en": "System audio is silent — recording and transcribing your microphone only",
+    },
 
     # Окно.
     "app.no_pywebview": {
