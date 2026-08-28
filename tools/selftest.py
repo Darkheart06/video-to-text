@@ -643,6 +643,22 @@ def main() -> int:
                           not _is_hallucination(
                               "Спасибо за внимание — вопросы разберём в конце доклада"))
 
+    # Whisper склеивает выдумку и настоящую фразу в один сегмент — выбрасывать
+    # такое целиком нельзя, надо срезать только начало.
+    words, moment = [], 0.0
+    for word in ["Продолжение", "следует...", "Давайте", "пробежимся", "по", "статусам"]:
+        words.append(asr.Word(moment, moment + 0.3, (" " if words else "") + word))
+        moment += 0.35
+    glued = asr.Segment(0.0, moment, "Продолжение следует... Давайте пробежимся по статусам",
+                        words)
+    kept = asr._cleanup([glued])
+    failures += not check("приклеенные титры срезаются, речь остаётся",
+                          len(kept) == 1 and kept[0].text.startswith("Давайте")
+                          and len(kept[0].words) == 4,
+                          f"{kept[0].text!r}, слов {len(kept[0].words)}" if kept else "пусто")
+    failures += not check("таймкод сдвинулся на первое настоящее слово",
+                          kept and kept[0].start > 0.5, f"{kept[0].start:.2f} с" if kept else "")
+
     # Дорожка может встать: не выдано разрешение на микрофон или человек весь
     # созвон молчит. Разбор при этом должен идти по живой дорожке.
     tracks = Path("/tmp/selftest-tracks")

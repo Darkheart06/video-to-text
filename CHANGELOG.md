@@ -4,16 +4,26 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
-## [1.2.3] — 2026-08-28
+## [1.2.4] — 2026-08-28
 
 ### Fixed
 
+- **Live voices no longer take silence for a person.** A print made of silence
+  looks like any other silence, and once such a “voice” appeared first,
+  everything stuck to it — a man and a woman ended up as one speaker. Prints are
+  now built only from fragments that actually contain speech, at a stricter
+  loudness gate than the one Whisper uses: a print needs a voice, not a rustle.
 - **A silent microphone held up the whole live transcript.** The call recorder
   waited for both tracks to reach the same point before transcribing, so on a
   call where you listen in headphones and say nothing, nothing was transcribed
   at all — while the other side could be heard perfectly. Now a track that
   falls more than ten seconds behind stops holding the other one up, and the
   app says which one went quiet.
+- **Invented subtitles glued to real speech are trimmed, not dropped.** Whisper
+  merges a pause and the sentence after it into one segment — “Продолжение
+  следует... Давайте пробежимся по статусам” — so throwing the segment away
+  would lose what was actually said. The credits are cut from the start, the
+  word timings are cut with them, and the line keeps its real beginning.
 - **Whisper's invented subtitles are filtered out.** In silence the model
   confidently writes the end credits it saw in training — “Продолжение
   следует”, “Субтитры сделал…”, “Thanks for watching” — and on a call where one

@@ -180,10 +180,38 @@ def _is_hallucination(text: str) -> bool:
                for mark in HALLUCINATIONS)
 
 
+def _strip_credits(segment: Segment) -> None:
+    """Срезает выдуманные титры, приклеенные к настоящей реплике.
+
+    Whisper склеивает паузу и следующую фразу в один сегмент: «Продолжение
+    следует... Давайте пробежимся по статусам». Выбрасывать такое целиком
+    нельзя — потеряется сказанное, — поэтому убираем только начало и хвост.
+    Слова с таймкодами подрезаем вместе с текстом, иначе разъедется разметка
+    по спикерам.
+    """
+    for _ in range(3):                      # титры бывают в два слоя подряд
+        head = segment.text.lstrip(" .!?…-—«»\"'")
+        lowered = head.lower()
+        mark = next((m for m in HALLUCINATIONS
+                     if lowered.startswith(m) and len(lowered) - len(m) > 14), "")
+        if not mark:
+            break
+        cut = len(segment.text) - len(head) + len(mark)
+        segment.text = segment.text[cut:].lstrip(" .!?…-—«»\"'")
+        # Отрезаем ровно те слова, что уместились в убранное начало.
+        spent = 0
+        while segment.words and spent < cut:
+            spent += len(segment.words[0].text)
+            segment.words.pop(0)
+        if segment.words:
+            segment.start = segment.words[0].start
+
+
 def _cleanup(segments: Iterable[Segment]) -> list[Segment]:
     """Убирает пустые сегменты, выдуманные титры и залипшие повторы."""
     out: list[Segment] = []
     for s in segments:
+        _strip_credits(s)
         text = s.text.strip()
         if not text or _is_hallucination(text):
             continue
