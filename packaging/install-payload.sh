@@ -150,7 +150,7 @@ step_bundle(){
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>Расшифровка записей</string>
   <key>CFBundleIdentifier</key><string>local.videototext.app</string>
-  <key>CFBundleVersion</key><string>1.2.1</string>
+  <key>CFBundleVersion</key><string>1.2.2</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>launcher</string>
@@ -177,6 +177,9 @@ PLIST
 #!/bin/bash
 RT="\$HOME/Library/Application Support/VideoToText"
 cd "\$RT" || exit 1
+# Finder запускает приложение с коротким PATH, без Homebrew — добавляем его
+# сами, иначе ffmpeg «пропадает» именно при запуске по-человечески.
+export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 HELPER="\$(dirname "\$0")/v2t-capture"
 [[ -x "\$HELPER" ]] && export V2T_HELPER="\$HELPER"
 exec "\$RT/python/bin/python3" -m app.main

@@ -23,6 +23,13 @@ SUPPORTED_EXT = VIDEO_EXT | AUDIO_EXT
 # Установленное приложение носит ffmpeg с собой, в папке bin рядом с кодом.
 BUNDLED_BIN = Path(__file__).resolve().parent.parent / "bin"
 
+# Где ещё искать программы. Запущенное из Finder приложение получает от системы
+# короткий PATH — /usr/bin:/bin:/usr/sbin:/sbin, — и Homebrew в него не входит.
+# Из терминала всё находилось, из окна — нет, и ffmpeg «пропадал» ровно в тот
+# момент, когда приложением начинали пользоваться по-человечески.
+SEARCH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin",
+               "/usr/bin", "/bin", str(Path.home() / ".local/bin"))
+
 
 class MediaError(RuntimeError):
     pass
@@ -34,7 +41,14 @@ def tool(name: str) -> str | None:
     bundled = BUNDLED_BIN / name
     if bundled.exists() and os.access(bundled, os.X_OK):
         return str(bundled)
-    return shutil.which(name)
+    found = shutil.which(name)
+    if found:
+        return found
+    for folder in SEARCH_DIRS:
+        candidate = Path(folder) / name
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
 
 
 def require_ffmpeg() -> None:

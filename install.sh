@@ -223,6 +223,9 @@ fi
 cat > "$APP/Contents/MacOS/launcher" <<LAUNCH
 #!/bin/bash
 cd "$DIR" || exit 1
+# Finder запускает приложение с коротким PATH, без Homebrew — добавляем его
+# сами, иначе ffmpeg «пропадает» именно при запуске по-человечески.
+export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 HELPER="\$(dirname "\$0")/v2t-capture"
 [[ -x "\$HELPER" ]] && export V2T_HELPER="\$HELPER"
 exec "$VENV/bin/python" -m app.main

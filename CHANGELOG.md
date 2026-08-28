@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.2.2] — 2026-08-28
+
+### Fixed
+
+- **ffmpeg went missing when the app was opened from Finder.** Launched from a
+  terminal everything worked; launched the way people actually launch things,
+  the indicator went red and nothing could be transcribed. macOS gives a
+  Finder-launched app a short `PATH` — `/usr/bin:/bin:/usr/sbin:/sbin` — with no
+  Homebrew in it. The app now looks in the usual places (`/opt/homebrew/bin`,
+  `/usr/local/bin`, `/opt/local/bin`, `~/.local/bin`) as well, and the launcher
+  puts Homebrew back on `PATH` for anything else it starts.
+
 ## [1.2.1] — 2026-08-27
 
 ### Fixed
