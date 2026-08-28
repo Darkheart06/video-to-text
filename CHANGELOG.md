@@ -4,6 +4,38 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.3.0] — 2026-08-28
+
+### Added
+
+- **The app remembers voices — but only when told to.** Open a processed
+  recording, check that the names are right, press **Remember voices**, and
+  those people are recognised in every later recording: their name appears in
+  the live transcript the moment they speak, and in the finished transcript and
+  summary without a single click. Nothing is learned automatically and on
+  purpose — one splitting mistake, learned silently, would follow you forever.
+- Familiar voices are listed in Settings → *Familiar voices*, each with the
+  number of prints kept, and any of them can be forgotten with one click.
+  Recognition can be switched off there entirely.
+- Only real names are remembered: “Speaker 2” and “Participant 1” mean nothing
+  and are skipped. One name goes to one voice per recording — if two voices
+  look like the same person, the closer one gets the name and the other keeps
+  its number.
+- The same from the console: `--learn RECORDING.result.json`, `--voices`,
+  `--forget NAME`.
+
+This is not fine-tuning, and it does not need to be: no model is changed, a few
+voice prints per person are stored next to it — the same vectors the app
+already compares inside a recording. Fine-tuning would demand hours of speech
+per person and a GPU, and would help exactly where the app already gets it
+right.
+
+### Fixed
+
+- **A renamed speaker no longer renames other people's lines.** Typing a name
+  over one line during a call moves just that line to the person who already
+  carries the name; renaming the whole voice is still done on the voice chip.
+
 ## [1.2.4] — 2026-08-28
 
 ### Fixed

@@ -205,6 +205,12 @@
   .spk input:focus{border-bottom-color:var(--accent)}
   .spk .m{font-size:11px; color:var(--muted); font-family:var(--mono)}
 
+  .voice-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+  .voice-list .spk b{font-weight:600; font-size:12.5px}
+  .voice-list .x{width:18px; height:18px; border-radius:5px; font-size:14px;
+    line-height:1; color:var(--muted)}
+  .voice-list .x:hover{background:var(--panel-2); color:var(--err)}
+
   .files{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line)}
 
   /* ---------- настройки ---------- */
@@ -414,6 +420,14 @@ const STR = {
     'job.unknownSpeaker': 'Неизвестный',
     'job.renamedToast': 'Имена применены, файлы обновлены',
     'job.renameFailed': 'Не удалось обновить имена',
+    'job.learnVoices': 'Запомнить голоса',
+    'job.learnVoicesTitle': 'Запомнить, как звучат эти люди, чтобы узнавать их в следующих записях. Сначала проверьте, что имена стоят верно.',
+    'job.learning': 'Запоминаю голоса…',
+    'job.learned': 'Запомнил: {names}',
+    'job.learnNoNames': 'Сначала подпишите спикеров настоящими именами — «Спикер 2» запоминать нечего',
+    'job.learnNoAudio': 'Звук этой записи не найден — запоминать не на чем',
+    'job.learnNoSpeech': 'Не набралось речи для отпечатка',
+    'job.learnFailed': 'Не удалось запомнить голоса',
 
     'tab.summary': 'Саммари',
     'tab.brief': 'Бриф',
@@ -551,6 +565,13 @@ const STR = {
     'settings.cleanupFillers': 'Убирать эканье и слова-паразиты',
     'settings.cleanupHint': 'Вычищает «э-э», «ну», «вот», «как бы», «типа» и повторы слов. Осмысленные обороты вроде «вот здесь» и «ну и что» остаются. Дословный текст сохраняется в файле .result.json.',
 
+    'settings.group.voices': 'Знакомые голоса',
+    'settings.knownVoices': 'Узнавать знакомых по голосу',
+    'settings.knownVoicesHint': 'Запомненный голос подписывается именем сразу, как только человек заговорит, — и в живом разговоре, и после разбора. Само приложение никого не запоминает: вы открываете разобранную запись, проверяете имена и нажимаете «Запомнить голоса». Иначе одна ошибка разделения запомнилась бы навсегда.',
+    'settings.voicesEmpty': 'Пока никого. Откройте разобранную запись, подпишите спикеров и нажмите «Запомнить голоса».',
+    'settings.voicePrints': 'отпечатков: {n}',
+    'settings.forgetVoice': 'Забыть этот голос',
+    'settings.forgotToast': 'Забыл: {name}',
     'settings.group.recording': 'Запись созвонов',
     'settings.autoDetect': 'Предлагать запись, когда начинается созвон',
     'settings.splitSpeakers': 'Различать собеседников по голосам',
@@ -646,6 +667,14 @@ const STR = {
     'job.unknownSpeaker': 'Unknown',
     'job.renamedToast': 'Names applied, files updated',
     'job.renameFailed': 'Could not update the names',
+    'job.learnVoices': 'Remember voices',
+    'job.learnVoicesTitle': 'Remember how these people sound, so they get recognised in later recordings. Check the names are right first.',
+    'job.learning': 'Remembering voices…',
+    'job.learned': 'Remembered: {names}',
+    'job.learnNoNames': 'Give the speakers real names first — there is nothing to remember about "Speaker 2"',
+    'job.learnNoAudio': 'The audio of this recording is missing — nothing to learn from',
+    'job.learnNoSpeech': 'Not enough speech for a voice print',
+    'job.learnFailed': 'Could not remember the voices',
 
     'tab.summary': 'Summary',
     'tab.brief': 'Brief',
@@ -783,6 +812,13 @@ const STR = {
     'settings.cleanupFillers': 'Strip filler words',
     'settings.cleanupHint': 'Removes "um", "uh", "like", "you know" and repeated words. Meaningful phrases stay untouched. The verbatim text is kept in the .result.json file.',
 
+    'settings.group.voices': 'Familiar voices',
+    'settings.knownVoices': 'Recognise people by voice',
+    'settings.knownVoicesHint': 'A remembered voice gets its name the moment that person speaks — both live and after processing. The app never remembers anyone on its own: you open a processed recording, check the names, and press "Remember voices". Otherwise one splitting mistake would be learned forever.',
+    'settings.voicesEmpty': 'Nobody yet. Open a processed recording, name the speakers and press "Remember voices".',
+    'settings.voicePrints': '{n} prints',
+    'settings.forgetVoice': 'Forget this voice',
+    'settings.forgotToast': 'Forgot: {name}',
     'settings.group.recording': 'Recording calls',
     'settings.autoDetect': 'Offer to record when a call starts',
     'settings.splitSpeakers': 'Tell participants apart by voice',
@@ -964,7 +1000,7 @@ async function copySelection(){
 const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
   presets:{items:[],current:'meeting',example:''}, preset:'',
   lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null,
-  editing:new Map(), picking:null };
+  editing:new Map(), picking:null, voices:[] };
 
 /* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
    Python присылает их вместе с саммари; список ниже — запасной вариант. */
@@ -1032,7 +1068,12 @@ function jobCard(j){
         Object.entries(j.speakers).map(([key,v])=>
           `<span class="spk"><input data-job="${j.id}" data-spk="${key}" value="${esc(v.label)}"
             placeholder="${T('job.namePh')}"><span class="m">${T('job.minutes',{n:Math.round((v.seconds||0)/60)})}</span></span>`).join('') +
-        `<button class="btn sm" data-rename="${j.id}">${T('job.applyNames')}</button></div>`;
+        `<button class="btn sm" data-rename="${j.id}">${T('job.applyNames')}</button>` +
+        // Запоминание — отдельная кнопка, а не побочный эффект переименования:
+        // сначала человек смотрит, что имена стоят верно, и только потом
+        // говорит «запомни». Ошибку разделения иначе выучили бы навсегда.
+        `<button class="btn sm ghost" data-learn="${j.id}"
+           title="${T('job.learnVoicesTitle')}">${T('job.learnVoices')}</button></div>`;
     }
     const files = Object.entries(j.files||{});
     if(files.length){
@@ -1361,6 +1402,11 @@ function settingsHTML(){
     <div class="row"><input type="checkbox" data-k="speaker_merge_auto" ${s.speaker_merge_auto?'checked':''}><span>${T('settings.speakerMergeAuto')}</span></div>
     <div class="hint">${T('settings.speakerMergeHint',{val:s.speaker_merge_similarity})}</div>
   </div>
+  <div class="group"><h3>${T('settings.group.voices')}</h3>
+    <div class="row"><input type="checkbox" data-k="known_voices" ${s.known_voices?'checked':''}><span>${T('settings.knownVoices')}</span></div>
+    <div class="field"><div class="hint" style="margin-top:-4px">${T('settings.knownVoicesHint')}</div></div>
+    <div id="known-voices"></div>
+  </div>
   <div class="group"><h3>${T('preset.groupLabel')}</h3>
     <div class="field"><label>${T('settings.presetLabel')}</label>
       <select data-k="preset" id="preset-select">${(state.presets.items||[]).map(i=>
@@ -1495,8 +1541,28 @@ function syncLlmBlocks(){
   });
 }
 
+/* Кого приложение уже узнаёт по голосу. Список приходит с диска, поэтому
+   рисуется отдельно от формы: настройки открываются сразу, имена — следом. */
+function knownVoicesHTML(){
+  const items=state.voices||[];
+  if(!items.length) return `<div class="hint">${T('settings.voicesEmpty')}</div>`;
+  return `<div class="voice-list">` + items.map(v=>
+    `<span class="spk"><b>${esc(v.name)}</b>
+      <span class="m">${T('settings.voicePrints',{n:v.prints})}</span>
+      <button class="x" data-forget="${esc(v.name)}"
+        title="${T('settings.forgetVoice')}">×</button></span>`).join('') + `</div>`;
+}
+
+async function loadVoices(){
+  try{ const r=await api().voices_list(); state.voices=r.items||[]; }
+  catch(e){ state.voices=[]; }
+  const box=$('#known-voices');
+  if(box) box.innerHTML=knownVoicesHTML();
+}
+
 function openSettings(){
   $('#settings-body').innerHTML=settingsHTML();
+  loadVoices();
   $('#drawer').classList.add('show'); $('#backdrop').classList.add('show');
   syncLlmBlocks();
   $('#llm-backend').onchange=syncLlmBlocks;
@@ -1556,7 +1622,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -1652,6 +1718,26 @@ document.addEventListener('click', async ev=>{
       : await api().rename_speakers(id,names);
     if(j){ state.jobs.set(j.id,j); loadLib(); render(); toast(T('job.renamedToast')); }
     else toast(T('job.renameFailed'));
+    return;
+  }
+  if(t.dataset.learn){
+    // Отпечатки снимаются с той же записи заново — это секунды, но не мгновение.
+    t.disabled=true; toast(T('job.learning'));
+    const r=await api().voices_learn(t.dataset.learn);
+    t.disabled=false;
+    if(r && r.ok) toast(T('job.learned',{names:Object.keys(r.learned||{}).join(', ')}));
+    else toast({'no-names':T('job.learnNoNames'),
+                'no-audio':T('job.learnNoAudio'),
+                'no-speech':T('job.learnNoSpeech')}[(r||{}).error] ||
+               (r&&r.error) || T('job.learnFailed'));
+    if(r && r.ok) loadVoices();
+    return;
+  }
+  if(t.dataset.forget){
+    await api().voices_forget(t.dataset.forget);
+    toast(T('settings.forgotToast',{name:t.dataset.forget}));
+    loadVoices();
+    return;
   }
 });
 

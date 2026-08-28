@@ -719,6 +719,84 @@ def main() -> int:
                if not row.get("ru") or not row.get("en")]
     failures += not check("перевод полный", not missing, ", ".join(missing[:5]))
 
+    print("\n17. Знакомые голоса")
+    # Память между записями: отпечаток снимается с уже разобранной записи, где
+    # человек проверил имена. Хранилище на время теста — во временной папке,
+    # чтобы не трогать настоящее.
+    import numpy as np
+
+    from app import voices
+
+    voices.STORE, real_store = Path("/tmp/selftest-voices.json"), voices.STORE
+    voices.STORE.unlink(missing_ok=True)
+    result_file = job.files["result"]
+    # В записи подписан один человек, остальные остались «Спикер N».
+    labels = {k: v.get("label") for k, v in
+              json.loads(Path(result_file).read_text("utf-8"))["speakers"].items()}
+    named = [n for n in labels.values() if not voices._is_placeholder(n)]
+    learned = voices.learn(result_file, int(settings["num_threads"]))
+    failures += not check("голоса запомнились по команде", learned.get("ok"),
+                          str(learned.get("error")))
+    failures += not check("запомнен только названный человек",
+                          list(learned.get("learned", {})) == named,
+                          f"{list(learned.get('learned', {}))} при именах {labels}")
+    person = named[0]
+    failures += not check("«Спикер 2» именем не считается",
+                          voices._is_placeholder("Спикер 2")
+                          and voices._is_placeholder("Speaker 3")
+                          and not voices._is_placeholder("Анна Петрова"))
+    stored = voices.load().get(person, [])
+    failures += not check("отпечатков несколько", len(stored) >= 2, f"{len(stored)}")
+    failures += not check("свой отпечаток узнаётся",
+                          voices.match(stored[0])[0] == person,
+                          f"{voices.match(stored[0])}")
+    stranger = np.random.default_rng(7).normal(size=stored[0].shape).astype("float32")
+    stranger /= float(np.linalg.norm(stranger))
+    failures += not check("чужой голос не подписывается именем",
+                          voices.match(stranger)[0] == "", f"{voices.match(stranger)}")
+    voices.remember("Двойник", [stored[0]])
+    failures += not check("двое похожих — не называем никого",
+                          voices.match(stored[0])[0] == "",
+                          f"{voices.match(stored[0])}")
+    failures += not check("голос забывается", voices.forget("Двойник")
+                          and [v["name"] for v in voices.names()] == [person])
+
+    # Ради этого всё и затевалось: в следующей записи человек подписывается сам.
+    result_data = json.loads(Path(result_file).read_text("utf-8"))
+    heard = [diarize.SpeakerSpan(float(t["start"]), float(t["end"]),
+                                 int(str(t["speaker"])[1:]) - 1)
+             for t in result_data["turns"] if str(t.get("speaker") or "").startswith("S")]
+    found = voices.identify(media.read_wav(wav), heard, int(settings["num_threads"]))
+    failures += not check("знакомый голос узнан в записи",
+                          list(found.values()) == [person], f"{found}")
+    # Запись, где имена не проставлены, запоминанию не подлежит — иначе в
+    # памяти окажется «Спикер 1» с чужим голосом.
+    anonymous = Path("/tmp/selftest-anon.result.json")
+    raw = json.loads(Path(result_file).read_text("utf-8"))
+    raw["speakers"] = {k: {**v, "label": f"Спикер {i + 1}"}
+                       for i, (k, v) in enumerate(raw["speakers"].items())}
+    anonymous.write_text(json.dumps(raw, ensure_ascii=False), "utf-8")
+    failures += not check("без имён запоминать нечего",
+                          voices.learn(anonymous).get("error") == "no-names")
+    anonymous.unlink(missing_ok=True)
+
+    # Ради чего всё: следующая запись того же человека подписана его именем
+    # сама, без единого клика — и в карточке, и в файлах.
+    settings["output_dir"] = "/tmp/selftest-known"
+    again = pipeline.Runner(settings).submit(src)
+    while again.status in ("pending", "running"):
+        time.sleep(0.2)
+    labels = [v["label"] for v in again.speakers.values()]
+    failures += not check("новая запись подписана именем сама", person in labels,
+                          ", ".join(labels) or again.error)
+    failures += not check("имя дошло до файлов", again.files
+                          and person in Path(again.files["transcript_md"]).read_text("utf-8"))
+    settings["output_dir"] = "/tmp/selftest-out"
+    shutil.rmtree("/tmp/selftest-known", ignore_errors=True)
+
+    voices.STORE.unlink(missing_ok=True)
+    voices.STORE = real_store
+
     asr.transcribe = real
     server.shutdown()
     print(f"\n{'ВСЁ ХОРОШО' if not failures else f'ПРОБЛЕМ: {failures}'}\n")

@@ -285,6 +285,11 @@ window.pywebview = {api: {
     title: (%(lib)s).find(i => i.id === id).title, message: "Из архива"}),
   library_delete: async () => ({ok: true, removed: 5}),
   library_rename: async () => (%(estimate)s),
+  voices_list: async () => ({items: [{name: "Леонид", prints: 6},
+                                     {name: "Марина", prints: 3}]}),
+  voices_learn: async id => { window.__learned = id;
+                              return {ok: true, learned: {"Леонид": 6}}; },
+  voices_forget: async name => { window.__forgot = name; return {ok: true}; },
   copy: async text => { window.__copied = text; return true; },
   edit_summary: async (id, key, markdown) => {
     window.__edited = {id: id, key: key, markdown: markdown};
@@ -705,6 +710,16 @@ def main() -> int:
             if "Различать собеседников по голосам" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки разделения собеседников")
 
+            # --- знакомые голоса ---
+            if "Знакомые голоса" not in (page.text_content("#settings-body") or ""):
+                errors.append(f"{scheme}: нет раздела знакомых голосов")
+            if "Леонид" not in (page.text_content("#known-voices") or ""):
+                errors.append(f"{scheme}: список знакомых голосов пуст")
+            page.click('#known-voices [data-forget="Леонид"]')
+            page.wait_for_timeout(250)
+            if page.evaluate("window.__forgot") != "Леонид":
+                errors.append(f"{scheme}: голос не забывается")
+
             # проверки содержимого
             page.click("#btn-close")
             # на экране теперь и карточка из архива — целимся в нужную
@@ -755,6 +770,16 @@ def main() -> int:
                               f"{(page.text_content('#pane-demo1234') or '')[:120]!r}")
             if page.locator(".chip").count() != 4:
                 errors.append(f"{scheme}: индикаторы состояния не отрисовались")
+
+            # --- запоминание голосов по команде ---
+            if not page.locator('[data-learn="demo1234"]').count():
+                errors.append(f"{scheme}: нет кнопки «Запомнить голоса»")
+            page.click('[data-learn="demo1234"]')
+            page.wait_for_timeout(300)
+            if page.evaluate("window.__learned") != "demo1234":
+                errors.append(f"{scheme}: команда запомнить голоса не дошла")
+            if "Запомнил" not in (page.text_content("#toast") or ""):
+                errors.append(f"{scheme}: нет ответа на запоминание голосов")
             page.close()
 
         # --- английское окно ---

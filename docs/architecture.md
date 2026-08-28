@@ -176,6 +176,34 @@ Names given live are treated as tags, which is what the post-recording pass
 already knows how to use: the whole file is separated properly when the
 recording stops, and the tagged speech decides which cluster carries which name.
 
+### Memory between recordings, and why learning is a command
+
+Separation inside a recording knows no names: it only sees which fragments are
+one voice. The name has to be typed again every time, even though the people on
+the call are the same week after week.
+
+The memory lives in `voices.json` next to the app: a few vectors per person —
+the very prints `diarize` computes, only kept. When a new recording is
+processed, live or afterwards, each voice's print is compared against them, and
+what decides it is the gap rather than the absolute similarity: a floor of 0.65
+and a 0.05 margin over the runner-up. Two people equally close means no name at
+all — “Speaker 2” beats someone else's name on someone else's words. One name
+goes to one voice per recording: if two clusters look like Leonid, the closer
+one takes it.
+
+**Learning only ever runs on an explicit command** — the central decision here,
+and it costs convenience. Learning automatically pays off right up until the
+first mistake: a man and a woman merged once would enter the memory as one
+person and poison every later recording, silently. A person presses the button
+having just looked at the names in the finished transcript, so only checked
+material is stored. For the same reason only real names are kept: “Speaker 2”
+and “Person 1” are dropped.
+
+Fine-tuning the model is deliberately absent. It would need hours of speech per
+person and a GPU, would help where prints already cope, and would turn a model
+update into the loss of the entire memory. A handful of vectors beside an
+unchanged model buys the same recognition for a kilobyte per person.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three

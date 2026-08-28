@@ -18,6 +18,7 @@ Working and measured on real recordings:
 | Transcription | reliable, 3–8 min per hour of audio | daily use |
 | Speaker separation | 28 “speakers” → 7 on a real meeting | `tools/speakertest.py` |
 | Voices during recording | numbered live, named with one click | `selftest`, section 10 |
+| Familiar voices | remembered on command, recognised on their own | `selftest`, section 17 |
 | Summary completeness | 15 of 27 spoken facts | `tools/modeltest.py` |
 | Deadlines as dates | “tomorrow” → “tomorrow (28 August)” | `selftest`, section 13 |
 | Two languages | window and documents set separately | `selftest`, section 16 |
@@ -48,12 +49,19 @@ of participants is known exactly, run `tools/speakertest.py --list`, and set the
 threshold from that instead of from a public sample. It is the only place left
 where we tune blind.
 
-**3. An edit metric.** The app already records that a summary was edited
+**3. The threshold for recognising familiar voices.** Memory between recordings
+works, but its threshold (0.65 with a 0.05 margin) was chosen from first
+principles, not measured: inside one recording the microphone and the room are
+the same, between recordings they are not, and how close a voice is to itself a
+week later has never been measured here. Two or three pairs of recordings with
+the same people would settle it.
+
+**4. An edit metric.** The app already records that a summary was edited
 (`summary["edited"]`). Showing it in the archive and counting the share of
 edited recordings makes it visible whether a profile works, and gives model
 comparisons a target beyond taste.
 
-**4. Export to .docx and .pdf.** Summaries usually travel onwards — into email,
+**5. Export to .docx and .pdf.** Summaries usually travel onwards — into email,
 into tasks, to a client. Right now they are copied out of the window by hand.
 
 ## Medium term: a month or two

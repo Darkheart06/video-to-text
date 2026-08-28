@@ -11,7 +11,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from . import asr, cleanup, diarize, i18n, media, merge, presets, render, summarize
+from . import (
+    asr,
+    cleanup,
+    diarize,
+    i18n,
+    media,
+    merge,
+    presets,
+    render,
+    summarize,
+    voices,
+)
 from .settings import WORK_DIR, Settings
 
 Listener = Callable[["Job"], None]
@@ -192,6 +203,24 @@ class Runner:
                 for spk, sec in speaking.items()
             }
 
+            # Знакомые голоса: кого запомнили командой «Запомнить голоса»,
+            # того подписываем именем сразу — и в транскрипте, и в саммари.
+            names: dict[str, str] = {}
+            known = voices.load() if spans and s.get("known_voices", True) else {}
+            if known:
+                # Звук и модель голосов поднимаем только когда есть с кем
+                # сравнивать: пустая память не должна стоить ни секунды.
+                try:
+                    for spk, name in voices.identify(
+                            media.read_wav(wav), spans,
+                            int(s["num_threads"]), people=known).items():
+                        key = f"S{spk + 1}"
+                        if key in job.speakers:
+                            job.speakers[key]["label"] = name
+                            names[key] = name
+                except Exception as exc:      # память — приятная мелочь, не повод падать
+                    job.warnings.append(i18n.t("warn.voices_failed", error=exc))
+
             meta = {
                 "title": Path(job.source).stem,
                 "source": job.source,
@@ -205,7 +234,7 @@ class Runner:
                 "models": f"{transcript.model} ({transcript.backend})",
             }
             job.meta = meta
-            job.transcript_md = render.transcript_markdown(turns, meta)
+            job.transcript_md = render.transcript_markdown(turns, meta, names)
             self._emit(job)
 
             # 3. Саммари
@@ -214,7 +243,7 @@ class Runner:
                 base, span = bounds["summary"]
                 try:
                     summary = summarize.summarize(
-                        turns, s, meta=meta,
+                        turns, s, meta=meta, names=names,
                         progress=self._stage_progress(job, "summary", base, span),
                         preset=presets.resolve({**s, "preset": job.preset}),
                     )
@@ -235,7 +264,7 @@ class Runner:
             stem = render.safe_stem(Path(job.source).stem)
             job.files = render.write_all(
                 s.output_path, stem, transcript, turns, spans, summary, meta,
-                lang=s.doc_lang
+                names=names, lang=s.doc_lang
             )
 
             self._update(job, stage="done", message=i18n.t("state.done"),

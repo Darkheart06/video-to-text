@@ -219,6 +219,41 @@ absolute similarity: on a real recording a speech fragment matched its own
 cluster's average at 0.52 while a different person scored 0.40. No gap, no name —
 “Speaker 2” beats someone else's name on someone else's words.
 
+### Familiar voices
+
+Separation works inside a single recording: it shows which lines belong
+together, not whose they are. The name has to be typed again every time — even
+though you talk to the same people week after week.
+
+So there is memory between recordings. Open a processed recording, check that
+the names are right, and press **Remember voices** — from then on those people
+are recognised on their own: the name shows up in the live transcript the moment
+they speak, and in the finished files and summary without a single click.
+
+**Learning only ever starts on command**, deliberately so. One splitting
+mistake, learned silently, would stay forever: the app would decide that Leonid
+sounds like the woman he was talking to and label every later call that way. So
+you look at the names first, and press the button second.
+
+Only real names are remembered: “Speaker 2” and “Person 1” mean nothing and are
+skipped. One name goes to one voice per recording — if two voices look like
+Leonid, the closer one takes the name and the other keeps its number. Settings
+lists everyone the app knows, forgets any of them with one click, and can switch
+recognition off entirely.
+
+There is no fine-tuning here, and none is needed: the model is not changed, a
+few vectors per person are stored next to it — the same ones the app already
+compares inside a recording. Fine-tuning would take hours of speech per person
+and a GPU, and would help exactly where nothing goes wrong today.
+
+The same from the console:
+
+```bash
+./run.sh --learn "~/Documents/Transcripts/Call 26.08.result.json"
+./run.sh --voices          # who the app recognises
+./run.sh --forget Leonid   # forget a voice
+```
+
 ### Recording a room meeting
 
 “Record a meeting” sits next to the call button. It captures the microphone only
@@ -305,6 +340,8 @@ transcripts. There is no separate database: the list is built from the
 ./run.sh estimate.m4a --preset estimate       # work items with a total
 ./run.sh note.m4a --preset note
 ./run.sh --check-llm                          # test the model connection
+./run.sh --learn call.result.json             # remember the voices in it
+./run.sh --voices                             # who the app recognises
 ./run.sh meeting.mp4 --gguf ~/Models/gemma-4-12b-Q4_K_M.gguf
 ```
 

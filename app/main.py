@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import diarize, edits, i18n, library, llm, media, presets, record
+from . import diarize, edits, i18n, library, llm, media, presets, record, voices
 from .pipeline import Runner
 from .settings import WHISPER_MODELS, Settings
 
@@ -276,6 +276,37 @@ class Api:
                                   self.settings.doc_lang)
         except Exception:
             return None
+
+    # --- знакомые голоса ---------------------------------------------------
+
+    def voices_list(self) -> dict:
+        """Кого приложение уже узнаёт по голосу."""
+        try:
+            return {"items": voices.names()}
+        except Exception as exc:
+            return {"items": [], "error": str(exc)}
+
+    def voices_learn(self, entry_id: str) -> dict:
+        """Запоминает голоса из записи — только по команде человека.
+
+        Автоматически этого не делается намеренно: если разделение ошиблось,
+        приложение выучило бы ошибку навсегда.
+        """
+        try:
+            snapshot = library.snapshot(self.settings.library_paths, entry_id,
+                                        self.settings.ui_lang)
+            result = (snapshot or {}).get("files", {}).get("result")
+            if not result:
+                return {"ok": False, "error": i18n.t("app.no_recording")}
+            return voices.learn(result, int(self.settings["num_threads"]))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def voices_forget(self, name: str) -> dict:
+        try:
+            return {"ok": voices.forget(str(name or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     def library_delete(self, entry_id: str) -> dict:
         try:

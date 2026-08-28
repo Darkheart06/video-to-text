@@ -127,6 +127,8 @@ MESSAGES: dict[str, dict[str, str]] = {
                          "en": "Speaker separation failed: {error}"},
     "warn.diar_skip": {"ru": "Продолжаю без разделения по спикерам",
                        "en": "Continuing without speaker separation"},
+    "warn.voices_failed": {"ru": "Знакомые голоса не проверены: {error}",
+                           "en": "Could not check for familiar voices: {error}"},
     "warn.summary_failed": {"ru": "Саммари не составлено: {error}",
                             "en": "No summary was made: {error}"},
     "warn.summary_skip": {"ru": "Продолжаю без саммари", "en": "Continuing without a summary"},

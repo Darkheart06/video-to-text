@@ -20,6 +20,35 @@ def _bar(fraction: float, width: int = 34) -> str:
     return "█" * filled + "·" * (width - filled)
 
 
+def _voices(args, settings) -> int:
+    """Знакомые голоса: показать, забыть, запомнить по готовой записи."""
+    from . import voices
+
+    if args.forget:
+        ok = voices.forget(args.forget)
+        print(f"{'Забыл' if ok else 'Не знаю такого голоса:'} {args.forget}")
+    if args.learn:
+        path = Path(args.learn).expanduser().resolve()
+        if path.is_dir() or not path.name.endswith(".result.json"):
+            parser_hint = "укажите файл ЗАПИСЬ.result.json из папки с результатами"
+            print(f"✗ {parser_hint}")
+            return 1
+        result = voices.learn(path, int(settings["num_threads"]))
+        if not result.get("ok"):
+            print({"no-audio": "✗ Звук записи не найден — запоминать не на чем",
+                   "no-names": "✗ Сначала проставьте настоящие имена спикеров",
+                   "no-speech": "✗ Не набралось речи для отпечатка",
+                   }.get(result.get("error"), f"✗ {result.get('error')}"))
+            return 1
+        for name, count in result["learned"].items():
+            print(f"  ✓ {name}: отпечатков {count}")
+    if args.voices or args.learn or args.forget:
+        known = voices.names()
+        print("\nЗнакомые голоса: " + (", ".join(
+            f"{v['name']} ({v['prints']})" for v in known) if known else "пока никого"))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="video-to-text",
@@ -51,6 +80,13 @@ def main(argv: list[str] | None = None) -> int:
                         help="проверить связь с языковой моделью и выйти")
     parser.add_argument("--download-models", action="store_true",
                         help="скачать модели диаризации и выйти")
+    parser.add_argument("--learn", metavar="ЗАПИСЬ.result.json",
+                        help="запомнить голоса из разобранной записи "
+                             "(имена в ней должны быть уже проставлены)")
+    parser.add_argument("--voices", action="store_true",
+                        help="показать, кого приложение узнаёт по голосу")
+    parser.add_argument("--forget", metavar="ИМЯ",
+                        help="забыть запомненный голос")
     args = parser.parse_args(argv)
 
     settings = Settings.load()
@@ -98,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print(f"✗ {result.get('error', 'не отвечает')}")
         return 1
+
+    if args.voices or args.forget or args.learn:
+        return _voices(args, settings)
 
     if args.download_models:
         diarize.download_models(lambda f, m: print(f"\r{_bar(f)} {m}", end="", flush=True))

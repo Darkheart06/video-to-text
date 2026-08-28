@@ -28,7 +28,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import asr, cleanup, diarize, i18n, llm, media, merge, presets, render, summarize
+from . import asr, cleanup, diarize, i18n, llm, media, merge, presets, render, summarize, voices
 from .settings import WORK_DIR, Settings
 
 SAMPLE_RATE = media.SAMPLE_RATE
@@ -377,6 +377,7 @@ class Stenographer:
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
         self._voice_model = None
+        self._voice_library: dict | None = None
 
     # --- события ---------------------------------------------------------
 
@@ -657,7 +658,13 @@ class Stenographer:
             if score < floor and len(session.voices) < limit:
                 best = f"V{len(session.voices) + 1}"
                 session.voices[best] = [print_]
-                session.voice_names[best] = self._voice_title(len(session.voices), room)
+                # Голос могли запомнить на прошлых записях — тогда он сразу
+                # приходит с именем, и подписывать заново не нужно.
+                known, _ = voices.match(print_, people=self._known())
+                session.voice_names[best] = known or self._voice_title(
+                    len(session.voices), room)
+                if known and known not in session.people:
+                    session.people.append(known)
             elif not best:
                 continue
             else:
@@ -669,6 +676,13 @@ class Stenographer:
 
             line.voice = best
             line.speaker = session.voice_names.get(best, "")
+
+    def _known(self) -> dict:
+        """Запомненные голоса — читаем один раз на запись, не на реплику."""
+        if self._voice_library is None:
+            self._voice_library = voices.load() if self.settings.get(
+                "known_voices", True) else {}
+        return self._voice_library
 
     def _voice_title(self, number: int, room: bool) -> str:
         """Как назвать только что услышанный голос."""
@@ -764,14 +778,16 @@ class Stenographer:
             line.speaker, line.tagged = value, True
             if value not in session.people:
                 session.people.append(value)
-            # Имя дают одной реплике, а относится оно к голосу: раз этот голос
-            # уже узнан, подписываем им всё, что этот человек сказал раньше и
-            # скажет дальше.
-            if line.voice:
-                session.voice_names[line.voice] = value
-                for other in session.lines:
-                    if other.voice == line.voice:
-                        other.speaker, other.tagged = value, True
+            # Правим одну реплику, а не весь голос. Раньше имя расходилось на
+            # весь голос сразу, и стоило приложению слепить двух человек в один
+            # голос, как поправить отдельную реплику становилось нечем.
+            # Целиком голос переименовывается кликом по чипу в строке голосов.
+            owner = next((key for key, named in session.voice_names.items()
+                          if named == value), "")
+            if owner and owner != line.voice:
+                # Этот человек уже узнан под другим голосом — переносим реплику
+                # к нему: дальше она будет считаться его речью.
+                line.voice = owner
         self._emit()
         return session.snapshot()
 
