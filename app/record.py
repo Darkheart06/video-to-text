@@ -29,6 +29,7 @@ from typing import Callable
 import numpy as np
 
 from . import asr, cleanup, diarize, i18n, llm, media, merge, presets, render, summarize, voices
+from . import marks as marks_module
 from .settings import WORK_DIR, Settings
 
 SAMPLE_RATE = media.SAMPLE_RATE
@@ -118,6 +119,7 @@ class Session:
     stamp: str = ""          # «2026-08-27 13-32» — дата и время начала
     renamed: bool = False    # название уже подобрано по теме разговора
     stalled: str = ""        # какая дорожка встала: «mic», «sys» или никакая
+    marks: list = field(default_factory=list)   # метки на записи для плеера
 
     @property
     def duration(self) -> float:
@@ -147,6 +149,7 @@ class Session:
                 for i, line in enumerate(self.lines)
             ][-tail:],
             "line_count": len(self.lines),
+            "marks": list(self.marks),
         }
 
 
@@ -181,6 +184,20 @@ def request_permissions() -> dict:
         return json.loads(out.stdout.strip() or "{}")
     except Exception as exc:
         return {"screen": False, "microphone": False, "error": str(exc)}
+
+
+def running_apps() -> list[dict]:
+    """Что сейчас запущено и может быть записано — для выбора источника."""
+    if not helper_ready():
+        return []
+    try:
+        out = subprocess.run([str(HELPER), "list-apps"], capture_output=True,
+                             text=True, timeout=15)
+        found = json.loads(out.stdout.strip() or "[]")
+    except Exception:
+        return []
+    return [{"id": str(item.get("id") or ""), "name": str(item.get("name") or "")}
+            for item in found if item.get("id") and item.get("name")]
 
 
 def mic_busy() -> bool:
@@ -454,9 +471,17 @@ class Stenographer:
                 stamp=stamp,
             )
             self._stop.clear()
+            command = [str(HELPER), "mic" if room else "record", str(directory)]
+            # Запись экрана — то же самое соединение ScreenCaptureKit, только
+            # с картинкой: отдельного разрешения и отдельного потока не нужно.
+            # На встрече в комнате её нет: там пишется один микрофон.
+            source = str(self.settings.get("record_video_source", "")) if not room else ""
+            if source:
+                command += ["--video", str(directory / "screen.mp4")]
+                if source != "screen":
+                    command += ["--app", source]
             self._process = subprocess.Popen(
-                [str(HELPER), "mic" if room else "record", str(directory)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             )
             self._worker = threading.Thread(target=self._run, daemon=True)
             self._worker.start()
@@ -1352,10 +1377,25 @@ class Stenographer:
                 meta["title"] = session.title
                 meta["source"] = str(audio_path)
 
+        # Метки: где прозвучало то, что попало в документ. У созвона есть ещё
+        # и заметки по ходу — у них время известно точно, без сопоставления.
+        session.marks = marks_module.build(turns, session.summary_sections,
+                                           session.notes, self.settings.doc_lang)
         session.files = render.write_all(out_dir, stem, transcript, turns, [],
                                          summary, meta, names,
-                                         lang=self.settings.doc_lang)
+                                         lang=self.settings.doc_lang,
+                                         marks=session.marks)
         session.files["audio"] = str(audio_path)
+        video = session.directory / "screen.mp4"
+        if video.exists():
+            # Запись экрана переезжает к остальным файлам записи: рабочая папка
+            # сессии сейчас будет удалена.
+            target = out_dir / f"{stem}.mp4"
+            try:
+                video.replace(target)
+                session.files["video"] = str(target)
+            except OSError:
+                pass
         session.state = "done"
         session.message = i18n.t("state.done")
         self._emit(session=session)

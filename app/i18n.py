@@ -321,6 +321,14 @@ DOCUMENT: dict[str, dict[str, str]] = {
     "them": {"ru": "Собеседник", "en": "Them"},
     "them_numbered": {"ru": "Собеседник {n}", "en": "Person {n}"},
     "call": {"ru": "созвон", "en": "call"},
+
+    # Метки на записи: чем помечен момент, к которому можно перейти.
+    "mark.note": {"ru": "Заметка", "en": "Note"},
+    "mark.decisions": {"ru": "Решение", "en": "Decision"},
+    "mark.tasks": {"ru": "Задача", "en": "Task"},
+    "mark.risks": {"ru": "Риск", "en": "Risk"},
+    "mark.open": {"ru": "Вопрос", "en": "Open question"},
+    "mark.works": {"ru": "Работа", "en": "Work item"},
     "recording": {"ru": "запись", "en": "recording"},
 
     "transcript_title": {"ru": "# Транскрипт — {title}", "en": "# Transcript — {title}"},

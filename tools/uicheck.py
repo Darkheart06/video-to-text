@@ -55,6 +55,12 @@ TURNS = [
                          "на семьсот сорок тысяч, надо утверждать."),
 ]
 
+MARKS = [
+    {"at": 41.0, "kind": "tasks", "text": "Подготовить макеты онбординга"},
+    {"at": 96.0, "kind": "decisions", "text": "Онбординг сокращаем до трёх экранов"},
+    {"at": 152.0, "kind": "risks", "text": "Нет ответа от финансов по 1С"},
+]
+
 JOB = {
     "id": "demo1234", "source": "/Users/sergey/Movies/Встреча команды 25.08.mp4",
     "title": "Встреча команды 25.08.mp4", "status": "done", "stage": "done",
@@ -64,6 +70,7 @@ JOB = {
         "transcript_md": "/Users/sergey/output/Встреча команды 25.08.transcript.md",
         "subtitles": "/Users/sergey/output/Встреча команды 25.08.subtitles.srt",
         "result": "/Users/sergey/output/Встреча команды 25.08.result.json",
+        "audio": "/tmp/uicheck-media/demo.wav",
     },
     "meta": {"duration": 3187, "language": "ru"},
     "summary_md": "## Краткое саммари\n" + SUMMARY_SECTIONS["summary"],
@@ -75,6 +82,7 @@ JOB = {
         "S3": {"label": "Спикер 3", "seconds": 431.2},
     },
     "warnings": [],
+    "marks": MARKS,
     "turns": [{"start": s, "end": e, "speaker": spk, "text": t} for s, e, spk, t in TURNS],
 }
 
@@ -182,6 +190,11 @@ EN_TURNS = [
 
 EN_JOB = {
     **JOB, "title": "Product team 25.08.mp4",
+    "marks": [
+        {"at": 41.0, "kind": "tasks", "text": "Prepare the onboarding mockups"},
+        {"at": 96.0, "kind": "decisions", "text": "Onboarding is cut to three screens"},
+        {"at": 152.0, "kind": "risks", "text": "No answer from finance on the 1C work"},
+    ],
     "meta": {"duration": 3187, "language": "en"},
     "summary_md": "## Summary\n" + EN_SECTIONS["summary"],
     "summary_sections": EN_SECTIONS,
@@ -265,7 +278,8 @@ BRIDGE = """
 window.pywebview = {api: {
   get_settings: async () => (%(settings)s),
   environment: async () => (%(env)s),
-  save_settings: async v => (%(settings)s),
+  save_settings: async v => { window.__savedSettings = v;
+                              return Object.assign({}, %(settings)s, v); },
   choose_files: async () => [],
   choose_output_dir: async () => "/Users/sergey/output",
   choose_gguf_file: async () => "/Users/sergey/Models/gemma-4-12b-Q4_K_M.gguf",
@@ -408,9 +422,12 @@ def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path
         page.evaluate("window.dispatchEvent(new Event('pywebviewready'))")
         page.wait_for_timeout(300)
 
-        for probe in ("Archive", "Settings", "Choose a recording"):
+        for probe in ("Archive", "Choose a recording"):
             if probe not in (page.text_content("#app") or ""):
                 errors.append(f"en/{scheme}: в окне нет «{probe}»")
+        # Настройки теперь шестерёнка: слова нет, подпись — в aria-label.
+        if (page.get_attribute("#btn-settings", "aria-label") or "") != "Settings":
+            errors.append(f"en/{scheme}: кнопка настроек без английской подписи")
 
         page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", EN_RUNNING)
         page.evaluate("(j)=>{state.jobs.set(j.id,j); openJob(j.id);}", EN_JOB)
@@ -480,7 +497,28 @@ def main() -> int:
         "record_split_speakers": True, "speaker_merge_similarity": 0.78,
         "min_speaker_seconds": 2.0, "min_speaker_share": 0.01,
     }
+    # Плеер должен получить настоящий звук: без него проверка «метка
+    # перематывает запись» ничего не проверяет. Поднимаем тот же локальный
+    # сервер, что и приложение, и кладём рядом секундную тишину.
+    from app import serve
+
+    media_dir = Path("/tmp/uicheck-media")
+    media_dir.mkdir(exist_ok=True)
+    silence = media_dir / "demo.wav"
+    if not silence.exists():
+        import wave as wave_module
+
+        with wave_module.open(str(silence), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(b"\0" * 16000 * 2 * 200)
+    media_port = serve.start([media_dir])
+
     env = {
+        "media_port": media_port,
+        "apps": [{"id": "com.apple.Safari", "name": "Safari"},
+                 {"id": "us.zoom.xos", "name": "Zoom"}],
         "ffmpeg": True, "mlx": True, "faster": True, "sherpa": True, "diar_models": True,
         "ollama_models": ["gemma4:12b-mlx", "qwen3:8b"], "ollama_error": "",
         "openai_models": [], "openai_error": "нет соединения",
@@ -762,6 +800,10 @@ def main() -> int:
                               f"{page.locator('.job').count()}")
             # зона перетаскивания скрыта карточками — кнопка выбора файла
             # обязана оставаться на виду
+            if page.locator("#btn-settings svg").count() != 1:
+                errors.append(f"{scheme}: на кнопке настроек нет иконки")
+            if (page.get_attribute("#btn-settings", "aria-label") or "") == "":
+                errors.append(f"{scheme}: у кнопки настроек нет подписи для доступности")
             if not page.locator("#btn-pick-top").is_visible():
                 errors.append(f"{scheme}: пропала кнопка выбора записи")
             page.click("#btn-pick-top")
@@ -825,12 +867,72 @@ def main() -> int:
             page.screenshot(path=str(out_dir / f"8-custom-{scheme}.png"))
             page.select_option("#preset-select", "meeting")
             page.wait_for_timeout(120)
+            # --- тема окна: выбор сильнее системы ---
+            if "Тема окна" not in (page.text_content("#settings-body") or ""):
+                errors.append(f"{scheme}: нет настройки темы")
+            page.select_option("[data-k=theme]", "dark")
+            page.evaluate("applyTheme({theme:'dark'})")
+            page.wait_for_timeout(150)
+            if page.evaluate("document.documentElement.dataset.theme") != "dark":
+                errors.append(f"{scheme}: тёмная тема не включается")
+            dark_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
+            page.evaluate("applyTheme({theme:'light'})")
+            page.wait_for_timeout(150)
+            light_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
+            if dark_bg == light_bg:
+                errors.append(f"{scheme}: тема не меняет фон окна: {light_bg}")
+            page.evaluate("applyTheme({theme:'auto'})")
+            page.wait_for_timeout(120)
+            if page.evaluate("document.documentElement.dataset.theme || ''") != "":
+                errors.append(f"{scheme}: «как в системе» не снимает выбор")
+
             if "Различать собеседников по голосам" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки разделения собеседников")
 
-            # --- документы к записи ---
+            # --- плеер и метки ---
             page.click("#btn-close")          # выходим из настроек
             page.wait_for_timeout(250)
+            page.evaluate("openJob('demo1234')")
+            page.wait_for_timeout(300)
+            if not page.locator("#media-demo1234").count():
+                errors.append(f"{scheme}: у записи нет плеера")
+            pins = page.locator(".player .strip .pin").count()
+            if pins != 3:
+                errors.append(f"{scheme}: меток на шкале {pins}, ожидалось 3")
+            marks_text = page.text_content(".marklist") or ""
+            for probe in ("00:00:41", "Задача", "Онбординг сокращаем до трёх экранов"):
+                if probe not in marks_text:
+                    errors.append(f"{scheme}: в списке меток нет «{probe}»")
+            page.wait_for_function(
+                "() => { const m = document.getElementById('media-demo1234');"
+                " return m && m.readyState > 0; }", timeout=8000)
+            page.click('.marklist .markrow:nth-child(2)')
+            page.wait_for_timeout(400)
+            at = page.evaluate("document.getElementById('media-demo1234').currentTime")
+            if abs(at - 96) > 2:
+                errors.append(f"{scheme}: метка не перематывает запись: {at}")
+            page.screenshot(path=str(out_dir / f"17-marks-{scheme}.png"))
+            # Метка на шкале делает то же самое.
+            page.evaluate("document.getElementById('media-demo1234').currentTime = 0")
+            page.click('.player .strip .pin[data-at="152"]')
+            page.wait_for_timeout(300)
+            at = page.evaluate("document.getElementById('media-demo1234').currentTime")
+            if abs(at - 152) > 2:
+                errors.append(f"{scheme}: метка на шкале не перематывает: {at}")
+
+            # --- что писать с экрана ---
+            page.evaluate("state.rec=null; renderRec();")
+            page.wait_for_timeout(200)
+            options = page.locator("#screen-source option").count()
+            if options != 4:
+                errors.append(f"{scheme}: в выборе источника экрана {options} пунктов")
+            page.select_option("#screen-source", "com.apple.Safari")
+            page.wait_for_timeout(300)
+            saved = page.evaluate("window.__savedSettings || null")
+            if not saved or saved.get("record_video_source") != "com.apple.Safari":
+                errors.append(f"{scheme}: выбор источника экрана не сохраняется: {saved}")
+
+            # --- документы к записи ---
             page.evaluate("openJob('demo1234')")
             page.evaluate("loadDocs('demo1234')")
             page.wait_for_timeout(300)

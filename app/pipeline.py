@@ -24,6 +24,7 @@ from . import (
     summarize,
     voices,
 )
+from . import marks as marks_module
 from .settings import WORK_DIR, Settings
 
 Listener = Callable[["Job"], None]
@@ -57,6 +58,7 @@ class Job:
     transcript_md: str = ""
     turns: list = field(default_factory=list)
     speakers: dict = field(default_factory=dict)
+    marks: list = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     _cancel: threading.Event = field(default_factory=threading.Event, repr=False)
 
@@ -69,7 +71,8 @@ class Job:
             "summary_md": self.summary_md, "summary_sections": self.summary_sections,
             "summary_tabs": self.summary_tabs, "preset": self.preset,
             "transcript_md": self.transcript_md,
-            "speakers": self.speakers, "warnings": self.warnings,
+            "speakers": self.speakers, "marks": self.marks,
+            "warnings": self.warnings,
             "turns": [
                 {"start": t.start, "end": t.end, "speaker": t.speaker_key, "text": t.text}
                 for t in self.turns
@@ -263,9 +266,10 @@ class Runner:
             self._update(job, stage="write", message=i18n.t("stage.save"),
                          progress=base + span * 0.2)
             stem = render.safe_stem(Path(job.source).stem)
+            job.marks = marks_module.build(turns, job.summary_sections, [], s.doc_lang)
             job.files = render.write_all(
                 s.output_path, stem, transcript, turns, spans, summary, meta,
-                names=names, lang=s.doc_lang
+                names=names, lang=s.doc_lang, marks=job.marks
             )
 
             self._update(job, stage="done", message=i18n.t("state.done"),
@@ -351,8 +355,10 @@ class Runner:
             transcript = asr.Transcript(segments=[], language=str(meta.get("language") or ""),
                                         duration=float(meta.get("duration") or 0),
                                         backend="", model=str(meta.get("models") or ""))
+            job.marks = marks_module.build(turns, job.summary_sections, [], s.doc_lang)
             job.files = render.write_all(path.parent, stem, transcript, turns, [],
-                                         summary, meta, names=names, lang=s.doc_lang)
+                                         summary, meta, names=names, lang=s.doc_lang,
+                                         marks=job.marks)
             library.forget_cache(path)
             self._update(job, stage="done", message=i18n.t("state.done"),
                          progress=1.0, status="done")

@@ -4,6 +4,35 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.0] — 2026-08-30
+
+### Added
+
+- **Screen recording — the whole screen or one app.** People share their screen
+  on almost every call, and until now only the audio was kept. Pick the source
+  next to the record button (audio only, the whole screen, or one of the running
+  apps) and the video is captured through the same ScreenCaptureKit stream as
+  the system audio: no extra permission, no virtual driver. It is written at
+  8 fps and 1600 px wide — a screen share, not a film, so an hour costs hundreds
+  of megabytes rather than tens of gigabytes.
+- **Markers on the recording, like chapters on YouTube.** Every decision, task
+  and risk in the summary gets a marker where it was actually said, and a click
+  plays the recording from that moment. **The time comes from the transcript,
+  not from the model**: each item is matched against the lines by wording, and
+  an item with no convincing match gets no marker — an empty spot is honest, a
+  marker pointing at the wrong minute is not. Markers are also exported as
+  `.chapters.vtt`, which players, YouTube and editing software understand.
+- **A player in the window.** The recording plays right in the card — video when
+  the screen was captured, audio otherwise — with the markers on a strip above
+  it and as a list under it.
+- **The window theme can be chosen**, not only inherited: Settings → *Window
+  theme* — follow the system, light, or dark, and the choice beats the system in
+  both directions.
+
+### Changed
+
+- The Settings button is a gear icon instead of the word.
+
 ## [1.5.1] — 2026-08-30
 
 ### Changed

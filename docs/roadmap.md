@@ -19,6 +19,8 @@ Working and measured on real recordings:
 | Speaker separation | 28 “speakers” → 7 on a real meeting | `tools/speakertest.py` |
 | Voices during recording | numbered live, named with one click | `selftest`, section 10 |
 | Familiar voices | remembered on command, recognised on their own | `selftest`, section 17 |
+| Markers on a recording | time from the transcript, not from the model | `selftest`, section 21 |
+| Screen recording | whole screen or one app | checked by hand on a Mac |
 | Summary completeness | 15 of 27 spoken facts | `tools/modeltest.py` |
 | Deadlines as dates | “tomorrow” → “tomorrow (28 August)” | `selftest`, section 13 |
 | Two languages | window and documents set separately | `selftest`, section 16 |
@@ -73,16 +75,6 @@ comparisons a target beyond taste.
 into tasks, to a client. Right now they are copied out of the window by hand.
 
 ## Medium term: a month or two
-
-**Screen recording and markers on the video.** Only audio is captured today,
-while people share their screen constantly: a mockup, a spreadsheet, a bug in
-the interface. Recording the whole screen — or a single app — gives that
-context, and the transcript gives it navigation: markers on the timeline where a
-decision, a task or a figure was said, and a click to jump there, the way
-chapters work on YouTube. Technically ScreenCaptureKit already captures the
-audio and can capture video, including a single window; the markers come from
-the finished summary, since every item knows the line it was built from. The
-hard part is not the capture — it is file size and a player inside the window.
 
 **Profiles for jobs, not for genres.** Today a profile is “meeting”, “estimate”,
 “interview”. More useful would be “client call about a building site”, “weekly

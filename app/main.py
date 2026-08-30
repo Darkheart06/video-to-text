@@ -21,6 +21,7 @@ from . import (
     people,
     presets,
     record,
+    serve,
     voices,
 )
 from .pipeline import Runner
@@ -161,8 +162,19 @@ class Api:
             "platform": f"{platform.system()} {platform.machine()}",
             "whisper_models": list(WHISPER_MODELS),
             "output_dir": str(self.settings.output_path),
+            # Порт локального сервера: окно проигрывает звук и видео записи
+            # через него — из file:// WebKit медиа с диска не отдаёт.
+            "media_port": self._media_port(),
+            # Что можно записывать с экрана: весь экран или одно приложение.
+            "apps": record.running_apps() if record.helper_ready() else [],
             **llm.probe(self.settings),
         }
+
+    def _media_port(self) -> int:
+        try:
+            return serve.start(self.settings.library_paths)
+        except Exception:
+            return 0
 
     def test_llm(self, values: dict | None = None) -> dict:
         """Кнопка «Проверить связь»: пробует настройки, не сохраняя их."""

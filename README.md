@@ -330,6 +330,30 @@ python tools/speakertest.py "~/Documents/Transcripts/Call.wav" --было 4    #
 python tools/speakertest.py "~/Documents/Transcripts" --список truth.txt
 ```
 
+### Screen recording and markers
+
+People share their screen on calls: a mockup, a spreadsheet, a bug in the
+interface. Next to the record button you choose what to capture — **audio
+only**, **the whole screen**, or **one running app**. The video goes through the
+same ScreenCaptureKit stream as the system audio, so there is no extra
+permission and no virtual driver. It is written at 8 fps and 1600 px wide: this
+is a screen share, not a film, so an hour costs hundreds of megabytes rather
+than tens of gigabytes.
+
+The finished recording plays inside the card, with **markers** above the player
+where the things that made it into the document were said: a decision, a task, a
+risk, a note taken during the call. Click a marker and the recording plays from
+there — chapters, the way YouTube does them.
+
+**Marker times come from the transcript, not from the model.** Asking a model
+“when was this said” is a reliable way to get a plausible invented number. Every
+item is matched against the lines by wording, and an item with no convincing
+match gets no marker: an empty spot is honest, a marker pointing at the wrong
+minute is not.
+
+Markers are also saved as `<recording>.chapters.vtt`, which players, YouTube and
+editing software understand.
+
 ### Documents attached to a recording
 
 A call is almost never self-contained: people discuss an estimate, a brief, an

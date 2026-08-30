@@ -295,6 +295,35 @@ The payoff is twofold: the “who's on the call” list is filled in with one pr
 and that same list caps live voice splitting — the app will not invent more
 voices than there are named people, plus one spare.
 
+## Markers and screen recording
+
+**Marker times come from the transcript.** Asking the model to timestamp its own
+output means getting plausible invented numbers: it has no clock, only text. So
+every summary item is matched against the lines by wording (the share of the
+item's words found in a line; threshold 0.34) and takes that line's time. No
+convincing match, no marker — an empty spot is honest, a marker pointing at the
+wrong minute is not. Notes taken during a call already know their time and need
+no matching at all.
+
+**Video rides the same stream as the audio.** ScreenCaptureKit is already open
+for the system audio, so the picture is a second output (`.screen`) on the same
+`SCStream`, and the filter decides what is captured: the whole display or the
+windows of one application. No extra permission, and certainly no virtual
+driver. Frames go to mp4 through `AVAssetWriter`, timed from the start of the
+recording so that markers computed on the audio point at the same moment in the
+video.
+
+The capture is deliberately modest: 8 fps at 1600 px wide. This is a screen
+share, not a film; an hour costs hundreds of megabytes instead of tens of
+gigabytes, and 60 fps buys nothing in a recording of a call.
+
+**A local server for the player.** The window is loaded from a file, and WebKit
+will not let a page play other files from disk: `<video src="file:///…">` stays
+silently empty. So the media is served by a tiny http server on 127.0.0.1 with a
+random port, restricted to the recording folders and to known extensions. The
+important part is the `Range` header: without it a player cannot seek, and
+seeking is the whole point.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three

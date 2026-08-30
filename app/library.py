@@ -41,8 +41,12 @@ SUFFIXES = [
     (".transcript.md", "transcript_md"),
     (".transcript.txt", "transcript_txt"),
     (".subtitles.srt", "subtitles"),
+    (".chapters.vtt", "chapters"),
     (".result.json", "result"),
     (".wav", "audio"),
+    # Запись экрана лежит рядом со звуком: плеер в окне играет её, а метки
+    # ведут к нужной минуте.
+    (".mp4", "video"),
 ]
 
 # Разобранные файлы держим в памяти: список обновляется часто, а на диске
@@ -273,6 +277,7 @@ def snapshot(where, entry_id: str, lang: str = "") -> dict | None:
         "preset": summary.get("preset", ""),
         "transcript_md": "",
         "speakers": speakers,
+        "marks": data.get("marks") or [],
         "warnings": [],
         "archived": True,
         "turns": turns,

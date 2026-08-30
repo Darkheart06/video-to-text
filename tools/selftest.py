@@ -867,6 +867,52 @@ def main() -> int:
     voices.STORE.unlink(missing_ok=True)
     voices.STORE = real_store
 
+    print("\n21. Метки на записи")
+    # Метка должна вести туда, где это действительно прозвучало, — поэтому
+    # время берётся из расшифровки, а не у модели.
+    from app import marks as marks_module
+
+    spoken = [
+        merge.Turn(start=0, end=12, speaker=0,
+                   text="Давайте начнём с релиза, у нас двадцать восьмое"),
+        merge.Turn(start=45, end=70, speaker=1,
+                   text="Макеты онбординга подготовит Ирина к двадцать восьмому августа"),
+        merge.Turn(start=120, end=150, speaker=0,
+                   text="Смету подрядчика согласуем к первому сентября"),
+        merge.Turn(start=200, end=230, speaker=1,
+                   text="Отпуск разработчика с пятого сентября в план не заложен"),
+    ]
+    made = marks_module.build(spoken, {
+        "tasks": "| Задача | Ответственный | Срок |\n|---|---|---|\n"
+                 "| Подготовить макеты онбординга | Ирина | 28 августа |",
+        "risks": "- Отпуск разработчика с 5 сентября не заложен в план.\n"
+                 "- Про полёт на Марс ничего не решили.",
+    }, [{"at": 300, "text": "- Обсудили сроки релиза"}], "ru")
+    by_kind = {m["kind"]: m for m in made}
+    failures += not check("метка встала на нужную реплику",
+                          by_kind.get("tasks", {}).get("at") == 45.0,
+                          str(by_kind.get("tasks")))
+    failures += not check("риск нашёлся по своим словам",
+                          by_kind.get("risks", {}).get("at") == 200.0,
+                          str(by_kind.get("risks")))
+    failures += not check("выдуманного в записи пункта метка не получает",
+                          not any("Марс" in m["text"] for m in made),
+                          ", ".join(m["text"][:20] for m in made))
+    failures += not check("заметка по ходу метится своим временем",
+                          by_kind.get("note", {}).get("at") == 300.0)
+    failures += not check("метки идут по времени",
+                          [m["at"] for m in made] == sorted(m["at"] for m in made))
+    vtt = marks_module.to_vtt(made, "ru")
+    failures += not check("главы выгружаются в WebVTT",
+                          vtt.startswith("WEBVTT") and "00:00:45.000 -->" in vtt
+                          and "Задача: Подготовить макеты" in vtt,
+                          vtt.splitlines()[3] if len(vtt.splitlines()) > 3 else "")
+    failures += not check("метки записаны в файлы записи",
+                          "chapters" in job.files
+                          and Path(job.files["chapters"]).read_text("utf-8").startswith("WEBVTT")
+                          if job.marks else True,
+                          f"меток у записи: {len(job.marks)}")
+
     print("\n19. Документы к записи")
     # Половина задач на созвоне ссылается на документ, который живёт отдельно.
     # Проверяем весь путь: приложить → достать текст → отдать модели → убрать.

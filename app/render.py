@@ -112,9 +112,12 @@ def _split_turn(turn: Turn, max_chars: int):
 
 def result_json(transcript: Transcript, turns: list[Turn], spans: list[SpeakerSpan],
                 summary: Summary | None, meta: dict,
-                names: dict[str, str] | None = None, lang: str = "") -> str:
+                names: dict[str, str] | None = None, lang: str = "",
+                marks: list[dict] | None = None) -> str:
     payload = {
         "meta": meta,
+        # Метки на записи: где прозвучало то, что попало в документ.
+        "marks": marks or [],
         # У записанного созвона диаризации нет — говорящие известны по дорожкам.
         # Считаем их по репликам, иначе запись в архиве осталась бы без имён.
         "speakers": _speakers_block(turns, spans, names, lang),
@@ -167,7 +170,8 @@ def _speakers_block(turns: list[Turn], spans: list[SpeakerSpan],
 
 def write_all(out_dir: Path, stem: str, transcript: Transcript, turns: list[Turn],
               spans: list[SpeakerSpan], summary: Summary | None, meta: dict,
-              names: dict[str, str] | None = None, lang: str = "") -> dict[str, str]:
+              names: dict[str, str] | None = None, lang: str = "",
+              marks: list[dict] | None = None) -> dict[str, str]:
     lang = i18n.pick(lang, i18n.current())
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +192,13 @@ def write_all(out_dir: Path, stem: str, transcript: Transcript, turns: list[Turn
     write("transcript_txt", ".transcript.txt", plain_transcript(turns, names, lang))
     write("subtitles", ".subtitles.srt", srt(turns, names, lang=lang))
     write("result", ".result.json",
-          result_json(transcript, turns, spans, summary, meta, names, lang))
+          result_json(transcript, turns, spans, summary, meta, names, lang, marks))
+    # Главы в WebVTT: их понимают плееры, YouTube и монтажные программы —
+    # запись можно унести куда угодно вместе с метками.
+    if marks:
+        from . import marks as marks_module
+
+        write("chapters", ".chapters.vtt", marks_module.to_vtt(marks, lang))
     return files
 
 

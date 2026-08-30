@@ -34,11 +34,23 @@
     --ui:"Onest",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
     --lift:0 1px 2px rgba(20,22,28,.05);
   }
+  /* Тёмная тема приходит тремя путями: системная настройка, явный выбор
+     «тёмная» и явный выбор «светлая», который должен побеждать систему.
+     Поэтому один и тот же набор токенов описан дважды — иначе выбор в
+     настройках не смог бы переспорить систему. */
   @media (prefers-color-scheme: dark){
-    :root{ --bg:#0e0f12; --panel:#17191e; --panel-2:#1d1f25; --line:#2a2d35;
-           --text:#f0f1f4; --muted:#98a0ae; --accent:#4d7cff; --accent-soft:#1e2743;
-           --ok:#6fcf97; --warn:#e0b45f; --err:#e2626b;
-           --lift:0 1px 2px rgba(0,0,0,.4); }
+    :root:not([data-theme="light"]){
+      --bg:#0e0f12; --panel:#17191e; --panel-2:#1d1f25; --line:#2a2d35;
+      --text:#f0f1f4; --muted:#98a0ae; --accent:#4d7cff; --accent-soft:#1e2743;
+      --ok:#6fcf97; --warn:#e0b45f; --err:#e2626b;
+      --lift:0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e0f12; --panel:#17191e; --panel-2:#1d1f25; --line:#2a2d35;
+    --text:#f0f1f4; --muted:#98a0ae; --accent:#4d7cff; --accent-soft:#1e2743;
+    --ok:#6fcf97; --warn:#e0b45f; --err:#e2626b;
+    --lift:0 1px 2px rgba(0,0,0,.4);
   }
   *{box-sizing:border-box}
   /* Выделять имеет смысл только текст записи. Кнопки, вкладки и список слева
@@ -75,6 +87,8 @@
   }
   header h1{font-size:16px; margin:0; font-weight:600; letter-spacing:-.015em}
   .chips{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto; cursor:pointer}
+  .btn.icon{padding:7px 9px; color:var(--muted)}
+  .btn.icon:hover{color:var(--text)}
   .chip{
     display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted);
     background:var(--panel-2); border:1px solid var(--line); padding:5px 11px; border-radius:20px;
@@ -266,6 +280,37 @@
 
   .files{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line)}
 
+  /* ---------- плеер и метки ---------- */
+  .player{padding:14px 20px 16px; border-top:1px solid var(--line)}
+  .player h4{margin:0 0 8px; font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); font-weight:600}
+  .player video, .player audio{width:100%; border-radius:12px; background:#000; display:block}
+  .player audio{background:var(--panel-2); height:40px}
+  .player .strip{
+    position:relative; height:30px; margin:10px 0 6px; border-radius:8px;
+    background:var(--panel-2); border:1px solid var(--line); cursor:pointer;
+  }
+  .player .strip .pin{
+    position:absolute; top:5px; width:3px; height:18px; border-radius:2px;
+    background:var(--accent); transform:translateX(-1px);
+  }
+  .player .strip .pin.note{background:var(--muted)}
+  .player .strip .pin.risks{background:var(--warn)}
+  .player .strip .pin:hover, .player .strip .pin.on{
+    background:var(--err); width:5px; top:3px; height:22px;
+  }
+  .player .strip .now{position:absolute; top:0; bottom:0; width:2px; background:var(--text); opacity:.5}
+  .marklist{display:flex; flex-direction:column; gap:2px; margin-top:8px;
+    max-height:190px; overflow:auto}
+  .markrow{display:flex; gap:10px; align-items:baseline; padding:5px 8px; border-radius:8px;
+    text-align:left; width:100%; font:inherit; color:inherit}
+  .markrow:hover{background:var(--panel-2)}
+  .markrow .at{font-family:var(--mono); font-size:12px; color:var(--accent);
+    font-variant-numeric:tabular-nums; flex:0 0 auto}
+  .markrow .kind{font-size:11.5px; color:var(--muted); flex:0 0 auto; min-width:74px}
+  .markrow .what{font-size:13.5px; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap}
+
   /* ---------- документы к записи ---------- */
   .docs{border-top:1px solid var(--line); background:var(--panel-2)}
   .docs summary{
@@ -369,6 +414,8 @@
   .rec-title{font-weight:600; font-size:16px; letter-spacing:-.01em}
   .rec-sub{font-size:13px; color:var(--muted); margin-top:3px}
   .rec-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
+  .screen-pick{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted)}
+  .screen-pick select{width:auto; max-width:190px; padding:6px 9px; font-size:13px}
   .rec-body{display:grid; grid-template-columns:1fr 290px; border-top:1px solid var(--line)}
   @media (max-width:860px){ .rec-body{grid-template-columns:1fr} }
   .rec-live{padding:12px 18px; max-height:42vh; overflow:auto}
@@ -447,7 +494,12 @@
     <h1 data-t="app.title">Расшифровка записей</h1>
     <div class="chips" id="chips"></div>
     <button class="btn ghost sm" id="btn-side" data-t="head.archive" data-t-title="head.archiveTitle" title="Показать или скрыть архив">Архив</button>
-    <button class="btn ghost sm" id="btn-settings" data-t="head.settings">Настройки</button>
+    <button class="btn ghost sm icon" id="btn-settings" data-t-title="head.settings"
+      data-t-aria="head.settings" title="Настройки" aria-label="Настройки">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor"
+        d="M8 5.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2Zm0 1.4a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z"/>
+      <path fill="currentColor" d="M7.1 1.2h1.8c.5 0 .9.35.98.84l.12.75c.3.11.58.25.85.42l.7-.3a1 1 0 0 1 1.2.33l.9 1.24a1 1 0 0 1-.13 1.32l-.57.5c.03.16.04.33.04.5s-.01.34-.04.5l.57.5a1 1 0 0 1 .13 1.32l-.9 1.24a1 1 0 0 1-1.2.33l-.7-.3c-.27.17-.55.31-.85.42l-.12.75a1 1 0 0 1-.98.84H7.1a1 1 0 0 1-.98-.84l-.12-.75c-.3-.11-.58-.25-.85-.42l-.7.3a1 1 0 0 1-1.2-.33l-.9-1.24a1 1 0 0 1 .13-1.32l.57-.5A4.3 4.3 0 0 1 3 8c0-.17.01-.34.04-.5l-.57-.5a1 1 0 0 1-.13-1.32l.9-1.24a1 1 0 0 1 1.2-.33l.7.3c.27-.17.55-.31.85-.42l.12-.75c.08-.49.48-.84.98-.84Zm.32 1.4-.16 1a.7.7 0 0 1-.5.56c-.42.12-.8.34-1.13.63a.7.7 0 0 1-.75.11l-.93-.4-.52.72.76.66c.22.2.31.5.23.79-.06.2-.09.42-.09.63s.03.43.09.63a.7.7 0 0 1-.23.79l-.76.66.52.72.93-.4a.7.7 0 0 1 .75.11c.33.29.71.51 1.13.63a.7.7 0 0 1 .5.56l.16 1h1.16l.16-1a.7.7 0 0 1 .5-.56c.42-.12.8-.34 1.13-.63a.7.7 0 0 1 .75-.11l.93.4.52-.72-.76-.66a.7.7 0 0 1-.23-.79c.06-.2.09-.42.09-.63s-.03-.43-.09-.63a.7.7 0 0 1 .23-.79l.76-.66-.52-.72-.93.4a.7.7 0 0 1-.75-.11 3 3 0 0 0-1.13-.63.7.7 0 0 1-.5-.56l-.16-1H7.42Z"/></svg>
+    </button>
   </header>
 
   <div class="stage">
@@ -526,6 +578,20 @@ const STR = {
     'job.noSplit': 'без разделения',
     'job.copy': 'Копировать',
     'job.working': 'Сейчас в работе',
+    'rec.screenLabel': 'Писать экран',
+    'rec.screenOff': 'Нет, только звук',
+    'rec.screenAll': 'Весь экран',
+    'rec.screenSaved': 'Экран: {what}',
+    'player.heading': 'Запись и метки',
+    'player.hint': 'Метки стоят там, где прозвучало то, что попало в документ. Клик — и запись играет с этого места.',
+    'player.noMarks': 'Меток нет: в этой записи не нашлось решений и задач, привязанных к репликам.',
+    'player.jump': 'Перейти к этому месту',
+    'mark.note': 'Заметка',
+    'mark.decisions': 'Решение',
+    'mark.tasks': 'Задача',
+    'mark.risks': 'Риск',
+    'mark.open': 'Вопрос',
+    'mark.works': 'Работа',
     'docs.heading': 'Документы к записи',
     'docs.hint': 'Смета, техзадание, письмо — то, о чём говорили. Их текст пойдёт в модель вместе с расшифровкой.',
     'docs.add': 'Приложить документ',
@@ -646,6 +712,10 @@ const STR = {
 
     'settings.savedToast': 'Настройки сохранены',
 
+    'settings.appearance': 'Тема окна',
+    'settings.themeAuto': 'Как в системе',
+    'settings.themeLight': 'Светлая',
+    'settings.themeDark': 'Тёмная',
     'settings.group.language': 'Язык',
     'settings.uiLanguage': 'Язык окна',
     'settings.uiLanguageHint': 'Язык окна.',
@@ -820,6 +890,20 @@ const STR = {
     'job.noSplit': 'no speaker split',
     'job.copy': 'Copy',
     'job.working': 'Working on now',
+    'rec.screenLabel': 'Record the screen',
+    'rec.screenOff': 'No, audio only',
+    'rec.screenAll': 'The whole screen',
+    'rec.screenSaved': 'Screen: {what}',
+    'player.heading': 'The recording and its markers',
+    'player.hint': 'Markers sit where the things that made it into the document were actually said. Click one and the recording plays from there.',
+    'player.noMarks': 'No markers: nothing in this recording tied a decision or a task to a line.',
+    'player.jump': 'Jump to this moment',
+    'mark.note': 'Note',
+    'mark.decisions': 'Decision',
+    'mark.tasks': 'Task',
+    'mark.risks': 'Risk',
+    'mark.open': 'Question',
+    'mark.works': 'Work item',
     'docs.heading': 'Documents for this recording',
     'docs.hint': 'An estimate, a brief, an email — whatever was discussed. Their text goes to the model together with the transcript.',
     'docs.add': 'Attach a document',
@@ -940,6 +1024,10 @@ const STR = {
 
     'settings.savedToast': 'Settings saved',
 
+    'settings.appearance': 'Window theme',
+    'settings.themeAuto': 'Follow the system',
+    'settings.themeLight': 'Light',
+    'settings.themeDark': 'Dark',
     'settings.group.language': 'Language',
     'settings.uiLanguage': 'Interface language',
     'settings.uiLanguageHint': 'The language of the app window.',
@@ -1101,6 +1189,14 @@ function T(key, vars){
 // Явного выбора языка может не быть вовсе (старые настройки без поля) —
 // тогда язык не трогаем и оставляем то, что было. 'auto' разворачиваем
 // по языку системы, а 'ru'/'en' — ставим как есть.
+/* Тема: «auto» — как в системе (тогда решает медиазапрос), иначе выбор
+   человека стоит на корне и побеждает систему в обе стороны. */
+function applyTheme(settings){
+  const value=(settings||{}).theme||'auto';
+  if(value==='light'||value==='dark') document.documentElement.dataset.theme=value;
+  else delete document.documentElement.dataset.theme;
+}
+
 function resolveLanguage(s){
   const v = s && s.ui_language;
   if(v==='ru' || v==='en') LANG=v;
@@ -1115,6 +1211,8 @@ function applyStatic(){
   document.querySelectorAll('[data-t]').forEach(el=>{ el.textContent = T(el.dataset.t); });
   document.querySelectorAll('[data-t-ph]').forEach(el=>{ el.placeholder = T(el.dataset.tPh); });
   document.querySelectorAll('[data-t-title]').forEach(el=>{ el.title = T(el.dataset.tTitle); });
+  document.querySelectorAll('[data-t-aria]').forEach(el=>{
+    el.setAttribute('aria-label', T(el.dataset.tAria)); });
 }
 
 /* ========== мини-рендер markdown ========== */
@@ -1257,6 +1355,79 @@ function renderChips(){
 
 /* Документы к записи. Созвон почти никогда не самодостаточен: половина задач
    ссылается на смету или письмо, и без них через неделю не разобраться. */
+/* Плеер с метками: запись играет из локального сервера (из file:// WebKit
+   медиа с диска не отдаёт), метки стоят на шкале и в списке под ней. */
+function mediaURL(path){
+  const port=(state.env||{}).media_port;
+  if(!port || !path) return '';
+  return `http://127.0.0.1:${port}/media?p=${encodeURIComponent(path)}`;
+}
+
+/* Что писать с экрана: ничего, весь экран или одно приложение. Список
+   запущенного приходит от помощника захвата вместе с остальным окружением. */
+function screenPicker(){
+  const apps=(state.env||{}).apps||[];
+  const now=(state.settings||{}).record_video_source||'';
+  return `<label class="screen-pick" title="${T('rec.screenLabel')}">
+    <span>${T('rec.screenLabel')}</span>
+    <select id="screen-source">
+      <option value="" ${now===''?'selected':''}>${T('rec.screenOff')}</option>
+      <option value="screen" ${now==='screen'?'selected':''}>${T('rec.screenAll')}</option>
+      ${apps.map(a=>`<option value="${esc(a.id)}" ${now===a.id?'selected':''}
+        >${esc(a.name)}</option>`).join('')}
+    </select>
+  </label>`;
+}
+
+function playerHTML(j){
+  if(j.status!=='done') return '';
+  const files=j.files||{};
+  const src=mediaURL(files.video || files.audio || '');
+  if(!src) return '';
+  const marks=(j.marks||[]).slice(0, 60);
+  const total=Math.max(1, Number((j.meta||{}).duration||0));
+  const tag=files.video ? 'video' : 'audio';
+  return `<div class="player" data-player="${j.id}">
+    <h4>${T('player.heading')}</h4>
+    <${tag} controls preload="metadata" id="media-${j.id}" src="${esc(src)}"></${tag}>
+    ${marks.length ? `<div class="strip" data-seekbar="${j.id}" data-total="${total}">
+      ${marks.map((m,i)=>`<span class="pin ${esc(m.kind)}" data-pin="${i}" data-job="${j.id}"
+        data-at="${m.at}" title="${esc(hhmmss(m.at))} · ${esc(m.text)}"
+        style="left:${Math.min(99.6, 100*m.at/total).toFixed(2)}%"></span>`).join('')}
+      <span class="now" id="now-${j.id}" style="left:0"></span>
+    </div>
+    <div class="marklist">${marks.map(m=>`
+      <button class="markrow" data-at="${m.at}" data-job="${j.id}"
+        title="${T('player.jump')}">
+        <span class="at">${hhmmss(m.at)}</span>
+        <span class="kind">${T('mark.'+m.kind)}</span>
+        <span class="what">${esc(m.text)}</span>
+      </button>`).join('')}</div>`
+    : `<div class="hint" style="margin-top:8px">${T('player.noMarks')}</div>`}
+  </div>`;
+}
+
+/* Бегунок на шкале меток идёт за плеером — так видно, где мы сейчас. */
+function wirePlayer(j){
+  const media=document.getElementById('media-'+j.id);
+  const now=document.getElementById('now-'+j.id);
+  if(!media) return;
+  const total=Math.max(1, Number((j.meta||{}).duration||0));
+  media.ontimeupdate=()=>{
+    if(now) now.style.left=Math.min(100, 100*media.currentTime/total).toFixed(2)+'%';
+  };
+}
+
+function seekTo(jobId, seconds){
+  const media=document.getElementById('media-'+jobId);
+  if(!media) return false;
+  try{
+    media.currentTime=Math.max(0, Number(seconds)||0);
+    media.play().catch(()=>{});
+  }catch(e){ return false; }
+  return true;
+}
+
 const PLUS_ICON = `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path
   fill="currentColor" d="M8 2.6c.4 0 .75.34.75.75V7.2h3.9a.75.75 0 0 1 0 1.5h-3.9v3.85a.75.75 0 0 1-1.5 0V8.7H3.3a.75.75 0 0 1 0-1.5h3.95V3.35c0-.41.34-.75.75-.75Z"/></svg>`;
 
@@ -1377,6 +1548,7 @@ function jobCard(j){
         `<button class="btn sm ghost" data-learn="${j.id}"
            title="${T('job.learnVoicesTitle')}">${T('job.learnVoices')}</button></div>`;
     }
+    body += playerHTML(j);
     body += docsHTML(j);
     const files = Object.entries(j.files||{});
     if(files.length){
@@ -1711,6 +1883,7 @@ function render(){
   renderLib();
   const current=currentJob();
   $('#jobs').innerHTML = current ? workingHTML(current) + jobCard(current) : '';
+  if(current) wirePlayer(current);
   if(current && state.docs.has(current.id)) fillThumbs();
   $('#drop').style.display = current ? 'none' : '';
   renderRec();
@@ -1746,6 +1919,13 @@ function settingsHTML(){
         <option value="en" ${s.ui_language==='en'?'selected':''}>${T('settings.langEn')}</option>
       </select>
       <div class="hint">${T('settings.uiLanguageHint')}</div>
+    </div>
+    <div class="field"><label>${T('settings.appearance')}</label>
+      <select data-k="theme">
+        <option value="auto" ${(!s.theme||s.theme==='auto')?'selected':''}>${T('settings.themeAuto')}</option>
+        <option value="light" ${s.theme==='light'?'selected':''}>${T('settings.themeLight')}</option>
+        <option value="dark" ${s.theme==='dark'?'selected':''}>${T('settings.themeDark')}</option>
+      </select>
     </div>
     <div class="field"><label>${T('settings.docLanguage')}</label>
       <select data-k="doc_language">
@@ -2041,6 +2221,7 @@ async function saveSettings(){
   state.env = await api().environment();
   // Язык мог смениться прямо в этой форме — перерисовываем всё окно заново.
   resolveLanguage(state.settings);
+  applyTheme(state.settings);
   applyStatic();
   renderChips(); renderPicker(); closeSettings(); loadLib();
   render();
@@ -2059,7 +2240,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen],[data-at]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -2113,6 +2294,9 @@ document.addEventListener('click', async ev=>{
     setTimeout(()=>{ if(box.open) state.docsOpen.add(t.dataset.docs);
                      else state.docsOpen.delete(t.dataset.docs); }, 0);
     return;
+  }
+  if(t.dataset.at!==undefined && t.dataset.job){
+    seekTo(t.dataset.job, t.dataset.at); return;
   }
   if(t.dataset.docedit){
     const id=t.dataset.docedit;
@@ -2251,6 +2435,18 @@ document.addEventListener('click', async ev=>{
 
 /* Cmd+C и Cmd+A. Без строки меню macOS сама их не обрабатывает, а привычка
    копировать выделенное клавишами никуда не девается. */
+/* Выбор источника экрана живёт в карточке, которая перерисовывается по
+   таймеру, — поэтому слушаем change на документе, а не на самом элементе. */
+document.addEventListener('change', async ev=>{
+  const select=ev.target.closest('#screen-source');
+  if(!select) return;
+  const value=select.value;
+  state.settings=await api().save_settings({record_video_source:value});
+  const what=value===''?T('rec.screenOff'):(value==='screen'?T('rec.screenAll')
+    :(((state.env||{}).apps||[]).find(a=>a.id===value)||{}).name||value);
+  toast(T('rec.screenSaved',{what}));
+});
+
 document.addEventListener('keydown', async ev=>{
   if(ev.key==='Escape'){
     const box=document.querySelector('.lightbox');
@@ -2383,6 +2579,7 @@ function renderRec(){
             : T('rec.subHint')}</div>
         </div>
         <div class="rec-actions">
+          ${blocked ? '' : screenPicker()}
           ${blocked
             ? `<button class="btn sm ghost" data-rec="recheck">${T('rec.recheck')}</button>
                <button class="btn sm" data-rec="privacy">${T('rec.openSettings')}</button>`
@@ -2657,6 +2854,7 @@ setInterval(()=>{ if(!document.hidden) refreshEnv(); }, 30000);
 window.addEventListener('pywebviewready', async()=>{
   state.settings=await api().get_settings();
   resolveLanguage(state.settings);
+  applyTheme(state.settings);
   applyStatic();
   try{ state.presets=await api().presets(); }catch(e){}
   state.preset=state.settings.preset||state.presets.current||'meeting';
