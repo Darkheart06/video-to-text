@@ -330,6 +330,14 @@ python tools/speakertest.py "~/Documents/Transcripts/Call.wav" --было 4    #
 python tools/speakertest.py "~/Documents/Transcripts" --список truth.txt
 ```
 
+### One recording in the working area
+
+The middle of the window shows exactly the recording you opened — from the list
+on the left, or the one you just started. Cards used to stack into a feed, and
+it stopped being obvious which one you were looking at. Anything still being
+processed is collected into a single “Working on now” line above the recording;
+clicking it opens that job.
+
 ### The trash, and getting a recording back
 
 The cross next to a recording is now a trash icon, and deleting stopped being

@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.4.1] — 2026-08-30
+
+### Changed
+
+- **One recording in the working area, not a feed of all of them.** Cards for
+  every recording stacked up in the middle of the window and people lost track
+  of which one they were looking at. Now the working area shows exactly the
+  recording you opened — from the archive on the left, or the one you just
+  started — and everything still being processed sits above it as a single
+  “Working on now” line that opens on click.
+
 ## [1.4.0] — 2026-08-30
 
 ### Added

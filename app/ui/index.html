@@ -464,6 +464,7 @@ const STR = {
     'job.speakerCount': '{n} спикер(ов)',
     'job.noSplit': 'без разделения',
     'job.copy': 'Копировать',
+    'job.working': 'Сейчас в работе',
     'job.copyTitle': 'Скопировать текст этой вкладки',
     'job.edit': 'Править',
     'job.editTitle': 'Убрать лишнее или поправить формулировку',
@@ -729,6 +730,7 @@ const STR = {
     'job.speakerCount': '{n} speaker(s)',
     'job.noSplit': 'no speaker split',
     'job.copy': 'Copy',
+    'job.working': 'Working on now',
     'job.copyTitle': "Copy this tab's text",
     'job.edit': 'Edit',
     'job.editTitle': "Cut what doesn't belong or fix the wording",
@@ -1095,7 +1097,7 @@ async function copySelection(){
 const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
   presets:{items:[],current:'meeting',example:''}, preset:'',
   lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null,
-  editing:new Map(), picking:null, voices:[],
+  editing:new Map(), picking:null, voices:[], openId:null,
   trash:[], trashDays:30, trashOpen:false, trashAsk:null };
 
 /* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
@@ -1415,9 +1417,7 @@ async function openLib(id){
   if(!snap){ toast(T('lib.filesNotFound')); loadLib(); return; }
   state.libOpen=id;
   state.jobs.set(snap.id, snap);
-  render();
-  const card=document.querySelector(`.job[data-id="${snap.id}"]`);
-  if(card) card.scrollIntoView({block:'start', behavior:'smooth'});
+  openJob(snap.id);
 }
 
 async function deleteLib(id){
@@ -1468,18 +1468,52 @@ function renderPicker(){
   const top=$('#btn-pick-top'); if(top) top.onclick=pick;
 }
 
+/* В рабочей области — одна запись, та, что открыта. Лента из всех разом
+   путала: непонятно, где смотришь и что из этого свежее. Идущие задания
+   не теряются — они показаны строкой над записью и открываются кликом. */
+function openJob(id){
+  state.openId = id;
+  render();
+  const card=document.querySelector(`.job[data-id="${id}"]`);
+  if(card) card.scrollIntoView({block:'start', behavior:'smooth'});
+}
+
+function currentJob(){
+  const jobs=[...state.jobs.values()];
+  if(state.openId && state.jobs.has(state.openId)) return state.jobs.get(state.openId);
+  // Ничего не открыто — показываем то, что делается сейчас, иначе последнее.
+  return jobs.reverse().find(j=>j.status==='running'||j.status==='pending') || jobs[0] || null;
+}
+
+function workingHTML(current){
+  const others=[...state.jobs.values()].filter(j=>j!==current &&
+    (j.status==='running'||j.status==='pending'));
+  if(!others.length) return '';
+  return `<div class="rec-card queue">
+    <div class="queue-head">${T('job.working')}</div>` +
+    others.map(j=>`<button class="queue-item" data-openjob="${j.id}">
+      <div class="spin"></div>
+      <div style="min-width:0; text-align:left">
+        <div class="qt">${esc(j.title)}</div>
+        <div class="qs">${esc(j.message||'')} · ${Math.round(j.progress*100)}%</div>
+      </div>
+    </button>`).join('') + `</div>`;
+}
+
 function render(){
   renderPicker();
   renderLib();
-  const jobs=[...state.jobs.values()].reverse();
-  $('#jobs').innerHTML=jobs.map(jobCard).join('');
-  $('#drop').style.display = jobs.length ? 'none' : '';
+  const current=currentJob();
+  $('#jobs').innerHTML = current ? workingHTML(current) + jobCard(current) : '';
+  $('#drop').style.display = current ? 'none' : '';
   renderRec();
 }
 
 function patchJob(j){
   const prev=state.jobs.get(j.id);
   state.jobs.set(j.id,j);
+  // Новое задание само становится открытым: человек только что его запустил.
+  if(!prev && (j.status==='running'||j.status==='pending')) state.openId=j.id;
   // Пока задание идёт — двигаем только полоску, чтобы не мигал весь список.
   const node=document.querySelector(`.job[data-id="${j.id}"]`);
   if(node && prev && prev.status===j.status && (j.status==='running'||j.status==='pending')){
@@ -1762,7 +1796,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -1809,6 +1843,7 @@ document.addEventListener('click', async ev=>{
     await copyText(((r.summary_sections||{})[t.dataset.reccopy]||''));
     return;
   }
+  if(t.dataset.openjob){ openJob(t.dataset.openjob); return; }
   if(t.dataset.libdel){ ev.stopPropagation(); await deleteLib(t.dataset.libdel); return; }
   if(t.dataset.restore){
     const r=await api().trash_restore(t.dataset.restore);
@@ -1855,7 +1890,12 @@ document.addEventListener('click', async ev=>{
     render(); return;
   }
   if(t.dataset.cancel){ await api().cancel(t.dataset.cancel); return; }
-  if(t.dataset.remove){ state.jobs.delete(t.dataset.remove); render(); return; }
+  if(t.dataset.remove){
+    state.jobs.delete(t.dataset.remove);
+    if(state.openId===t.dataset.remove) state.openId=null;
+    if(state.libOpen===t.dataset.remove) state.libOpen=null;
+    render(); return;
+  }
   if(t.dataset.reveal){ await api().reveal(t.dataset.reveal); return; }
   if(t.dataset.open){ await api().open_file(t.dataset.open); return; }
   if(t.dataset.copy){

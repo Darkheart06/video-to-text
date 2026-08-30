@@ -359,8 +359,8 @@ def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path
             if probe not in (page.text_content("#app") or ""):
                 errors.append(f"en/{scheme}: в окне нет «{probe}»")
 
-        page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", EN_JOB)
         page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", EN_RUNNING)
+        page.evaluate("(j)=>{state.jobs.set(j.id,j); openJob(j.id);}", EN_JOB)
         page.wait_for_timeout(150)
         page.click('.job[data-id="demo1234"] [data-tab="tasks"]')
         page.wait_for_timeout(120)
@@ -389,7 +389,7 @@ def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path
 
         page.click('[data-rec="cancel"]')
         page.wait_for_timeout(150)
-        page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", EN_ESTIMATE_JOB)
+        page.evaluate("(j)=>{state.jobs.set(j.id,j); openJob(j.id);}", EN_ESTIMATE_JOB)
         page.wait_for_timeout(150)
         page.click('.job[data-id="demo9999"] [data-tab="works"]')
         page.wait_for_timeout(150)
@@ -471,8 +471,21 @@ def main() -> int:
 
             page.screenshot(path=str(out_dir / f"1-empty-{scheme}.png"))
 
-            page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", JOB)
             page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", RUNNING)
+            page.evaluate("(j)=>{state.jobs.set(j.id,j); openJob(j.id);}", JOB)
+            page.wait_for_timeout(200)
+            # В рабочей области — только открытая запись, остальные строкой сверху.
+            if page.locator(".job").count() != 1:
+                errors.append(f"{scheme}: в рабочей области больше одной записи: "
+                              f"{page.locator('.job').count()}")
+            if not page.locator('[data-openjob="demo5678"]').count():
+                errors.append(f"{scheme}: идущее задание не показано строкой")
+            page.click('[data-openjob="demo5678"]')
+            page.wait_for_timeout(250)
+            if not page.locator('.job[data-id="demo5678"]').count():
+                errors.append(f"{scheme}: по клику строка не открывает задание")
+            page.evaluate("openJob('demo1234')")
+            page.wait_for_timeout(200)
             page.wait_for_timeout(150)
             page.screenshot(path=str(out_dir / f"2-result-{scheme}.png"), full_page=True)
 
@@ -591,7 +604,7 @@ def main() -> int:
             page.wait_for_timeout(150)
 
             # --- профиль: смета со своими вкладками ---
-            page.evaluate("(j)=>{state.jobs.set(j.id,j); render();}", ESTIMATE_JOB)
+            page.evaluate("(j)=>{state.jobs.set(j.id,j); openJob(j.id);}", ESTIMATE_JOB)
             page.wait_for_timeout(150)
             est = page.text_content("#jobs") or ""
             for probe in ("Работы", "Что уточнить", "таблицы.csv"):
@@ -619,6 +632,8 @@ def main() -> int:
                 errors.append(f"{scheme}: подсказка профиля не обновилась")
 
             # --- правка саммари: вычеркнуть лишнее ---
+            page.evaluate("openJob('demo1234')")
+            page.wait_for_timeout(200)
             page.click('.job[data-id="demo1234"] [data-tab="summary"]')
             page.wait_for_timeout(150)
             if not page.locator('[data-edittab="demo1234"]').count():
@@ -687,6 +702,10 @@ def main() -> int:
                 errors.append(f"{scheme}: открытая запись не подсвечена")
             if "Созвон 26.08 07-30" not in (page.text_content("#jobs") or ""):
                 errors.append(f"{scheme}: запись из архива не открылась")
+            # Клик по архиву показывает только эту запись — ленты больше нет.
+            if page.locator(".job").count() != 1:
+                errors.append(f"{scheme}: в рабочей области не одна запись: "
+                              f"{page.locator('.job').count()}")
             # зона перетаскивания скрыта карточками — кнопка выбора файла
             # обязана оставаться на виду
             if not page.locator("#btn-pick-top").is_visible():
@@ -793,6 +812,8 @@ def main() -> int:
             # проверки содержимого
             page.click("#btn-close")
             # на экране теперь и карточка из архива — целимся в нужную
+            page.evaluate("openJob('demo1234')")
+            page.wait_for_timeout(200)
             page.click('.job[data-id="demo1234"] [data-tab="transcript"]')
             page.wait_for_timeout(150)
             text = page.inner_text("#pane-demo1234")
