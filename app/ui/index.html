@@ -284,6 +284,28 @@
   .docs .inner{padding:0 20px 14px}
   .docs .hint{font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.5}
   .docs .list{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px}
+  .docs .shots{display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px}
+  .shot{position:relative; margin:0; width:104px}
+  .shot .pic{display:block; width:104px; height:104px; padding:0; border-radius:10px;
+    overflow:hidden; border:1px solid var(--line); background:var(--panel)}
+  .shot .pic img{width:100%; height:100%; object-fit:cover; display:block}
+  .shot .pic:hover{border-color:var(--accent)}
+  .shot figcaption{font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.35;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .shot .x{position:absolute; top:-6px; right:-6px; width:22px; height:22px;
+    border-radius:50%; background:var(--panel); border:1px solid var(--line);
+    color:var(--err); font-size:14px; line-height:1}
+  .doc .open{padding:0; font:inherit; color:inherit; text-align:left}
+  .doc .open:hover{color:var(--accent)}
+
+  /* картинка во весь экран по клику */
+  .lightbox{position:fixed; inset:0; z-index:60; display:flex; align-items:center;
+    justify-content:center; background:rgba(0,0,0,.72); padding:40px}
+  .lightbox img{max-width:100%; max-height:100%; border-radius:12px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .lightbox .close{position:absolute; top:18px; right:22px; color:#fff; font-size:26px;
+    line-height:1; width:36px; height:36px; border-radius:10px}
+  .lightbox .close:hover{background:rgba(255,255,255,.14)}
   .doc{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:9px;
     background:var(--panel); border:1px solid var(--line); font-size:13px}
   .doc .kb{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
@@ -516,6 +538,10 @@ const STR = {
     'docs.resummarizing': 'Пересобираю саммари — это займёт минуту-другую',
     'docs.kb': 'КБ',
     'docs.none': 'нет',
+    'docs.edit': 'Редактировать список',
+    'docs.editDone': 'Готово',
+    'docs.openTitle': 'Открыть документ',
+    'docs.closeShot': 'Закрыть',
     'job.copyTitle': 'Скопировать текст этой вкладки',
     'job.edit': 'Править',
     'job.editTitle': 'Убрать лишнее или поправить формулировку',
@@ -806,6 +832,10 @@ const STR = {
     'docs.resummarizing': 'Rebuilding the summary — a minute or two',
     'docs.kb': 'KB',
     'docs.none': 'none',
+    'docs.edit': 'Edit the list',
+    'docs.editDone': 'Done',
+    'docs.openTitle': 'Open the document',
+    'docs.closeShot': 'Close',
     'job.copyTitle': "Copy this tab's text",
     'job.edit': 'Edit',
     'job.editTitle': "Cut what doesn't belong or fix the wording",
@@ -1184,7 +1214,7 @@ async function copySelection(){
 const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
   presets:{items:[],current:'meeting',example:''}, preset:'',
   lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null,
-  editing:new Map(), picking:null, voices:[], openId:null, docs:new Map(), docsOpen:new Set(), people:[], orgs:[],
+  editing:new Map(), picking:null, voices:[], openId:null, docs:new Map(), docsOpen:new Set(), docsEdit:new Set(), thumbs:new Map(), people:[], orgs:[],
   trash:[], trashDays:30, trashOpen:false, trashAsk:null };
 
 /* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
@@ -1234,6 +1264,9 @@ function docsHTML(j){
   // Пока запись считается, прикладывать нечего: файлы записи ещё не готовы.
   if(j.status!=='done') return '';
   const items = state.docs.get(j.id) || [];
+  const pics = items.filter(d=>d.kind==='image');
+  const docs = items.filter(d=>d.kind!=='image');
+  const editing = state.docsEdit.has(j.id);
   // Свёрнуто по умолчанию: документы есть не у каждой записи, а место они
   // занимают у всех. Открытое состояние держим в памяти, иначе перерисовка
   // (а она бывает каждую секунду) захлопывала бы блок под руками.
@@ -1246,20 +1279,59 @@ function docsHTML(j){
     </summary>
     <div class="inner">
       <div class="hint">${T('docs.hint')}</div>
-      ${items.length ? `<div class="list">${items.map(d=>`
-        <span class="doc">${esc(d.name)}
+      ${pics.length ? `<div class="shots">${pics.map(d=>`
+        <figure class="shot ${editing?'editing':''}">
+          <button class="pic" data-shot="${esc(d.name)}" data-job="${j.id}"
+            title="${esc(d.name)}"><img alt="${esc(d.name)}"
+            data-thumb="${esc(d.name)}" data-job="${j.id}"></button>
+          <figcaption>${esc(d.name)}</figcaption>
+          ${editing?`<button class="x" data-docdel="${esc(d.name)}" data-job="${j.id}"
+            title="${T('docs.remove')}">×</button>`:''}
+        </figure>`).join('')}</div>` : ''}
+      ${docs.length ? `<div class="list">${docs.map(d=>`
+        <span class="doc ${editing?'editing':''}">
+          <button class="open" data-docopen="${esc(d.path)}"
+            title="${T('docs.openTitle')}">${esc(d.name)}</button>
           <span class="kb">${Math.max(1, Math.round(d.size/1024))} ${T('docs.kb')}</span>
           ${d.readable?'':`<span class="no">${T('docs.unreadable')}</span>`}
-          <button class="x" data-docdel="${esc(d.name)}" data-job="${j.id}"
-            title="${T('docs.remove')}">×</button>
+          ${editing?`<button class="x" data-docdel="${esc(d.name)}" data-job="${j.id}"
+            title="${T('docs.remove')}">×</button>`:''}
         </span>`).join('')}</div>` : ''}
       <div class="acts">
         <button class="btn sm primary" data-docadd="${j.id}">${PLUS_ICON}${T('docs.add')}</button>
+        ${items.length ? `<button class="btn sm ghost ${editing?'on':''}" data-docedit="${j.id}"
+          >${editing?T('docs.editDone'):T('docs.edit')}</button>` : ''}
         ${items.length ? `<button class="btn sm ghost" data-resum="${j.id}"
           >${T('docs.resummarize')}</button>` : ''}
       </div>
     </div>
   </details>`;
+}
+
+/* Превью тянем по одному после отрисовки: картинка приходит из Python
+   готовым квадратом, поэтому окно не тормозит на пятимегабайтных фото. */
+async function fillThumbs(){
+  const nodes=[...document.querySelectorAll('img[data-thumb]')];
+  for(const img of nodes){
+    const key=img.dataset.job+'/'+img.dataset.thumb;
+    if(state.thumbs.has(key)){ img.src=state.thumbs.get(key); continue; }
+    try{
+      const uri=await api().attach_preview(img.dataset.job, img.dataset.thumb, 256);
+      if(uri){ state.thumbs.set(key, uri); img.src=uri; }
+    }catch(e){}
+  }
+}
+
+async function showShot(jobId, name){
+  const box=document.createElement('div');
+  box.className='lightbox';
+  box.innerHTML=`<button class="close" title="${T('docs.closeShot')}">×</button><img alt="${esc(name)}">`;
+  box.onclick=()=>box.remove();
+  document.body.appendChild(box);
+  const big=await api().attach_preview(jobId, name, 1600);
+  const img=box.querySelector('img');
+  if(big) img.src=big;
+  else box.remove();
 }
 
 async function loadDocs(id){
@@ -1639,6 +1711,7 @@ function render(){
   renderLib();
   const current=currentJob();
   $('#jobs').innerHTML = current ? workingHTML(current) + jobCard(current) : '';
+  if(current && state.docs.has(current.id)) fillThumbs();
   $('#drop').style.display = current ? 'none' : '';
   renderRec();
 }
@@ -1986,7 +2059,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -2041,6 +2114,13 @@ document.addEventListener('click', async ev=>{
                      else state.docsOpen.delete(t.dataset.docs); }, 0);
     return;
   }
+  if(t.dataset.docedit){
+    const id=t.dataset.docedit;
+    if(state.docsEdit.has(id)) state.docsEdit.delete(id); else state.docsEdit.add(id);
+    render(); return;
+  }
+  if(t.dataset.shot){ await showShot(t.dataset.job, t.dataset.shot); return; }
+  if(t.dataset.docopen){ await api().open_file(t.dataset.docopen); return; }
   if(t.dataset.docadd){
     const id=t.dataset.docadd;
     const r=await api().attach_add(id);
@@ -2172,6 +2252,10 @@ document.addEventListener('click', async ev=>{
 /* Cmd+C и Cmd+A. Без строки меню macOS сама их не обрабатывает, а привычка
    копировать выделенное клавишами никуда не девается. */
 document.addEventListener('keydown', async ev=>{
+  if(ev.key==='Escape'){
+    const box=document.querySelector('.lightbox');
+    if(box){ box.remove(); ev.preventDefault(); return; }
+  }
   // Цифра отмечает последнюю реплику именем участника под этим номером:
   // на живом разговоре тянуться мышью некогда.
   const inField=/^(input|textarea)$/i.test((ev.target.tagName||''));

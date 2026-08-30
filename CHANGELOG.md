@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.5.1] — 2026-08-30
+
+### Changed
+
+- **Pictures and documents no longer share a shelf.** Images attached to a
+  recording are shown as square previews and open full-size on click; documents
+  stay a list and open in whatever app owns them. **Edit the list** switches the
+  block from viewing to removing, so a stray click cannot delete anything.
+
 ## [1.5.0] — 2026-08-30
 
 ### Added

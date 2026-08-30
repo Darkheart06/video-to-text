@@ -342,6 +342,11 @@ with the transcript, so the summary carries the real names, figures and wording.
 **Rebuild the summary with the documents** re-runs only the summary — the
 transcript is untouched, because it has not changed.
 
+Pictures and documents sit on separate shelves: screenshots and photos are
+square previews that open full-size on click (Escape closes), while documents
+stay a list and open in whatever app owns them. **Edit the list** switches the
+block from viewing to removing, so a stray click deletes nothing.
+
 Files are copied next to the recording, into `<recording>.files`: renaming or
 deleting the original leaves the record whole. Text is pulled from `.pdf`,
 `.docx`, `.pptx`, `.xlsx`, `.txt`, `.md`, `.csv` and `.rtf`; anything else just

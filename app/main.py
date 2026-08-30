@@ -374,6 +374,17 @@ class Api:
         result = attach.add(path, [str(x) for x in chosen])
         return {**result, "items": attach.items(path)}
 
+    def attach_preview(self, entry_id: str, name: str, size: int = 256) -> str:
+        """Превью картинки, приложенной к записи, — картинкой в окно."""
+        path = library._path_of(self.settings.library_paths, str(entry_id or ""))
+        if path is None:
+            return ""
+        target = attach.folder_for(path) / Path(str(name or "")).name
+        try:
+            return attach.preview(target, int(size))
+        except Exception:
+            return ""
+
     def attach_remove(self, entry_id: str, name: str) -> dict:
         path = library._path_of(self.settings.library_paths, str(entry_id or ""))
         if path is None:

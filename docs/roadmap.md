@@ -74,6 +74,16 @@ into tasks, to a client. Right now they are copied out of the window by hand.
 
 ## Medium term: a month or two
 
+**Screen recording and markers on the video.** Only audio is captured today,
+while people share their screen constantly: a mockup, a spreadsheet, a bug in
+the interface. Recording the whole screen — or a single app — gives that
+context, and the transcript gives it navigation: markers on the timeline where a
+decision, a task or a figure was said, and a click to jump there, the way
+chapters work on YouTube. Technically ScreenCaptureKit already captures the
+audio and can capture video, including a single window; the markers come from
+the finished summary, since every item knows the line it was built from. The
+hard part is not the capture — it is file size and a player inside the window.
+
 **Profiles for jobs, not for genres.** Today a profile is “meeting”, “estimate”,
 “interview”. More useful would be “client call about a building site”, “weekly
 planning”, “candidate screening” — with the fields those actually need. The

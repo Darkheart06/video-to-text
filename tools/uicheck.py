@@ -315,16 +315,24 @@ window.pywebview = {api: {
                                return {ok: true, restored: 6, title: "Созвон 24.08 10-15"}; },
   trash_purge: async id => { window.__purged = id; return {ok: true, removed: 1}; },
   attachments: async () => ({items: [
-    {name: "Смета подрядчика.pdf", path: "/x/Смета подрядчика.pdf", size: 184320, readable: true},
-    {name: "Схема интеграции.png", path: "/x/Схема интеграции.png", size: 96000, readable: false}]}),
+    {name: "Смета подрядчика.pdf", path: "/x/Смета подрядчика.pdf", size: 184320,
+     kind: "doc", readable: true},
+    {name: "Схема интеграции.png", path: "/x/Схема интеграции.png", size: 96000,
+     kind: "image", readable: false}]}),
+  attach_preview: async (id, name, size) => { window.__preview = {name: name, size: size};
+    return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '">' +
+      '<rect width="100%%" height="100%%" fill="#4d7cff"/></svg>'))); },
   attach_add: async id => { window.__attached = id;
     return {ok: true, added: ["Письмо от заказчика.docx"], items: [
-      {name: "Смета подрядчика.pdf", path: "/x/1.pdf", size: 184320, readable: true},
-      {name: "Схема интеграции.png", path: "/x/2.png", size: 96000, readable: false},
-      {name: "Письмо от заказчика.docx", path: "/x/3.docx", size: 24576, readable: true}]}; },
+      {name: "Смета подрядчика.pdf", path: "/x/1.pdf", size: 184320, kind: "doc", readable: true},
+      {name: "Схема интеграции.png", path: "/x/2.png", size: 96000, kind: "image", readable: false},
+      {name: "Письмо от заказчика.docx", path: "/x/3.docx", size: 24576, kind: "doc",
+       readable: true}]}; },
   attach_remove: async (id, name) => { window.__detached = name;
     return {ok: true, items: [
-      {name: "Смета подрядчика.pdf", path: "/x/1.pdf", size: 184320, readable: true}]}; },
+      {name: "Смета подрядчика.pdf", path: "/x/1.pdf", size: 184320,
+       kind: "doc", readable: true}]}; },
   resummarize: async id => { window.__resum = id;
     return {ok: true, job: Object.assign({}, %(estimate)s, {id: "resum1",
       status: "running", stage: "summary", progress: 0.3,
@@ -834,7 +842,7 @@ def main() -> int:
             if not page.locator(".docs .inner").is_visible():
                 errors.append(f"{scheme}: документы не раскрываются")
             docs = page.text_content(".docs") or ""
-            for probe in ("Документы к записи", "Смета подрядчика.pdf", "текст не читается"):
+            for probe in ("Документы к записи", "Смета подрядчика.pdf", "Схема интеграции.png"):
                 if probe not in docs:
                     errors.append(f"{scheme}: в блоке документов нет «{probe}»")
             if not page.locator('[data-resum="demo1234"]').count():
@@ -848,10 +856,44 @@ def main() -> int:
                 errors.append(f"{scheme}: документ не прикладывается")
             if "Письмо от заказчика.docx" not in (page.text_content(".docs") or ""):
                 errors.append(f"{scheme}: приложенный документ не появился в списке")
+            # Картинки — отдельной полкой с квадратными превью.
+            if not page.locator(".docs .shots .shot .pic img").count():
+                errors.append(f"{scheme}: у картинки нет превью")
+            if page.locator('.docs .list .doc:has-text("Схема интеграции.png")').count():
+                errors.append(f"{scheme}: картинка попала в список документов")
+            page.wait_for_timeout(300)
+            if not page.evaluate("document.querySelector('.docs .shot img').src.length > 100"):
+                errors.append(f"{scheme}: превью не подгрузилось")
+            # Крестики появляются только в режиме правки.
+            if page.locator(".docs .x").count():
+                errors.append(f"{scheme}: удаление доступно без режима правки")
+            page.click('[data-docedit="demo1234"]')
+            page.wait_for_timeout(250)
+            if not page.locator(".docs .x").count():
+                errors.append(f"{scheme}: в режиме правки нет крестиков")
+            page.screenshot(path=str(out_dir / f"15-docs-edit-{scheme}.png"))
             page.click('[data-docdel="Смета подрядчика.pdf"]')
             page.wait_for_timeout(250)
             if page.evaluate("window.__detached") != "Смета подрядчика.pdf":
                 errors.append(f"{scheme}: документ не убирается")
+            page.click('[data-docedit="demo1234"]')      # выходим из правки
+            page.wait_for_timeout(200)
+            # Картинка открывается во весь экран и закрывается по Escape.
+            page.evaluate("loadDocs('demo1234')")
+            page.wait_for_timeout(300)
+            page.click(".docs .shot .pic")
+            page.wait_for_timeout(400)
+            if not page.locator(".lightbox img").count():
+                errors.append(f"{scheme}: картинка не открывается крупно")
+            if (page.evaluate("window.__preview") or {}).get("size") != 1600:
+                errors.append(f"{scheme}: крупное превью запрошено не тем размером")
+            page.screenshot(path=str(out_dir / f"16-shot-{scheme}.png"))
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+            if page.locator(".lightbox").count():
+                errors.append(f"{scheme}: картинка не закрывается по Escape")
+            page.click('[data-docopen="/x/Смета подрядчика.pdf"]')
+            page.wait_for_timeout(200)
             page.click('[data-resum="demo1234"]')
             page.wait_for_timeout(300)
             if page.evaluate("window.__resum") != "demo1234":

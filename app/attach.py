@@ -30,6 +30,7 @@ FOLDER_SUFFIX = ".files"
 
 # Что имеет смысл читать. Картинки и архивы лежат рядом просто как файлы.
 TEXT_KINDS = {".txt", ".md", ".markdown", ".csv", ".json", ".log", ".rtf"}
+IMAGE_KINDS = {".png", ".jpg", ".jpeg", ".heic", ".gif", ".webp", ".tiff", ".bmp"}
 DOC_KINDS = {".docx", ".pptx", ".xlsx"}
 PDF_KINDS = {".pdf"}
 
@@ -83,11 +84,15 @@ def items(result_path: str | Path) -> list[dict]:
     for file in sorted(box.iterdir()):
         if file.name.startswith(".") or file.is_dir():
             continue
+        image = file.suffix.lower() in IMAGE_KINDS
         found.append({
             "name": file.name,
             "path": str(file),
             "size": file.stat().st_size,
-            "readable": bool(_extract(file, limit=200).strip()),
+            # Картинку показываем превью, документ — строкой: смешивать их в
+            # один список неудобно, глазу нужны разные полки.
+            "kind": "image" if image else "doc",
+            "readable": False if image else bool(_extract(file, limit=200).strip()),
         })
     return found
 
@@ -131,6 +136,65 @@ def context(result_path: str | Path, limit: int = TEXT_LIMIT) -> str:
 
 def names(result_path: str | Path) -> list[str]:
     return [item["name"] for item in items(result_path)]
+
+
+# --- превью картинок ---------------------------------------------------------
+
+# Готовые превью держим в памяти: окно перерисовывается часто, а картинка та же.
+_thumbs: dict[tuple[str, float, int], str] = {}
+
+
+def preview(path: str | Path, size: int = 256) -> str:
+    """Картинка как data-URI, уменьшенная до квадрата size×size.
+
+    Уменьшаем средствами системы (`sips` есть на любом маке), а если их нет —
+    отдаём исходник, но только когда он маленький: гнать пятимегабайтное фото
+    в окно ради превью незачем.
+    """
+    import base64
+    import mimetypes
+    import subprocess
+    import tempfile
+
+    file = Path(path)
+    if not file.exists() or file.suffix.lower() not in IMAGE_KINDS:
+        return ""
+    key = (str(file), file.stat().st_mtime, size)
+    if key in _thumbs:
+        return _thumbs[key]
+
+    data, kind = b"", mimetypes.guess_type(file.name)[0] or "image/png"
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            small = Path(tmp) / "thumb.png"
+            done = subprocess.run(
+                ["sips", "-Z", str(size), "--out", str(small), str(file)],
+                capture_output=True, timeout=30)
+            if done.returncode == 0 and small.exists():
+                data, kind = small.read_bytes(), "image/png"
+    except Exception:
+        data = b""
+    if not data:
+        try:
+            from PIL import Image
+
+            with tempfile.TemporaryDirectory() as tmp:
+                small = Path(tmp) / "thumb.png"
+                image = Image.open(file)
+                image.thumbnail((size, size))
+                image.convert("RGB").save(small, "PNG")
+                data, kind = small.read_bytes(), "image/png"
+        except Exception:
+            data = b""
+    if not data and file.stat().st_size <= 2_000_000:
+        data = file.read_bytes()
+    if not data:
+        return ""
+    uri = f"data:{kind};base64," + base64.b64encode(data).decode()
+    if len(_thumbs) > 60:
+        _thumbs.clear()
+    _thumbs[key] = uri
+    return uri
 
 
 # --- извлечение текста -------------------------------------------------------
