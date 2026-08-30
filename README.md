@@ -330,6 +330,30 @@ python tools/speakertest.py "~/Documents/Transcripts/Call.wav" --было 4    #
 python tools/speakertest.py "~/Documents/Transcripts" --список truth.txt
 ```
 
+### The trash, and getting a recording back
+
+The cross next to a recording is now a trash icon, and deleting stopped being
+final: the whole recording — audio, transcript, summary — goes to the app's own
+trash. The button at the bottom of the archive opens it: each entry shows how
+long it has left, **Put back** returns it where it came from, **Delete** removes
+it for good, **Empty** clears everything.
+
+Anything left for **30 days** goes on its own (`trash_days` in settings; `0`
+never sweeps). Before this the files went to the system Trash, where putting
+them back meant hunting through Finder by filename.
+
+### Processing no longer blocks the next call
+
+Splitting voices and writing the summary takes minutes, and the recorder used to
+be busy for all of it: a call starting right after another simply could not be
+recorded. Processing now has its own queue — it steps aside the moment a new
+recording starts and resumes exactly where it stopped. Recordings waiting their
+turn are listed under the live card, so nothing looks lost.
+
+The pause happens between stages, not inside one: Whisper cannot be stopped
+mid-chunk, but between “collect the audio”, “split the voices” and “summarise”
+it can, and you do not notice.
+
 ### Archive
 
 The panel on the left lists everything already processed — files and recorded

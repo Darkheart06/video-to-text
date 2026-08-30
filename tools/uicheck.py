@@ -284,6 +284,12 @@ window.pywebview = {api: {
   library_open: async id => Object.assign({}, %(estimate)s, {id: id, archived: true,
     title: (%(lib)s).find(i => i.id === id).title, message: "Из архива"}),
   library_delete: async () => ({ok: true, removed: 5}),
+  trash: async () => ({days: 30, items: [
+    {id: "1756000000-abc", title: "Созвон 24.08 10-15", when: "2026-08-28 12:40",
+     days_left: 30, files: 6}]}),
+  trash_restore: async id => { window.__restored = id;
+                               return {ok: true, restored: 6, title: "Созвон 24.08 10-15"}; },
+  trash_purge: async id => { window.__purged = id; return {ok: true, removed: 1}; },
   library_rename: async () => (%(estimate)s),
   voices_list: async () => ({items: [{name: "Леонид", prints: 6},
                                      {name: "Марина", prints: 3}]}),
@@ -748,6 +754,31 @@ def main() -> int:
             page.wait_for_timeout(120)
             if "Различать собеседников по голосам" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки разделения собеседников")
+
+            # --- корзина: удаление, возврат, срок ---
+            page.click("#btn-close")
+            page.wait_for_timeout(200)
+            page.click("#btn-trash")
+            page.wait_for_timeout(300)
+            trash_text = page.text_content("#lib-list") or ""
+            for probe in ("Созвон 24.08 10-15", "осталось дней: 30", "Вернуть"):
+                if probe not in trash_text:
+                    errors.append(f"{scheme}: в корзине нет «{probe}»")
+            if "Корзина" not in (page.text_content("#lib-count") or "") + trash_text:
+                errors.append(f"{scheme}: корзина не подписана")
+            page.screenshot(path=str(out_dir / f"13-trash-{scheme}.png"))
+            page.click('[data-restore="1756000000-abc"]')
+            page.wait_for_timeout(300)
+            if page.evaluate("window.__restored") != "1756000000-abc":
+                errors.append(f"{scheme}: запись не возвращается из корзины")
+            page.click("#btn-trash")          # обратно к записям
+            page.wait_for_timeout(250)
+            if not page.locator('[data-lib="lib1"]').count():
+                errors.append(f"{scheme}: из корзины не вернуться к записям")
+            if not page.locator('[data-libdel="lib1"] svg').count():
+                errors.append(f"{scheme}: у удаления нет иконки корзины")
+            page.click("#btn-settings")
+            page.wait_for_timeout(300)
 
             # --- знакомые голоса ---
             if "Знакомые голоса" not in (page.text_content("#settings-body") or ""):

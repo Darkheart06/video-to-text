@@ -236,6 +236,27 @@ person and a GPU, would help where prints already cope, and would turn a model
 update into the loss of the entire memory. A handful of vectors beside an
 unchanged model buys the same recognition for a kilobyte per person.
 
+## The trash and the queue: two things that must not be lost
+
+**Our own trash, not the system one.** A deleted recording used to go to the
+macOS Trash. Recoverable in theory, not in practice: one recording is six files
+with different extensions, lying there among everything else. Now the whole
+recording moves to `.trash/<time>-<id>/` beside the archive, with a note of where
+it came from, what it was called and when it was deleted. Putting it back is a
+`replace` of files to their old home, not guesswork over filenames. The 30-day
+limit is checked whenever the trash is opened — no daemon, no scheduler.
+
+**The processing queue.** Recording and processing are not equally important. A
+conversation happens once; processing can wait. So `_finish` moved out of the
+recording thread into a queue: the recording thread ends immediately, the session
+becomes `queued`, and a worker takes them one at a time. Before each heavy stage
+it asks `_hold()`: if a recording is live, it waits. The pause sits between
+stages, not inside one — Whisper cannot be stopped mid-chunk, but between stages
+it can, invisibly.
+
+Hence the rule in `is_active()`: only the recording itself counts as busy. The
+previous call's processing no longer locks the microphone.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three

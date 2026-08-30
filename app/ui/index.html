@@ -5,15 +5,40 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Расшифровка записей</title>
 <style>
-  :root{
-    --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --line:#2a2f3a;
-    --text:#e8eaee; --muted:#9aa3b2; --accent:#5b8cff; --accent-soft:#1d2740;
-    --ok:#3fbf7f; --warn:#e0a33e; --err:#e2626b;
-    --radius:12px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  /* Шрифт лежит внутри приложения: обещание «работает без сети» относится и к
+     буквам тоже. Onest под лицензией SIL OFL — файлы в app/ui/fonts. */
+  @font-face{
+    font-family:"Onest"; font-style:normal; font-weight:300 800; font-display:swap;
+    src:url("fonts/onest-latin.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+      U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
   }
-  @media (prefers-color-scheme: light){
-    :root{ --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f1f3f7; --line:#e2e5ec;
-           --text:#1a1d23; --muted:#69707d; --accent:#3563e9; --accent-soft:#e7edfe; }
+  @font-face{
+    font-family:"Onest"; font-style:normal; font-weight:300 800; font-display:swap;
+    src:url("fonts/onest-latin-ext.woff2") format("woff2");
+    unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,
+      U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+  }
+  @font-face{
+    font-family:"Onest"; font-style:normal; font-weight:300 800; font-display:swap;
+    src:url("fonts/onest-cyrillic.woff2") format("woff2");
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+  }
+  :root{
+    /* Светлая тема — основная: спокойный лист, воздух вместо рамок, один цвет
+       на действии. Тёмная повторяет её же расстановку, а не выворачивает. */
+    --bg:#f2f2f0; --panel:#ffffff; --panel-2:#f7f7f5; --line:#dedcd8;
+    --text:#1a1c20; --muted:#666c78; --accent:#2f5be0; --accent-soft:#e8edfd;
+    --ok:#2f7d55; --warn:#9a6b16; --err:#c8453f;
+    --radius:14px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --ui:"Onest",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --lift:0 1px 2px rgba(20,22,28,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0e0f12; --panel:#17191e; --panel-2:#1d1f25; --line:#2a2d35;
+           --text:#f0f1f4; --muted:#98a0ae; --accent:#4d7cff; --accent-soft:#1e2743;
+           --ok:#6fcf97; --warn:#e0b45f; --err:#e2626b;
+           --lift:0 1px 2px rgba(0,0,0,.4); }
   }
   *{box-sizing:border-box}
   /* Выделять имеет смысл только текст записи. Кнопки, вкладки и список слева
@@ -26,13 +51,13 @@
   html,body{height:100%}
   body{
     margin:0; background:var(--bg); color:var(--text);
-    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    font:14.5px/1.55 var(--ui); font-variant-numeric:tabular-nums;
     -webkit-font-smoothing:antialiased; overflow:hidden;
   }
   button{font:inherit; color:inherit; cursor:pointer; border:none; background:none}
   .btn{
-    display:inline-flex; align-items:center; gap:7px; padding:8px 14px;
-    border-radius:9px; background:var(--panel-2); border:1px solid var(--line);
+    display:inline-flex; align-items:center; gap:7px; padding:8px 15px; font-size:14px;
+    border-radius:10px; background:var(--panel-2); border:1px solid var(--line);
     transition:.15s; white-space:nowrap;
   }
   .btn:hover{border-color:var(--accent); background:var(--accent-soft)}
@@ -40,7 +65,7 @@
   .btn.primary:hover{filter:brightness(1.08)}
   .btn.ghost{background:none}
   .btn:disabled{opacity:.45; cursor:default; border-color:var(--line); background:var(--panel-2)}
-  .btn.sm{padding:5px 10px; font-size:12.5px}
+  .btn.sm{padding:6px 12px; font-size:13px}
 
   /* ---------- каркас ---------- */
   #app{display:flex; flex-direction:column; height:100vh}
@@ -48,11 +73,11 @@
     display:flex; align-items:center; gap:14px; padding:12px 20px;
     border-bottom:1px solid var(--line); background:var(--panel); flex:0 0 auto;
   }
-  header h1{font-size:15px; margin:0; font-weight:650; letter-spacing:-.01em}
+  header h1{font-size:16px; margin:0; font-weight:600; letter-spacing:-.015em}
   .chips{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto; cursor:pointer}
   .chip{
-    display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted);
-    background:var(--panel-2); border:1px solid var(--line); padding:3px 9px; border-radius:20px;
+    display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted);
+    background:var(--panel-2); border:1px solid var(--line); padding:5px 11px; border-radius:20px;
   }
   .dot{width:6px;height:6px;border-radius:50%;background:var(--muted); flex:0 0 auto}
   .dot.ok{background:var(--ok)} .dot.err{background:var(--err)} .dot.warn{background:var(--warn)}
@@ -62,15 +87,15 @@
 
   /* ---------- архив записей ---------- */
   .side{
-    width:272px; flex:0 0 272px; display:flex; flex-direction:column;
+    width:286px; flex:0 0 286px; display:flex; flex-direction:column;
     border-right:1px solid var(--line); background:var(--panel); min-height:0;
   }
   body.no-side .side{display:none}
   .side-head{padding:12px 12px 10px; border-bottom:1px solid var(--line)}
   .side-head input{width:100%}
-  .side-count{font-size:11.5px; color:var(--muted); margin-top:7px; display:block}
+  .side-count{font-size:12.5px; color:var(--muted); margin-top:7px; display:block}
   .side-list{flex:1; overflow:auto; padding:8px}
-  .side-foot{padding:8px 12px 12px; border-top:1px solid var(--line)}
+  .side-foot{padding:8px 12px 12px; border-top:1px solid var(--line); display:flex; gap:6px}
   .lib-item{
     position:relative; display:block; width:100%; text-align:left; padding:9px 26px 9px 10px;
     border-radius:10px; border:1px solid transparent; margin-bottom:2px; cursor:pointer;
@@ -79,25 +104,39 @@
   .lib-item.active{background:var(--accent-soft); border-color:var(--accent)}
   .lib-top{display:flex; gap:8px; align-items:baseline}
   .lib-name{
-    font-size:13px; font-weight:600; flex:1; min-width:0;
+    font-size:14px; font-weight:600; flex:1; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .lib-dur{font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; flex:0 0 auto}
-  .lib-sub{font-size:11px; color:var(--muted); margin-top:2px; display:block}
+  .lib-dur{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; flex:0 0 auto}
+  .lib-sub{font-size:12.5px; color:var(--muted); margin-top:3px; display:block}
   .lib-prev{
-    font-size:11.5px; color:var(--muted); margin-top:4px; display:-webkit-box;
+    font-size:12.5px; color:var(--muted); margin-top:5px; display:-webkit-box;
     -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.4;
   }
   .lib-hit{color:var(--accent)}
   .lib-del{
-    position:absolute; top:6px; right:5px; width:20px; height:20px; border-radius:6px;
-    font-size:15px; line-height:1; color:var(--muted); opacity:0; transition:.12s;
+    position:absolute; top:7px; right:6px; width:24px; height:24px; border-radius:7px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--muted); opacity:0; transition:.12s;
   }
-  .lib-item:hover .lib-del{opacity:1}
-  .lib-del:hover{background:var(--panel); color:var(--err)}
-  .lib-del.ask{opacity:1; width:auto; padding:0 7px; font-size:11px; color:var(--err);
+  .lib-item:hover .lib-del, .lib-del:focus-visible{opacity:1}
+  .lib-del:hover{background:var(--panel-2); color:var(--err)}
+  .lib-del.ask{opacity:1; width:auto; padding:0 8px; font-size:12px; color:var(--err);
     border:1px solid var(--err)}
-  .side-empty{padding:22px 12px; text-align:center; font-size:12.5px; color:var(--muted)}
+
+  /* ---------- корзина ---------- */
+  .trash-head{display:flex; align-items:center; gap:8px; padding:10px 12px;
+    border-bottom:1px solid var(--line)}
+  .trash-head b{font-size:13.5px; font-weight:600}
+  .trash-head .btn{margin-left:auto}
+  .trash-item{padding:9px 10px; border-radius:10px; margin-bottom:2px}
+  .trash-item:hover{background:var(--panel-2)}
+  .trash-item .t{font-size:13.5px; font-weight:600; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap}
+  .trash-item .s{font-size:12px; color:var(--muted); margin-top:3px}
+  .trash-item .acts{display:flex; gap:6px; margin-top:7px}
+  #trash-count{font-variant-numeric:tabular-nums}
+  .side-empty{padding:22px 12px; text-align:center; font-size:13px; color:var(--muted)}
   @media (max-width:880px){ .side{display:none} }
 
   /* ---------- зона загрузки ---------- */
@@ -106,24 +145,26 @@
     background:var(--panel); transition:.18s;
   }
   .drop.over{border-color:var(--accent); background:var(--accent-soft)}
-  .drop h2{margin:0 0 6px; font-size:17px; font-weight:620}
-  .drop p{margin:0 0 20px; color:var(--muted); font-size:13px}
+  .drop h2{margin:0 0 8px; font-size:19px; font-weight:600; letter-spacing:-.01em}
+  .drop p{margin:0 0 20px; color:var(--muted); font-size:14px}
   .formats{margin-top:16px; font-size:12px; color:var(--muted); font-family:var(--mono)}
 
   /* ---------- задания ---------- */
   .jobs{display:flex; flex-direction:column; gap:12px; margin-top:18px}
-  .job{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+  .job{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+       overflow:hidden; box-shadow:var(--lift)}
   .job-head{display:flex; align-items:center; gap:12px; padding:13px 16px}
   .job-title{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .job-sub{font-size:12px; color:var(--muted); margin-top:2px}
+  .job-title{font-size:15px}
+  .job-sub{font-size:13px; color:var(--muted); margin-top:3px}
   .job-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
   .bar{height:4px; background:var(--panel-2); overflow:hidden}
   .bar i{display:block; height:100%; background:var(--accent); width:0; transition:width .35s ease}
   .job.err .bar i{background:var(--err)}
   .job.done .bar i{background:var(--ok)}
-  .pct{font-family:var(--mono); font-size:12px; color:var(--muted); min-width:46px; text-align:right}
-  .warn-line{padding:9px 16px; font-size:12.5px; color:var(--warn); border-top:1px solid var(--line)}
-  .err-line{padding:11px 16px; font-size:13px; color:var(--err); border-top:1px solid var(--line)}
+  .pct{font-family:var(--mono); font-size:13px; color:var(--muted); min-width:46px; text-align:right}
+  .warn-line{padding:10px 17px; font-size:13.5px; color:var(--warn); border-top:1px solid var(--line)}
+  .err-line{padding:12px 17px; font-size:14px; color:var(--err); border-top:1px solid var(--line)}
 
   /* ---------- результат ---------- */
   .tab-copy{margin-left:auto; align-self:center}
@@ -171,11 +212,11 @@
   }
   .edit-foot .note{font-size:11.5px; color:var(--muted); flex:1 1 200px}
   .tabs{display:flex; gap:2px; padding:0 12px; border-bottom:1px solid var(--line); overflow-x:auto}
-  .tab{padding:10px 13px; font-size:13px; color:var(--muted); border-bottom:2px solid transparent; white-space:nowrap}
+  .tab{padding:11px 14px; font-size:14px; color:var(--muted); border-bottom:2px solid transparent; white-space:nowrap}
   .tab.active{color:var(--text); border-bottom-color:var(--accent); font-weight:600}
-  .tab .count{font-size:11px; opacity:.6; margin-left:3px}
+  .tab .count{font-size:12px; opacity:.6; margin-left:3px}
   .pane{padding:18px 20px; max-height:52vh; overflow:auto}
-  .pane.empty{color:var(--muted); font-size:13px}
+  .pane.empty{color:var(--muted); font-size:14px}
 
   .md h1,.md h2,.md h3{margin:18px 0 8px; line-height:1.3}
   .md h1{font-size:18px} .md h2{font-size:16px} .md h3{font-size:14px; color:var(--muted)}
@@ -183,27 +224,27 @@
   .md p{margin:0 0 10px}
   .md ul,.md ol{margin:0 0 12px; padding-left:22px}
   .md li{margin:3px 0}
-  .md table{border-collapse:collapse; width:100%; margin:6px 0 14px; font-size:13px}
+  .md table{border-collapse:collapse; width:100%; margin:6px 0 14px; font-size:13.5px}
   .md th,.md td{border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top}
   .md th{background:var(--panel-2); font-weight:600}
   .md code{font-family:var(--mono); font-size:12.5px; background:var(--panel-2); padding:1px 5px; border-radius:4px}
   .md hr{border:none; border-top:1px solid var(--line); margin:16px 0}
 
-  .turn{display:grid; grid-template-columns:74px 130px 1fr; gap:10px; padding:7px 0; border-bottom:1px solid var(--line)}
+  .turn{display:grid; grid-template-columns:78px 138px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid var(--line)}
   .turn:last-child{border-bottom:none}
-  .turn .t{font-family:var(--mono); font-size:12px; color:var(--muted)}
-  .turn .s{font-size:12.5px; font-weight:600; color:var(--accent); overflow:hidden; text-overflow:ellipsis}
-  .turn .x{font-size:13.5px}
+  .turn .t{font-family:var(--mono); font-size:12.5px; color:var(--muted)}
+  .turn .s{font-size:13.5px; font-weight:600; color:var(--accent); overflow:hidden; text-overflow:ellipsis}
+  .turn .x{font-size:14.5px}
 
   .speakers{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line); background:var(--panel-2)}
-  .speakers .lbl{font-size:12px; color:var(--muted); align-self:center; margin-right:2px}
+  .speakers .lbl{font-size:13px; color:var(--muted); align-self:center; margin-right:2px}
   .spk{display:flex; align-items:center; gap:6px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:4px 8px}
   .spk input{
-    border:none; background:none; color:var(--text); font:inherit; font-size:12.5px;
-    width:104px; outline:none; border-bottom:1px dashed var(--line); padding:1px 0;
+    border:none; background:none; color:var(--text); font:inherit; font-size:13.5px;
+    width:112px; outline:none; border-bottom:1px dashed var(--line); padding:1px 0;
   }
   .spk input:focus{border-bottom-color:var(--accent)}
-  .spk .m{font-size:11px; color:var(--muted); font-family:var(--mono)}
+  .spk .m{font-size:12px; color:var(--muted); font-family:var(--mono)}
 
   .voice-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
   .voice-list .spk b{font-weight:600; font-size:12.5px}
@@ -219,10 +260,10 @@
   .picker{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding:10px 14px; margin-bottom:12px; border:1px solid var(--line);
     border-radius:12px; background:var(--panel)}
-  .picker label{font-size:13px; color:var(--muted); white-space:nowrap}
+  .picker label{font-size:14px; color:var(--muted); white-space:nowrap}
   .picker select{width:auto; padding:6px 10px; border-radius:8px; border:1px solid var(--line);
-    background:var(--panel-2); color:var(--text); font:inherit; font-size:13px; max-width:100%}
-  .picker .why{font-size:12px; color:var(--muted); flex:1 1 200px; min-width:0}
+    background:var(--panel-2); color:var(--text); font:inherit; font-size:14px; max-width:100%}
+  .picker .why{font-size:13px; color:var(--muted); flex:1 1 200px; min-width:0}
   .picker .acts{display:flex; gap:8px; margin-left:auto; flex:0 0 auto}
   .drawer{
     position:fixed; top:0; right:0; bottom:0; width:min(420px,90vw); background:var(--panel);
@@ -234,37 +275,39 @@
   .drawer .body{padding:16px 20px 32px; overflow:auto; flex:1}
   .drawer .foot{padding:14px 20px; border-top:1px solid var(--line); display:flex; gap:8px}
   .field{margin-bottom:15px}
-  .field label{display:block; font-size:12.5px; color:var(--muted); margin-bottom:5px}
-  .field .hint{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.45}
+  .field label{display:block; font-size:13.5px; color:var(--muted); margin-bottom:5px}
+  .field .hint{font-size:12.5px; color:var(--muted); margin-top:5px; line-height:1.5}
   select,input[type=text],input[type=number],textarea{
     width:100%; padding:8px 10px; border-radius:8px; background:var(--panel-2);
-    border:1px solid var(--line); color:var(--text); font:inherit; font-size:13px; outline:none;
+    border:1px solid var(--line); color:var(--text); font:inherit; font-size:14px; outline:none;
   }
   textarea{resize:vertical; line-height:1.5; min-height:64px}
   select:focus,input:focus,textarea:focus{border-color:var(--accent)}
-  .row{display:flex; align-items:center; gap:9px; margin-bottom:11px; font-size:13px}
+  .row{display:flex; align-items:center; gap:9px; margin-bottom:11px; font-size:14px}
   .row input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
   .group{border-top:1px solid var(--line); margin:18px 0 14px; padding-top:14px}
   .group:first-child{border-top:none; margin-top:0; padding-top:0}
-  .group h3{font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 12px}
+  .group h3{font-size:12.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; font-weight:600}
 
 
   /* ---------- стенографист ---------- */
-  .banner{display:flex; align-items:center; gap:12px; padding:12px 16px; font-size:13.5px;
+  .banner{display:flex; align-items:center; gap:12px; padding:13px 17px; font-size:14px;
           background:var(--accent-soft); border:1px solid var(--accent);
           border-radius:var(--radius); margin-bottom:14px}
   .banner .sp{margin-left:auto; display:flex; gap:8px}
   .rec-card{background:var(--panel); border:1px solid var(--line);
-            border-radius:var(--radius); overflow:hidden; margin-bottom:18px}
-  .rec-card.live{border-color:var(--err)}
+            border-radius:var(--radius); overflow:hidden; margin-bottom:18px;
+            box-shadow:var(--lift)}
+  .rec-card.live{border-color:var(--err);
+            box-shadow:0 1px 2px rgba(0,0,0,.05), 0 14px 34px rgba(200,69,63,.10)}
   .rec-head{display:flex; align-items:center; gap:13px; padding:15px 16px}
   .rec-dot{width:9px; height:9px; border-radius:50%; background:var(--err);
            animation:pulse 1.7s ease-in-out infinite; flex:0 0 auto}
   @keyframes pulse{50%{opacity:.2}}
-  .rec-timer{font-family:var(--mono); font-size:19px; font-variant-numeric:tabular-nums;
+  .rec-timer{font-family:var(--mono); font-size:23px; font-variant-numeric:tabular-nums;
              letter-spacing:-.02em}
-  .rec-title{font-weight:600}
-  .rec-sub{font-size:12px; color:var(--muted); margin-top:2px}
+  .rec-title{font-weight:600; font-size:16px; letter-spacing:-.01em}
+  .rec-sub{font-size:13px; color:var(--muted); margin-top:3px}
   .rec-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
   .rec-body{display:grid; grid-template-columns:1fr 290px; border-top:1px solid var(--line)}
   @media (max-width:860px){ .rec-body{grid-template-columns:1fr} }
@@ -272,44 +315,51 @@
   .rec-notes{padding:14px 18px; border-left:1px solid var(--line);
              background:var(--panel-2); max-height:42vh; overflow:auto}
   @media (max-width:860px){ .rec-notes{border-left:none; border-top:1px solid var(--line)} }
-  .rec-notes h4{margin:0 0 10px; font-size:11px; letter-spacing:.08em;
+  .rec-notes h4{margin:0 0 10px; font-size:12px; letter-spacing:.08em;
                 text-transform:uppercase; color:var(--muted); font-weight:500}
-  .rec-line{display:grid; grid-template-columns:56px 108px 1fr; gap:9px; padding:5px 0;
-            font-size:13.5px; line-height:1.5}
-  .rec-line .t{font-family:var(--mono); font-size:11.5px; color:var(--muted); padding-top:2px}
-  .rec-line .w{font-size:12px; font-weight:600; padding-top:1px}
+  .rec-line{display:grid; grid-template-columns:62px 116px 1fr; gap:12px; padding:6px 0;
+            font-size:14.5px; line-height:1.5}
+  .rec-line .t{font-family:var(--mono); font-size:12.5px; color:var(--muted); padding-top:2px}
+  .rec-line .w{font-size:13.5px; font-weight:600; padding-top:1px}
   .rec-line.me .w{color:var(--accent)}
   .rec-line.them .w{color:var(--ok)}
-  .note-item{margin-bottom:15px; font-size:12.5px; line-height:1.55; color:var(--muted)}
-  .note-item .at{font-family:var(--mono); font-size:11px; color:var(--accent);
+  .note-item{margin-bottom:15px; font-size:13.5px; line-height:1.55; color:var(--muted)}
+  .note-item .at{font-family:var(--mono); font-size:12px; color:var(--accent);
                  display:block; margin-bottom:4px}
-  .rec-empty{color:var(--muted); font-size:13px; padding:8px 0}
+  .rec-empty{color:var(--muted); font-size:14px; padding:8px 0}
+  .rec-card.queue{margin-top:-6px}
+  .queue-head{padding:11px 16px 4px; font-size:12px; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--muted); font-weight:600}
+  .queue-item{display:flex; align-items:center; gap:12px; padding:8px 16px 12px}
+  .queue-item .qt{font-size:14px; font-weight:600; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap}
+  .queue-item .qs{font-size:12.5px; color:var(--muted); margin-top:2px}
 
   /* ---------- кто говорит: разметка по ходу ---------- */
   .people{
     display:flex; align-items:center; gap:6px; flex-wrap:wrap;
     padding:9px 18px; border-bottom:1px solid var(--line); background:var(--panel-2);
   }
-  .people .lbl{font-size:11.5px; color:var(--muted); margin-right:2px}
+  .people .lbl{font-size:12.5px; color:var(--muted); margin-right:2px}
   .person{
-    display:inline-flex; align-items:center; gap:5px; padding:3px 9px; font-size:12.5px;
+    display:inline-flex; align-items:center; gap:6px; padding:5px 12px; font-size:13.5px;
     border-radius:20px; border:1px solid var(--line); background:var(--panel); cursor:pointer;
   }
   .person:hover{border-color:var(--accent); background:var(--accent-soft)}
   .person.on{border-color:var(--accent); background:var(--accent-soft); font-weight:600}
-  .person .n{font-family:var(--mono); font-size:10px; color:var(--muted)}
+  .person .n{font-family:var(--mono); font-size:11px; color:var(--muted)}
   .people input{
-    width:130px; padding:3px 9px; font-size:12.5px; border-radius:20px;
+    width:140px; padding:5px 12px; font-size:13.5px; border-radius:20px;
     border:1px dashed var(--line); background:none;
   }
-  .people .hint{font-size:11px; color:var(--muted); flex:1 1 100%; margin-top:2px}
+  .people .hint{font-size:12.5px; color:var(--muted); flex:1 1 100%; margin-top:4px; line-height:1.5}
   .rec-line{cursor:pointer}
   .rec-line:hover{background:var(--panel-2); border-radius:7px}
   .rec-line.tagged .w{color:var(--accent); font-weight:700}
   .rec-line.picking{background:var(--accent-soft); border-radius:7px}
   .rec-down{position:sticky; bottom:2px; width:max-content; margin:6px auto 0;
-    padding:5px 12px; border-radius:999px; background:var(--accent); color:#fff;
-    font-size:12px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.22)}
+    padding:6px 14px; border-radius:999px; background:var(--accent); color:#fff;
+    font-size:13px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.22)}
   .rec-down[hidden]{display:none}
   .people.voices .lbl{color:var(--muted)}
   .voice-input{font:inherit; font-size:12px; padding:3px 9px; border-radius:999px;
@@ -317,12 +367,12 @@
   .pickbar{
     display:flex; gap:5px; flex-wrap:wrap; padding:6px 0 6px 65px;
   }
-  .pickbar .person{font-size:12px}
+  .pickbar .person{font-size:13px}
 
   .toast{
     position:fixed; bottom:20px; left:50%; transform:translate(-50%,20px); opacity:0;
-    background:var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding:10px 16px; font-size:13px; z-index:50; transition:.2s; pointer-events:none;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:11px 18px; font-size:14px; z-index:50; transition:.2s; pointer-events:none;
     box-shadow:0 8px 30px rgba(0,0,0,.28);
   }
   .toast.show{opacity:1; transform:translate(-50%,0)}
@@ -347,7 +397,12 @@
     </div>
     <div class="side-list" id="lib-list"></div>
     <div class="side-foot">
-      <button class="btn sm ghost" id="btn-lib-folder" style="width:100%" data-t="side.openFolder">Открыть папку с файлами</button>
+      <button class="btn sm ghost" id="btn-lib-folder" style="flex:1" data-t="side.openFolder">Открыть папку с файлами</button>
+      <button class="btn sm ghost" id="btn-trash" title="Корзина" data-t-title="trash.title">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor"
+          d="M6.2 1.5h3.6c.4 0 .7.3.7.7v.6h3c.4 0 .7.3.7.7s-.3.7-.7.7h-.6l-.7 9.1a1.9 1.9 0 0 1-1.9 1.7H5.7a1.9 1.9 0 0 1-1.9-1.7l-.7-9.1h-.6a.7.7 0 0 1 0-1.4h3v-.6c0-.4.3-.7.7-.7Zm-1.6 3 .7 9c0 .3.3.5.5.5h4.4c.3 0 .5-.2.5-.5l.7-9H4.6Zm2.1 1.9c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Zm2.6 0c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Z"/></svg>
+        <span id="trash-count"></span>
+      </button>
     </div>
   </aside>
   <main>
@@ -458,10 +513,27 @@ const STR = {
     'lib.matched': 'найдено',
     'lib.noResultsForQuery': 'По этому запросу ничего нет',
     'lib.emptyHint': 'Здесь появятся разобранные записи — и файлы, и созвоны.',
-    'lib.deleteTitle': 'Убрать запись в Корзину',
+    'rec.queueHeading': 'Разбор записей',
+    'rec.queueWaiting': 'ждёт очереди',
+    'trash.title': 'Корзина',
+    'trash.heading': 'Корзина',
+    'trash.back': 'К записям',
+    'trash.empty': 'Корзина пуста',
+    'trash.hint': 'Удалённые записи лежат здесь {days} дней, потом стираются сами.',
+    'trash.left': 'осталось дней: {n}',
+    'trash.lastDay': 'сотрётся сегодня',
+    'trash.restore': 'Вернуть',
+    'trash.purge': 'Стереть',
+    'trash.purgeAll': 'Очистить',
+    'trash.restored': 'Запись вернулась: {name}',
+    'trash.purged': 'Стёрто навсегда',
+    'trash.failed': 'Не удалось',
+    'trash.confirmPurge': 'стереть?',
+    'trash.filesCount': 'файлов: {n}',
+    'lib.deleteTitle': 'Убрать запись в корзину',
     'lib.confirmDelete': 'удалить?',
     'lib.filesNotFound': 'Файлы этой записи не найдены',
-    'lib.deletedToast': 'Запись убрана в Корзину',
+    'lib.deletedToast': 'Запись в корзине — можно вернуть',
     'lib.deleteFailed': 'Не удалось удалить',
     'lib.folderNotCreated': 'Папка ещё не создана',
 
@@ -706,10 +778,27 @@ const STR = {
     'lib.matched': 'found',
     'lib.noResultsForQuery': 'Nothing matches this search',
     'lib.emptyHint': 'Processed recordings will show up here — files and calls alike.',
-    'lib.deleteTitle': 'Move this recording to the Trash',
+    'rec.queueHeading': 'Processing recordings',
+    'rec.queueWaiting': 'waiting its turn',
+    'trash.title': 'Trash',
+    'trash.heading': 'Trash',
+    'trash.back': 'Back to recordings',
+    'trash.empty': 'The trash is empty',
+    'trash.hint': 'Deleted recordings stay here for {days} days, then go for good.',
+    'trash.left': '{n} days left',
+    'trash.lastDay': 'goes today',
+    'trash.restore': 'Put back',
+    'trash.purge': 'Delete',
+    'trash.purgeAll': 'Empty',
+    'trash.restored': 'Back in place: {name}',
+    'trash.purged': 'Deleted for good',
+    'trash.failed': 'Could not do it',
+    'trash.confirmPurge': 'delete?',
+    'trash.filesCount': '{n} files',
+    'lib.deleteTitle': 'Move this recording to the trash',
     'lib.confirmDelete': 'delete?',
     'lib.filesNotFound': "This recording's files are missing",
-    'lib.deletedToast': 'Recording moved to the Trash',
+    'lib.deletedToast': 'In the trash — you can put it back',
     'lib.deleteFailed': 'Could not delete',
     'lib.folderNotCreated': "The folder hasn't been created yet",
 
@@ -1006,7 +1095,8 @@ async function copySelection(){
 const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
   presets:{items:[],current:'meeting',example:''}, preset:'',
   lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null,
-  editing:new Map(), picking:null, voices:[] };
+  editing:new Map(), picking:null, voices:[],
+  trash:[], trashDays:30, trashOpen:false, trashAsk:null };
 
 /* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
    Python присылает их вместе с саммари; список ниже — запасной вариант. */
@@ -1237,7 +1327,50 @@ function libSub(it){
   return bits.join(' · ');
 }
 
+const TRASH_ICON = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor"
+  d="M6.2 1.5h3.6c.4 0 .7.3.7.7v.6h3c.4 0 .7.3.7.7s-.3.7-.7.7h-.6l-.7 9.1a1.9 1.9 0 0 1-1.9 1.7H5.7a1.9 1.9 0 0 1-1.9-1.7l-.7-9.1h-.6a.7.7 0 0 1 0-1.4h3v-.6c0-.4.3-.7.7-.7Zm-1.6 3 .7 9c0 .3.3.5.5.5h4.4c.3 0 .5-.2.5-.5l.7-9H4.6Zm2.1 1.9c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Zm2.6 0c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Z"/></svg>`;
+
+/* Корзина живёт в той же панели: список записей подменяется списком удалённых,
+   чтобы не заводить ещё одно окно ради четырёх строк. */
+function renderTrash(){
+  const list=$('#lib-list'), count=$('#lib-count');
+  const items=state.trash||[];
+  count.textContent = T('trash.hint',{days:state.trashDays});
+  if(!items.length){
+    list.innerHTML=`<div class="side-empty">${T('trash.empty')}</div>`;
+    return;
+  }
+  const askAll = state.trashAsk==='';
+  const head=`<div class="trash-head"><b>${T('trash.heading')}</b>
+    <button class="btn sm ghost ${askAll?'ask':''}" data-purge=""
+      >${askAll?T('trash.confirmPurge'):T('trash.purgeAll')}</button></div>`;
+  list.innerHTML=head+items.map(it=>{
+    const ask=state.trashAsk===it.id;
+    const left = it.days_left>0 ? T('trash.left',{n:it.days_left}) : T('trash.lastDay');
+    return `<div class="trash-item">
+      <div class="t">${esc(it.title)}</div>
+      <div class="s">${esc(it.when)} · ${left} · ${T('trash.filesCount',{n:it.files})}</div>
+      <div class="acts">
+        <button class="btn sm" data-restore="${it.id}">${T('trash.restore')}</button>
+        <button class="btn sm ghost ${ask?'ask':''}" data-purge="${it.id}"
+          >${ask?T('trash.confirmPurge'):T('trash.purge')}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadTrash(){
+  try{
+    const r=await api().trash();
+    state.trash=r.items||[]; state.trashDays=r.days||30;
+  }catch(e){ state.trash=[]; }
+  const badge=$('#trash-count');
+  if(badge) badge.textContent = state.trash.length ? ` ${state.trash.length}` : '';
+  if(state.trashOpen) renderTrash();
+}
+
 function renderLib(){
+  if(state.trashOpen){ renderTrash(); return; }
   const list=$('#lib-list'), count=$('#lib-count');
   const items=state.lib||[];
   count.textContent = state.libQuery
@@ -1258,7 +1391,7 @@ function renderLib(){
       ${it.preview?`<span class="lib-prev">${esc(it.preview)}${
         it.matched?` <span class="lib-hit">· ${T('lib.matched')} ${esc(it.matched)}</span>`:''}</span>`:''}
       <button class="lib-del ${ask?'ask':''}" data-libdel="${it.id}"
-        title="${T('lib.deleteTitle')}">${ask?T('lib.confirmDelete'):'×'}</button>
+        title="${T('lib.deleteTitle')}">${ask?T('lib.confirmDelete'):TRASH_ICON}</button>
     </div>`;
   }).join('');
 }
@@ -1298,6 +1431,7 @@ async function deleteLib(id){
     state.jobs.delete(id);                  // id записи и id карточки совпадают
     if(state.libOpen===id) state.libOpen=null;
     toast(T('lib.deletedToast'));
+    loadTrash();
   } else toast((r&&r.error)||T('lib.deleteFailed'));
   await loadLib();
   render();
@@ -1628,7 +1762,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -1676,6 +1810,22 @@ document.addEventListener('click', async ev=>{
     return;
   }
   if(t.dataset.libdel){ ev.stopPropagation(); await deleteLib(t.dataset.libdel); return; }
+  if(t.dataset.restore){
+    const r=await api().trash_restore(t.dataset.restore);
+    toast(r && r.ok ? T('trash.restored',{name:r.title||''}) : ((r&&r.error)||T('trash.failed')));
+    await loadTrash(); await loadLib(); render(); return;
+  }
+  if(t.dataset.purge!==undefined){
+    // Первый клик спрашивает, второй стирает: вернуть уже будет неоткуда.
+    const id=t.dataset.purge;   // пустой id — очистить всё
+    if(state.trashAsk!==id){ state.trashAsk=id; renderTrash(); setTimeout(()=>{
+      if(state.trashAsk===id){ state.trashAsk=null; renderTrash(); }
+    }, 4000); return; }
+    state.trashAsk=null;
+    const r=await api().trash_purge(id);
+    toast(r && r.ok ? T('trash.purged') : ((r&&r.error)||T('trash.failed')));
+    await loadTrash(); return;
+  }
   if(t.dataset.lib){ await openLib(t.dataset.lib); return; }
   if(t.dataset.pick){
     const idx=Number(t.dataset.pick);
@@ -1886,6 +2036,7 @@ function renderRec(){
       </div>`;
     if(r && r.state==='done' && r.line_count) html+=recResult(r);
     html+=`</div>`;
+    html+=queueHTML(r);
     el.innerHTML=html; return;
   }
 
@@ -1926,6 +2077,7 @@ function renderRec(){
   html+=`</div></div>`;
   if(r.error) html+=`<div class="err-line">${esc(r.error)}</div>`;
   html+=`</div>`;
+  html+=queueHTML(r);
   el.innerHTML=html;
 
   const pane=$('#rec-live');
@@ -1968,6 +2120,22 @@ function renderRec(){
     const session=await api().rec_people([...(state.rec.people||[]), name]);
     if(session){ setRec(session); renderRec(); }
   };
+}
+
+/* Разбор прошлой записи идёт фоном и уступает дорогу живой: показываем это
+   строкой, чтобы человек видел, что запись не потерялась. */
+function queueHTML(r){
+  const items=(r && r.queue)||[];
+  if(!items.length) return '';
+  return `<div class="rec-card queue">
+    <div class="queue-head">${T('rec.queueHeading')}</div>` +
+    items.map(q=>`<div class="queue-item">
+      <div class="spin"></div>
+      <div style="min-width:0">
+        <div class="qt">${esc(q.title||'')}</div>
+        <div class="qs">${esc(q.message||T('rec.queueWaiting'))}</div>
+      </div>
+    </div>`).join('') + `</div>`;
 }
 
 function voicesHTML(r){
@@ -2105,6 +2273,12 @@ async function refreshEnv(){
   finally{ envBusy=false; }
 }
 $('#chips').onclick=async()=>{ await refreshEnv(); toast(T('chips.checked')); };
+$('#btn-trash').onclick=async()=>{
+  state.trashOpen=!state.trashOpen; state.trashAsk=null;
+  $('#btn-trash').classList.toggle('primary', state.trashOpen);
+  if(state.trashOpen){ await loadTrash(); renderTrash(); }
+  else { $('#lib-count').textContent=''; renderLib(); }
+};
 window.addEventListener('focus', refreshEnv);
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refreshEnv(); });
 setInterval(()=>{ if(!document.hidden) refreshEnv(); }, 30000);
@@ -2120,6 +2294,7 @@ window.addEventListener('pywebviewready', async()=>{
   state.rec=await api().rec_state();
   renderChips(); render();
   loadLib();
+  loadTrash();
 });
 </script>
 </body>

@@ -380,25 +380,55 @@ class Stenographer:
         self._lock = threading.Lock()
         self._voice_model = None
         self._voice_library: dict | None = None
+        # Разбор записи идёт отдельно от самой записи: разговор не ждёт, а
+        # разбор — подождёт. Иначе новый созвон, начавшийся сразу после
+        # предыдущего, приходится пропускать, пока считается прошлый.
+        self.queue: list[Session] = []
+        self._busy: Session | None = None
+        self._processor: threading.Thread | None = None
+        self._wake = threading.Event()
 
     # --- события ---------------------------------------------------------
 
-    def _emit(self, event: str = "record") -> None:
-        if self.listener and self.session:
+    def _emit(self, event: str = "record", session: Session | None = None) -> None:
+        # Окно показывает одну запись — ту, что человек ведёт сейчас. Разбор
+        # прошлой идёт фоном, и его сообщения приходят внутри той же карточки,
+        # строкой очереди: иначе окно перескакивало бы на чужую запись.
+        shown = self.session or session
+        if session is not None and self.session is not None \
+                and session is not self.session and self.session.state != "recording":
+            shown = session
+        if self.listener and shown:
             try:
-                self.listener(event, self.session.snapshot())
+                self.listener(event, self.snapshot_of(shown))
             except Exception:
                 pass
 
-    def _say(self, message: str) -> None:
-        if self.session:
-            self.session.message = message
-            self._emit()
+    def _say(self, message: str, session: Session | None = None) -> None:
+        target = session or self.session
+        if target:
+            target.message = message
+            self._emit(session=target)
+
+    def snapshot_of(self, session: Session) -> dict:
+        """Снимок сессии вместе с очередью разбора — окно показывает обе."""
+        data = session.snapshot()
+        data["queue"] = [{"id": item.id, "title": item.title,
+                          "message": item.message, "state": item.state}
+                         for item in ([self._busy] if self._busy else []) + list(self.queue)
+                         if item is not session]
+        return data
 
     # --- управление ------------------------------------------------------
 
     def is_active(self) -> bool:
-        return self.session is not None and self.session.state in ("recording", "finishing")
+        """Идёт ли запись прямо сейчас. Разбор прошлой записи этому не мешает:
+        он ушёл в очередь и подождёт."""
+        return self.session is not None and self.session.state == "recording"
+
+    def busy_with(self) -> list[Session]:
+        """Что сейчас разбирается и что ждёт очереди."""
+        return ([self._busy] if self._busy else []) + list(self.queue)
 
     def start(self, title: str = "", preset: str = "", mode: str = "call") -> dict:
         with self._lock:
@@ -509,7 +539,7 @@ class Stenographer:
             ready = self._ready(mic_path, sys_path)
             if ready > offset:
                 self._consume(mic_path, sys_path, offset, ready, final=True)
-            self._finish()
+            self._enqueue(session)
 
         except Exception as exc:
             self._terminate_helper()
@@ -517,6 +547,64 @@ class Stenographer:
             session.error = str(exc)
             session.message = i18n.t("state.error")
             self._emit()
+
+    # --- очередь разбора --------------------------------------------------
+
+    def _enqueue(self, session: Session) -> None:
+        """Ставит запись в очередь на разбор и будит обработчик."""
+        session.state = "queued"
+        session.message = i18n.t("rec.queued")
+        with self._lock:
+            self.queue.append(session)
+            if self._processor is None or not self._processor.is_alive():
+                self._processor = threading.Thread(target=self._process_queue,
+                                                   daemon=True)
+                self._processor.start()
+        self._wake.set()
+        self._emit(session=session)
+
+    def _process_queue(self) -> None:
+        """Разбирает записи по одной, уступая дорогу живой записи."""
+        while True:
+            with self._lock:
+                self._busy = self.queue.pop(0) if self.queue else None
+                session = self._busy
+            if session is None:
+                self._wake.clear()
+                if not self._wake.wait(30):
+                    with self._lock:
+                        if not self.queue:
+                            self._processor = None
+                            return
+                continue
+            try:
+                self._finish(session)
+            except Exception as exc:
+                session.state = "error"
+                session.error = str(exc)
+                session.message = i18n.t("state.error")
+                self._emit(session=session)
+            finally:
+                with self._lock:
+                    self._busy = None
+                self._emit()
+
+    def _hold(self, session: Session) -> None:
+        """Ждёт, пока идёт живая запись: она важнее разбора.
+
+        Проверяется между этапами, а не внутри них: остановить Whisper на
+        середине нельзя, но между «собрать звук», «разделить голоса» и
+        «саммари» пауза безопасна и почти незаметна.
+        """
+        told = False
+        while self.session is not None and self.session is not session \
+                and self.session.state == "recording":
+            if not told:
+                self._say(i18n.t("rec.paused"), session)
+                told = True
+            time.sleep(2.0)
+        if told:
+            self._say(i18n.t("rec.resumed"), session)
 
     def _ready(self, mic_path: Path, sys_path: Path) -> int:
         """Сколько байт можно разбирать.
@@ -946,7 +1034,8 @@ class Stenographer:
         return out
 
     def apply_names(self, audio: np.ndarray, keys: dict[int, str],
-                    names: dict[str, str], only: str | None = None) -> dict[str, str]:
+                    names: dict[str, str], only: str | None = None,
+                    session: Session | None = None) -> dict[str, str]:
         """Подставляет имена, расставленные по ходу, всей записи целиком.
 
         Сравниваем отмеченные куски речи с **каждой репликой отдельно**, а не с
@@ -959,7 +1048,7 @@ class Stenographer:
         больше половины узнанного времени. Так одна ошибка на реплике не
         переименовывает всю запись.
         """
-        session = self.session
+        session = session or self.session
         assert session is not None
         enrolled = self._enrolled()
         if not enrolled:
@@ -1034,9 +1123,10 @@ class Stenographer:
 
     # --- кто говорил на встрече -------------------------------------------
 
-    def split_room(self, audio: np.ndarray) -> tuple[dict[int, str], dict[str, str]]:
+    def split_room(self, audio: np.ndarray,
+                   session: Session | None = None) -> tuple[dict[int, str], dict[str, str]]:
         """Разбирает запись встречи по голосам — так же, как обычный файл."""
-        session = self.session
+        session = session or self.session
         assert session is not None
         keys = dict.fromkeys(range(len(session.lines)), "S1")
         names = {"S1": i18n.d("speaker", self.settings.doc_lang, n=1)}
@@ -1074,7 +1164,8 @@ class Stenographer:
 
     # --- кто именно говорил на той стороне --------------------------------
 
-    def split_others(self, spk: np.ndarray) -> tuple[dict[int, str], dict[str, str]]:
+    def split_others(self, spk: np.ndarray,
+                     session: Session | None = None) -> tuple[dict[int, str], dict[str, str]]:
         """Разбирает системную дорожку по голосам.
 
         Своя дорожка — это всегда я, а вот «собеседник» на созвоне почти
@@ -1086,7 +1177,7 @@ class Stenographer:
 
         Возвращает: номер реплики -> ключ спикера и ключи -> подписи.
         """
-        session = self.session
+        session = session or self.session
         assert session is not None
         keys = {i: ("S1" if line.who == "me" else "S2")
                 for i, line in enumerate(session.lines)}
@@ -1152,11 +1243,10 @@ class Stenographer:
 
     # --- завершение ------------------------------------------------------
 
-    def _finish(self) -> None:
-        session = self.session
-        assert session is not None
+    def _finish(self, session: Session) -> None:
         session.state = "finishing"
-        self._say(i18n.t("rec.assembling"))
+        self._hold(session)
+        self._say(i18n.t("rec.assembling"), session)
 
         mic = _to_float((session.directory / "mic.pcm").read_bytes()
                         if (session.directory / "mic.pcm").exists() else b"")
@@ -1176,11 +1266,13 @@ class Stenographer:
         _write_wav(audio_path, mixed)
 
         room = session.mode == "room"
-        keys, names = self.split_room(mixed) if room else self.split_others(spk)
+        self._hold(session)
+        keys, names = (self.split_room(mixed, session) if room
+                       else self.split_others(spk, session))
 
         # Имена, расставленные по ходу, распространяем на всю запись по голосу.
         names = self.apply_names(mixed if room else spk, keys, names,
-                                 only=None if room else "them")
+                                 only=None if room else "them", session=session)
         if not room:
             # Своя дорожка — это я по определению, голос сверять не нужно.
             mine = next((line.speaker for line in session.lines
@@ -1224,6 +1316,7 @@ class Stenographer:
 
         summary = None
         if self.settings["summary_enabled"] and session.lines:
+            self._hold(session)
             # Молчащий спиннер выглядит как зависание, поэтому считаем секунды.
             ticking = threading.Event()
             started = time.time()
@@ -1231,7 +1324,7 @@ class Stenographer:
             def tick() -> None:
                 while not ticking.wait(3):
                     self._say(i18n.t("rec.summarising",
-                                     seconds=int(time.time() - started)))
+                                     seconds=int(time.time() - started)), session)
 
             threading.Thread(target=tick, daemon=True).start()
             try:
@@ -1252,7 +1345,7 @@ class Stenographer:
         # у модели тему разговора и ставим её перед датой — дата остаётся,
         # чтобы записи по-прежнему выстраивались по времени.
         if summary and not session.renamed:
-            self._say(i18n.t("rec.naming"))
+            self._say(i18n.t("rec.naming"), session)
             topic = summarize.suggest_title(summary.markdown, self.settings)
             if topic:
                 stem, audio_path = self._retitle(session, topic, out_dir, audio_path)
@@ -1265,7 +1358,7 @@ class Stenographer:
         session.files["audio"] = str(audio_path)
         session.state = "done"
         session.message = i18n.t("state.done")
-        self._emit()
+        self._emit(session=session)
         shutil.rmtree(session.directory, ignore_errors=True)
 
 

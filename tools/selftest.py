@@ -348,6 +348,34 @@ def main() -> int:
                                   f"файлов убрано: {gone.get('removed')}, "
                                   f"осталось записей: {len(left)}")
 
+            # --- корзина: удалённое лежит рядом и возвращается ---
+            waste = library.trash(out_dir)
+            failures += not check("удалённое попало в корзину", len(waste) == 1,
+                                  ", ".join(w["title"] for w in waste))
+            failures += not check("в корзине видно, сколько осталось дней",
+                                  waste and waste[0]["days_left"] == 30,
+                                  str(waste[0]["days_left"]) if waste else "")
+            back = library.restore(out_dir, waste[0]["id"])
+            titles = [i["id"] for i in library.entries(out_dir)]
+            failures += not check("запись возвращается из корзины",
+                                  back.get("ok") and copy["id"] in titles,
+                                  f"вернулось файлов: {back.get('restored')}")
+            failures += not check("после возврата корзина пуста",
+                                  not library.trash(out_dir))
+
+            library.delete(out_dir, copy["id"])
+            waste = library.trash(out_dir)
+            # Срок вышел — выметаем сами, не дожидаясь человека.
+            box = Path(out_dir) / library.TRASH_NAME / waste[0]["id"]
+            meta = json.loads((box / library.TRASH_META).read_text("utf-8"))
+            meta["deleted_at"] = time.time() - 31 * 86400
+            (box / library.TRASH_META).write_text(json.dumps(meta, ensure_ascii=False), "utf-8")
+            failures += not check("пролежавшее месяц стирается само",
+                                  library.sweep(out_dir, 30) == 1
+                                  and not library.trash(out_dir))
+            failures += not check("после корзины запись не воскресает в архиве",
+                                  copy["id"] not in [i["id"] for i in library.entries(out_dir)])
+
     print("\n9. Созвон: кто из собеседников говорил")
     lines = [
         record.Line(0, 4, "me", "Привет, все на месте?"),
@@ -836,6 +864,41 @@ def main() -> int:
 
     voices.STORE.unlink(missing_ok=True)
     voices.STORE = real_store
+
+    print("\n18. Очередь разбора: новый созвон важнее")
+    # Разбор прошлой записи не должен запирать микрофон: пока идёт разговор,
+    # он ждёт, а после — доделывается сам. Проверяем правило, а не звук.
+    queue = record.Stenographer(settings)
+    first = record.Session(id="a", started_at=time.time(),
+                           directory=Path("/tmp/selftest-rec"), title="Первый")
+    second = record.Session(id="b", started_at=time.time(),
+                            directory=Path("/tmp/selftest-rec"), title="Второй")
+    queue.session = first
+    failures += not check("во время записи начать вторую нельзя", queue.is_active())
+    first.state = "queued"
+    queue.queue.append(first)
+    failures += not check("пока прошлая разбирается, запись начать можно",
+                          not queue.is_active())
+    queue.session = second          # человек начал новый созвон
+    held = threading.Event()
+    threading.Thread(target=lambda: (queue._hold(first), held.set()), daemon=True).start()
+    time.sleep(0.5)
+    failures += not check("разбор встал на паузу, пока идёт запись",
+                          not held.is_set() and first.message == i18n.t("rec.paused"),
+                          first.message)
+    second.state = "queued"         # запись закончилась
+    failures += not check("после записи разбор продолжается",
+                          held.wait(6) and first.message == i18n.t("rec.resumed"),
+                          first.message)
+    queue.session = second
+    queue.queue.clear()
+    snapshot = queue.snapshot_of(second)
+    queue.queue.append(first)
+    snapshot = queue.snapshot_of(second)
+    failures += not check("окно видит очередь разбора",
+                          [q["title"] for q in snapshot["queue"]] == ["Первый"],
+                          str(snapshot["queue"]))
+
 
     asr.transcribe = real
     server.shutdown()

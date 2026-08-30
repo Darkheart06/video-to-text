@@ -15,8 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +25,14 @@ from . import i18n, merge, presets, render
 # можно спокойно удалить.
 INDEX_NAME = ".library.json"
 RESULT_SUFFIX = ".result.json"
+
+# Своя корзина рядом с записями. Раньше файлы уходили в системную Корзину, и
+# вернуть их можно было только через Finder — вслепую, по именам файлов. Здесь
+# запись лежит целиком, со своим описанием, и возвращается на место одной
+# кнопкой. Точка в начале имени прячет папку от глаз и от поиска по архиву.
+TRASH_NAME = ".trash"
+TRASH_META = "meta.json"
+TRASH_DAYS = 30
 
 # Какой файл к какому месту в карточке относится.
 SUFFIXES = [
@@ -387,7 +393,7 @@ def _turns_of(data: dict) -> list[merge.Turn]:
 # --- удаление ---------------------------------------------------------------
 
 def delete(where, entry_id: str) -> dict:
-    """Убирает запись целиком — со всеми файлами, в Корзину, а не насовсем."""
+    """Убирает запись в корзину приложения — целиком и с возможностью вернуть."""
     path = _path_of(where, entry_id)
     if path is None:
         return {"ok": False, "error": i18n.t("lib.missing")}
@@ -396,37 +402,138 @@ def delete(where, entry_id: str) -> dict:
     if not targets:
         return {"ok": False, "error": i18n.t("lib.gone")}
 
-    removed = _to_trash(targets)
+    entry = _read_entry(path, path.stat().st_mtime)
+    box = _trash_dir(path.parent) / f"{int(time.time())}-{entry_id}"
+    box.mkdir(parents=True, exist_ok=True)
+    moved = []
+    for target in targets:
+        source = Path(target)
+        try:
+            source.replace(box / source.name)
+            moved.append(source.name)
+        except OSError:
+            continue
+    (box / TRASH_META).write_text(json.dumps({
+        "id": box.name,
+        "title": (entry or {}).get("title") or stem,
+        "stem": stem,
+        "home": str(path.parent),
+        "deleted_at": time.time(),
+        "files": moved,
+    }, ensure_ascii=False), "utf-8")
+
     for target in targets:
         _cache.pop(target, None)
         _text_cache.pop(target, None)
     index = _load_index(path.parent)
     index.pop(str(path), None)
     _save_index(path.parent, index)
-    return {"ok": True, "removed": removed, "title": stem}
+    return {"ok": True, "removed": len(moved), "title": (entry or {}).get("title") or stem}
 
 
-def _to_trash(targets: list[str]) -> int:
-    """На маке отправляем в Корзину: удалить безвозвратно чужие файлы — плохая
-    идея, человек может передумать."""
-    if sys.platform == "darwin":
-        items = ", ".join(f'POSIX file "{t}"' for t in targets)
-        script = f'tell application "Finder" to delete {{{items}}}'
+# --- корзина ----------------------------------------------------------------
+
+def _trash_dir(folder: Path) -> Path:
+    return Path(folder) / TRASH_NAME
+
+
+def _boxes(where) -> list[Path]:
+    found = []
+    for folder in _folders(where):
+        trash = _trash_dir(folder)
+        if trash.exists():
+            found += [box for box in trash.iterdir() if (box / TRASH_META).exists()]
+    return found
+
+
+def trash(where, days: int = TRASH_DAYS, lang: str = "") -> list[dict]:
+    """Что лежит в корзине. Заодно выметает то, чей срок вышел."""
+    sweep(where, days)
+    lang = i18n.pick(lang, i18n.current())
+    items = []
+    for box in _boxes(where):
+        meta = _load_json(box / TRASH_META) or {}
+        # Считаем прожитые сутки, а не доли: запись, удалённая минуту назад,
+        # должна показывать полный срок, а не «осталось 29».
+        lived = int((time.time() - float(meta.get("deleted_at") or 0)) // 86400)
+        left = max(0, days - lived)
+        items.append({
+            "id": box.name,
+            "title": meta.get("title") or box.name,
+            "when": _when("", float(meta.get("deleted_at") or 0)),
+            "days_left": left,
+            "files": len(meta.get("files") or []),
+        })
+    items.sort(key=lambda item: item["id"], reverse=True)
+    return items
+
+
+def restore(where, trash_id: str) -> dict:
+    """Возвращает запись туда, откуда её удалили."""
+    for box in _boxes(where):
+        if box.name != trash_id:
+            continue
+        meta = _load_json(box / TRASH_META) or {}
+        home = Path(meta.get("home") or "")
+        if not home.exists():
+            # Папку могли переименовать или перенести — кладём к остальным.
+            folders = _folders(where)
+            if not folders:
+                return {"ok": False, "error": i18n.t("lib.missing")}
+            home = folders[0]
+        back = 0
+        for item in box.iterdir():
+            if item.name == TRASH_META:
+                continue
+            target = home / item.name
+            # Запись с таким именем могли завести заново — не затираем её.
+            if target.exists():
+                target = home / f"{target.stem} (2){target.suffix}"
+            try:
+                item.replace(target)
+                back += 1
+            except OSError:
+                continue
+        _drop(box)
+        return {"ok": True, "restored": back, "title": meta.get("title") or trash_id}
+    return {"ok": False, "error": i18n.t("lib.missing")}
+
+
+def purge(where, trash_id: str = "") -> dict:
+    """Удаляет из корзины навсегда — одну запись или всё."""
+    gone = 0
+    for box in _boxes(where):
+        if trash_id and box.name != trash_id:
+            continue
+        _drop(box)
+        gone += 1
+    return {"ok": True, "removed": gone}
+
+
+def sweep(where, days: int = TRASH_DAYS) -> int:
+    """Выметает записи, пролежавшие в корзине дольше срока."""
+    if days <= 0:
+        return 0
+    limit = time.time() - days * 86400
+    gone = 0
+    for box in _boxes(where):
+        meta = _load_json(box / TRASH_META) or {}
+        if float(meta.get("deleted_at") or 0) < limit:
+            _drop(box)
+            gone += 1
+    return gone
+
+
+def _drop(box: Path) -> None:
+    for item in box.iterdir():
         try:
-            done = subprocess.run(["osascript", "-e", script],
-                                  capture_output=True, timeout=30)
-            if done.returncode == 0:
-                return len(targets)
-        except Exception:
-            pass
-    removed = 0
-    for target in targets:
-        try:
-            Path(target).unlink()
-            removed += 1
+            item.unlink()
         except OSError:
             pass
-    return removed
+    try:
+        box.rmdir()
+    except OSError:
+        pass
 
 
 # --- сохранённый список -----------------------------------------------------

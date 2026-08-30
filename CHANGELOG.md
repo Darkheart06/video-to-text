@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.4.0] — 2026-08-30
+
+### Added
+
+- **A trash you can actually undo.** Deleting a recording used to hand the files
+  to the system Trash, where putting them back meant hunting through Finder by
+  filename. Now they go to the app's own trash: the whole recording in one
+  place, listed with the day it goes for good, back in the archive with one
+  press. Anything untouched for 30 days is swept out on its own (`trash_days`).
+  The delete control is a trash icon instead of a cross.
+- **A new call no longer waits for the last one to finish.** Processing a
+  recording — splitting voices, writing the summary — used to hold the recorder
+  hostage: a call starting right after another could not be recorded until the
+  previous one was done. Processing now runs in its own queue, steps aside the
+  moment a new recording starts, and picks up where it left off afterwards.
+  Waiting recordings are listed under the live card, so nothing looks lost.
+
+### Changed
+
+- **The window was redesigned and the type is bigger.** A calmer light-first
+  surface, air and hairlines instead of boxes, one accent colour on the action.
+  Everything that was hard to read grew: transcript lines 12.5 → 14 px, archive
+  captions 11 → 12.5, the recording clock 19 → 23. Both themes.
+- **Onest instead of the system face.** The font ships inside the app — the
+  promise of working without a network covers letters too. SIL OFL, so it
+  travels with the app legally; the licence is in `app/ui/fonts`.
+
 ## [1.3.1] — 2026-08-28
 
 ### Fixed

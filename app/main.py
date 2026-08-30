@@ -61,7 +61,8 @@ class Api:
             was_busy = busy
 
     def rec_state(self) -> dict | None:
-        return self.steno.session.snapshot() if self.steno.session else None
+        session = self.steno.session
+        return self.steno.snapshot_of(session) if session else None
 
     def rec_permissions(self) -> dict:
         return {**record.permissions(), "helper": record.helper_ready()}
@@ -311,6 +312,29 @@ class Api:
     def library_delete(self, entry_id: str) -> dict:
         try:
             return library.delete(self.settings.library_paths, entry_id)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    # --- корзина -----------------------------------------------------------
+
+    def trash(self) -> dict:
+        """Что лежит в корзине и сколько ему осталось там лежать."""
+        try:
+            days = int(self.settings.get("trash_days", 30))
+            return {"items": library.trash(self.settings.library_paths, days,
+                                           self.settings.ui_lang), "days": days}
+        except Exception as exc:
+            return {"items": [], "error": str(exc)}
+
+    def trash_restore(self, trash_id: str) -> dict:
+        try:
+            return library.restore(self.settings.library_paths, str(trash_id or ""))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def trash_purge(self, trash_id: str = "") -> dict:
+        try:
+            return library.purge(self.settings.library_paths, str(trash_id or ""))
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
