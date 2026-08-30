@@ -93,8 +93,22 @@ def _lines(markdown: str) -> list[str]:
     return found
 
 
+# Сколько букв слова считаем корнем. Документ и расшифровка почти никогда не
+# совпадают дословно: в решении «обсуждение остановлено», а в реплике —
+# «остановить». По целым словам это разные слова, и метка не ставилась там, где
+# человек её ждёт. Пять букв — та длина, на которой русские формы одного слова
+# сходятся, а разные слова ещё расходятся.
+STEM = 5
+
+
 def _words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[\w-]{3,}", (text or "").lower()) if w not in STOP}
+    """Корни значимых слов: по ним и сравниваем пункт с репликой."""
+    out = set()
+    for word in re.findall(r"[\w-]{3,}", (text or "").lower()):
+        if word in STOP:
+            continue
+        out.add(word[:STEM])
+    return out
 
 
 def _when(line: str, spoken: list[tuple[float, set[str]]]) -> tuple[float | None, float]:

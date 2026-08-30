@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.1] — 2026-08-30
+
+### Fixed
+
+- **Screen recording produced an unplayable file.** The first real recording
+  came out as an mp4 that no player would open: the frames were there, the
+  index was not. ScreenCaptureKit delivers frames in bursts, and two of them
+  landing inside the same 1/600 of a second gave the encoder a repeated
+  timestamp. That single rejected frame put the writer into a failed state,
+  after which every later frame was dropped and the file was never closed —
+  all of it silently, because none of the return values were checked. Frame
+  timestamps are now forced to increase strictly, every rejection is reported,
+  and the video is finalised before anything else during shutdown, so a slow
+  `stopCapture` can no longer cost the whole recording.
+- **A broken video is no longer offered as if it worked.** An mp4 without its
+  index is checked for and removed instead of being listed among the files and
+  loaded into the player as a black rectangle.
+- **The capture helper now keeps a log** (`.work/capture.log`, local as
+  everything else). Its output used to be read only when it crashed, so a
+  failure in the middle of a call left no trace at all. Reading the stream
+  continuously also removes the risk of the helper blocking on a full pipe.
+- **Markers now match words in a different grammatical form.** A decision
+  recorded as «обсуждение остановлено» was not matched to the line where
+  someone said «остановить», so the marker people expected most was the one
+  that went missing. Matching is done on word stems now.
+
 ## [1.6.0] — 2026-08-30
 
 ### Added

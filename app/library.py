@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import i18n, merge, presets, render
+from . import i18n, media, merge, presets, render
 
 # Скрытый список рядом с записями: он только ускоряет открытие папки, и его
 # можно спокойно удалить.
@@ -322,8 +322,14 @@ def files_of(directory: Path, stem: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for suffix, key in SUFFIXES:
         candidate = directory / f"{stem}{suffix}"
-        if candidate.exists():
-            out[key] = str(candidate)
+        if not candidate.exists():
+            continue
+        # Недописанная запись экрана в список не попадает: плеер на ней всё
+        # равно покажет чёрный прямоугольник, а в файлах она выглядит как
+        # обещание, которого никто не выполнит.
+        if key == "video" and not media.playable_mp4(candidate):
+            continue
+        out[key] = str(candidate)
     return out
 
 

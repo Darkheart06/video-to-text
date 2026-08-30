@@ -912,6 +912,44 @@ def main() -> int:
                           and Path(job.files["chapters"]).read_text("utf-8").startswith("WEBVTT")
                           if job.marks else True,
                           f"меток у записи: {len(job.marks)}")
+    # Документ и расшифровка почти никогда не совпадают дословно: в решении
+    # «остановлено», в реплике «остановить». По целым словам метка терялась
+    # ровно там, где человек её ждёт.
+    formed = marks_module.build(
+        [merge.Turn(start=28, end=39, speaker=0, text="Кто на связи, я буду"),
+         merge.Turn(start=40, end=43, speaker=0, text="Остановить")],
+        {"decisions": "- Обсуждение остановлено."}, [], "ru")
+    failures += not check("метка находит слово в другой форме",
+                          [m["at"] for m in formed] == [40.0],
+                          str(formed))
+
+    print("\n22. Целость записи экрана")
+    # Помощник дописывает оглавление mp4 последним действием. Если запись
+    # оборвалась, кадры остаются, оглавления нет — и такой файл не открывает
+    # ни один плеер, хотя весит мегабайты. Раньше он молча попадал в карточку.
+    broken = Path("/tmp/selftest-broken.mp4")
+    broken.write_bytes(bytes.fromhex("0000001c667479706d70343200000001")
+                       + b"isommp41mp42" + bytes.fromhex("00000008")
+                       + b"wide" + bytes.fromhex("00000000") + b"mdat" + b"\0" * 512)
+    whole = Path("/tmp/selftest-whole.mp4")
+    whole.write_bytes(bytes.fromhex("0000001c667479706d70343200000001")
+                      + b"isommp41mp42" + (16).to_bytes(4, "big") + b"mdat" + b"\0" * 8
+                      + (16).to_bytes(4, "big") + b"moov" + b"\0" * 8)
+    failures += not check("недописанный mp4 распознаётся как битый",
+                          not media.playable_mp4(broken))
+    failures += not check("дописанный mp4 признаётся годным",
+                          media.playable_mp4(whole))
+    failures += not check("несуществующего файла проверка не роняет",
+                          not media.playable_mp4(Path("/tmp/нет-такого.mp4")))
+    shot = Path(job.files["result"]).with_suffix("")
+    stem_dir, stem_name = shot.parent, shot.name.replace(".result", "")
+    (stem_dir / f"{stem_name}.mp4").write_bytes(broken.read_bytes())
+    failures += not check("битая запись экрана в карточку не попадает",
+                          "video" not in library.files_of(stem_dir, stem_name),
+                          str(library.files_of(stem_dir, stem_name).get("video")))
+    (stem_dir / f"{stem_name}.mp4").unlink(missing_ok=True)
+    broken.unlink(missing_ok=True)
+    whole.unlink(missing_ok=True)
 
     print("\n19. Документы к записи")
     # Половина задач на созвоне ссылается на документ, который живёт отдельно.

@@ -150,7 +150,7 @@ step_bundle(){
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>Расшифровка записей</string>
   <key>CFBundleIdentifier</key><string>local.videototext.app</string>
-  <key>CFBundleVersion</key><string>1.6.0</string>
+  <key>CFBundleVersion</key><string>1.6.1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>launcher</string>

@@ -48,6 +48,25 @@ HELPER = Path(os.environ.get("V2T_HELPER") or (media.BUNDLED_BIN / "v2t-capture"
 
 Listener = Callable[[str, dict], None]
 
+# Журнал захвата. Наружу ничего не уходит: это обычный файл рядом с рабочей
+# папкой, куда помощник складывает свои сообщения. Без него поломка записи
+# экрана видна только по битому mp4 — а по нему не понять ровно ничего.
+LOG_FILE = WORK_DIR / "capture.log"
+LOG_LIMIT = 512 * 1024
+
+
+def _write_log(line: str) -> None:
+    try:
+        WORK_DIR.mkdir(parents=True, exist_ok=True)
+        if LOG_FILE.exists() and LOG_FILE.stat().st_size > LOG_LIMIT:
+            tail = LOG_FILE.read_bytes()[-LOG_LIMIT // 2:]
+            LOG_FILE.write_bytes(tail)
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with LOG_FILE.open("a", encoding="utf-8") as fh:
+            fh.write(f"{stamp} {line}\n")
+    except OSError:
+        pass
+
 
 class RecordError(RuntimeError):
     pass
@@ -392,6 +411,10 @@ class Stenographer:
         self.listener = listener
         self.session: Session | None = None
         self._process: subprocess.Popen | None = None
+        # Что помощник захвата рассказал о себе: раньше это читалось только при
+        # падении, и молчаливая поломка видео оставалась без единого следа.
+        self._helper_said: list[str] = []
+        self._reader: threading.Thread | None = None
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -483,6 +506,10 @@ class Stenographer:
             self._process = subprocess.Popen(
                 command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             )
+            self._helper_said = []
+            self._reader = threading.Thread(target=self._listen_helper,
+                                            args=(self._process,), daemon=True)
+            self._reader.start()
             self._worker = threading.Thread(target=self._run, daemon=True)
             self._worker.start()
             self._say(i18n.t("rec.running_room" if room else "rec.running_call"))
@@ -511,6 +538,30 @@ class Stenographer:
         if self.session:
             shutil.rmtree(self.session.directory, ignore_errors=True)
         self._emit()
+
+    def _listen_helper(self, proc: subprocess.Popen) -> None:
+        """Слушает помощника захвата всё время записи.
+
+        Две причины читать поток сразу, а не после остановки: во-первых,
+        неразобранный вывод рано или поздно переполнит трубу и подвесит сам
+        помощник; во-вторых, если запись экрана сорвётся посреди созвона,
+        причина должна остаться на диске, а не пропасть вместе с процессом.
+        """
+        if not proc.stderr:
+            return
+        try:
+            for raw in proc.stderr:
+                line = raw.decode("utf-8", "replace").rstrip()
+                if not line:
+                    continue
+                self._helper_said.append(line)
+                del self._helper_said[:-200]
+                _write_log(line)
+        except Exception:
+            pass
+
+    def _helper_output(self) -> str:
+        return "\n".join(self._helper_said)
 
     def _terminate_helper(self) -> None:
         proc = self._process
@@ -546,8 +597,7 @@ class Stenographer:
             # Помощник мог не подняться — например, отозвали разрешение.
             time.sleep(1.5)
             if self._process and self._process.poll() not in (None, 0):
-                err = (self._process.stderr.read() or b"").decode("utf-8", "replace")
-                raise RecordError(friendly_error(err))
+                raise RecordError(friendly_error(self._helper_output()))
 
             while not self._stop.is_set():
                 ready = self._ready(mic_path, sys_path)
@@ -1388,14 +1438,20 @@ class Stenographer:
         session.files["audio"] = str(audio_path)
         video = session.directory / "screen.mp4"
         if video.exists():
-            # Запись экрана переезжает к остальным файлам записи: рабочая папка
-            # сессии сейчас будет удалена.
-            target = out_dir / f"{stem}.mp4"
-            try:
-                video.replace(target)
-                session.files["video"] = str(target)
-            except OSError:
-                pass
+            if media.playable_mp4(video):
+                # Запись экрана переезжает к остальным файлам записи: рабочая
+                # папка сессии сейчас будет удалена.
+                target = out_dir / f"{stem}.mp4"
+                try:
+                    video.replace(target)
+                    session.files["video"] = str(target)
+                except OSError:
+                    pass
+            else:
+                # Битый файл не отдаём: человеку он бесполезен, а в списке
+                # файлов выглядит как обещание, которое не выполняется.
+                _write_log(f"видео не годится, файл удалён: {video}")
+                video.unlink(missing_ok=True)
         session.state = "done"
         session.message = i18n.t("state.done")
         self._emit(session=session)

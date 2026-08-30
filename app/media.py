@@ -64,6 +64,41 @@ class MediaInfo:
     has_video: bool
 
 
+def playable_mp4(path: str | Path) -> bool:
+    """Дописан ли mp4 до конца — то есть откроется ли он вообще.
+
+    Пока идёт запись, AVAssetWriter держит в файле только сами кадры (`mdat`),
+    а оглавление (`moov`) дописывает последним действием. Если запись оборвали
+    или помощник не успел закрыть файл, кадры остаются на месте, оглавления
+    нет — и такой mp4 не открывает ни один плеер, хотя весит мегабайты и
+    выглядит настоящим. Проверка дешёвая: пробегаем по верхнеуровневым блокам
+    и ищем `moov`, не читая содержимого и не поднимая ffmpeg.
+    """
+    path = Path(path)
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as fh:
+            at = 0
+            while at + 8 <= size:
+                fh.seek(at)
+                head = fh.read(8)
+                if len(head) < 8:
+                    return False
+                length = int.from_bytes(head[:4], "big")
+                if head[4:8] == b"moov":
+                    return True
+                if length == 1:                     # длина 64-битная, следом
+                    length = int.from_bytes(fh.read(8), "big")
+                elif length == 0:                   # блок тянется до конца
+                    return False
+                if length < 8:
+                    return False
+                at += length
+    except OSError:
+        return False
+    return False
+
+
 def probe(path: str | Path) -> MediaInfo:
     require_ffmpeg()
     path = Path(path)

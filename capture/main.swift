@@ -107,11 +107,19 @@ struct Failure: Error, CustomStringConvertible {
 final class VideoWriter {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
+    private let path: String
     private let lock = NSLock()
     private var started = false
+    /// Запись сорвалась: дальше принимать кадры бессмысленно, а файл придётся
+    /// удалить — mp4 без индекса не открывается ничем.
+    private var broken = false
+    private var closing = false
+    private var last = CMTime.zero
     private(set) var frames: Int64 = 0
+    private(set) var dropped: Int64 = 0
 
     init(path: String, width: Int, height: Int) throws {
+        self.path = path
         try? FileManager.default.removeItem(atPath: path)
         writer = try AVAssetWriter(outputURL: URL(fileURLWithPath: path), fileType: .mp4)
         let settings: [String: Any] = [
@@ -136,17 +144,37 @@ final class VideoWriter {
     /// же точки, что и звук, иначе переход по метке уводил бы не туда.
     func append(_ sb: CMSampleBuffer, at seconds: Double) {
         lock.lock(); defer { lock.unlock() }
+        if broken || closing { return }
         guard let image = CMSampleBufferGetImageBuffer(sb) else { return }
         if !started {
-            guard writer.startWriting() else { return }
+            guard writer.startWriting() else {
+                broken = true
+                note("видео: не начать запись — \(reason())")
+                return
+            }
             writer.startSession(atSourceTime: .zero)
             started = true
         }
-        guard writer.status == .writing, input.isReadyForMoreMediaData else { return }
+        guard writer.status == .writing else {
+            broken = true
+            note("видео: запись сорвалась на кадре \(frames) — \(reason())")
+            return
+        }
+        // Кодировщик не успевает — кадр пропускаем. Это нормально и не ошибка:
+        // на экране обычно ничего не меняется.
+        guard input.isReadyForMoreMediaData else { dropped += 1; return }
 
+        // Время кадра обязано расти строго. ScreenCaptureKit присылает кадры
+        // пачками, и два подряд легко попадают в одну шестисотую секунды —
+        // а повторная метка времени роняет всю запись целиком: дальше
+        // AVAssetWriter уходит в .failed и файл остаётся без индекса.
+        var stamp = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+        if frames > 0 && stamp <= last {
+            stamp = CMTimeAdd(last, CMTime(value: 1, timescale: 600))
+        }
         var timing = CMSampleTimingInfo(
             duration: .invalid,
-            presentationTimeStamp: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
+            presentationTimeStamp: stamp,
             decodeTimeStamp: .invalid)
         var format: CMFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
@@ -160,21 +188,48 @@ final class VideoWriter {
                                                  sampleTiming: &timing,
                                                  sampleBufferOut: &out)
         guard let out else { return }
-        input.append(out)
+        // Отказ кодировщика раньше проходил молча: файл писался, индекс не
+        // дописывался, и человек получал битый mp4 без единого сообщения.
+        guard input.append(out) else {
+            broken = true
+            note("видео: кадр \(frames) не принят — \(reason())")
+            return
+        }
+        last = stamp
         frames += 1
     }
 
-    func finish() async {
+    private func reason() -> String {
+        writer.error.map { "\($0)" } ?? "причина неизвестна (status=\(writer.status.rawValue))"
+    }
+
+    /// Закрывает файл. Возвращает `true`, только если mp4 действительно готов:
+    /// во всех остальных случаях файл удаляется — пустое место честнее, чем
+    /// запись, которая не открывается.
+    @discardableResult
+    func finish() async -> Bool {
         lock.lock()
-        let live = started && writer.status == .writing
+        closing = true
+        let live = started && !broken && writer.status == .writing
         if live { input.markAsFinished() }
+        let why = live ? "" : reason()
         lock.unlock()
-        guard live else { return }
+        guard live else {
+            note("видео: закрывать нечего (кадров \(frames)) — \(why)")
+            try? FileManager.default.removeItem(atPath: path)
+            return false
+        }
         // Ждём именно завершения записи: без этого mp4 остаётся без индекса и
         // не открывается ничем.
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             writer.finishWriting { done.resume() }
         }
+        guard writer.status == .completed else {
+            note("видео: файл не закрылся — \(reason())")
+            try? FileManager.default.removeItem(atPath: path)
+            return false
+        }
+        return true
     }
 }
 
@@ -267,13 +322,17 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stop() async {
+        // Сначала закрываем видео, потом останавливаем поток: если
+        // stopCapture задумается или зависнет, помощника прибьют по таймауту —
+        // и mp4 останется без индекса. Кадры, пришедшие в эту секунду, писать
+        // уже некуда, и VideoWriter их отбрасывает сам.
+        if let videoWriter {
+            let ok = await videoWriter.finish()
+            note("video frames=\(videoWriter.frames) skipped=\(videoWriter.dropped) ok=\(ok)")
+        }
         if let stream { try? await stream.stopCapture() }
         sysWriter.close()
         micWriter.close()
-        if let videoWriter {
-            await videoWriter.finish()
-            note("video frames=\(videoWriter.frames)")
-        }
         note("stopped sys=\(sysWriter.frames) mic=\(micWriter.frames)")
     }
 

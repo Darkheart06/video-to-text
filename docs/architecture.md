@@ -305,6 +305,13 @@ convincing match, no marker — an empty spot is honest, a marker pointing at th
 wrong minute is not. Notes taken during a call already know their time and need
 no matching at all.
 
+Matching compares word stems — the first five letters — not whole words. The
+document and the transcript almost never agree literally: the decision says
+«обсуждение остановлено» while the line says «остановить». As whole words those
+are different words, and the marker went missing exactly where people expected
+it. Five letters is the length at which Russian forms of one word converge while
+different words still diverge.
+
 **Video rides the same stream as the audio.** ScreenCaptureKit is already open
 for the system audio, so the picture is a second output (`.screen`) on the same
 `SCStream`, and the filter decides what is captured: the whole display or the
@@ -316,6 +323,30 @@ video.
 The capture is deliberately modest: 8 fps at 1600 px wide. This is a screen
 share, not a film; an hour costs hundreds of megabytes instead of tens of
 gigabytes, and 60 fps buys nothing in a recording of a call.
+
+**Frame timestamps must increase strictly — and this is not a detail.**
+ScreenCaptureKit delivers frames in bursts, and two of them easily land inside
+the same 1/600 of a second. A repeated timestamp does not cost a frame, it costs
+the recording: `AVAssetWriter` moves to `.failed`, silently drops everything
+after it, and never writes the index. The file stays on disk, weighs megabytes
+and opens nowhere — which is exactly how screen recording broke on its first
+real use (1.6.1). So a colliding timestamp is nudged 1/600 forward, and the
+return values of `startWriting` and `append` are checked and logged: a failure
+that passes in silence is the worst kind.
+
+**The index is written last.** `AVAssetWriter` keeps frames in `mdat` and writes
+`moov` on close, so an interrupted recording looks like a real mp4 without being
+one. The app checks for `moov` by walking the top-level atoms
+(`media.playable_mp4`, no ffmpeg involved) and never shows a broken file — not
+in the file list, not in the player. For the same reason shutdown finalises the
+video **before** `stopCapture`: if that call stalls, the helper is killed on a
+timeout, and by then the file is already whole.
+
+**A capture log.** The helper talks about itself on stderr, and the app now
+reads that stream throughout the recording into `.work/capture.log`. It used to
+be read only on a crash, so a failure in the middle of a call left no trace at
+all. It also removes a risk: an unread pipe eventually fills up and stalls the
+helper itself.
 
 **A local server for the player.** The window is loaded from a file, and WebKit
 will not let a page play other files from disk: `<video src="file:///…">` stays
