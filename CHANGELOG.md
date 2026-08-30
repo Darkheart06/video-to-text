@@ -4,6 +4,43 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.7.1] — 2026-08-30
+
+### Changed
+
+- **The settings window is laid out in tabs** — *General*, *Processing*,
+  *Voices*, *More* — instead of one long scroll of ten sections. Everything
+  people change often is in the first tab; the thresholds and intervals that
+  are set once are in the last. All the fields stay in the window even when
+  their tab is hidden, so *Save* still collects the whole form and nothing
+  typed on another tab is lost.
+- **Deleting a recording asks in a dialog**, with the recording's name and a
+  line saying it goes to the trash for 30 days. The old two-step button turned
+  itself into “delete?” inside a 24-pixel square — hard to read and easy to hit
+  by accident.
+- **The pin is a pin.** Iconsax has no pushpin at all and the nearest thing,
+  a bookmark, reads as “save”, not “pin”. That one icon is drawn by hand on the
+  same 24×24 grid with the same 1.5 stroke, so it does not stand out in a row
+  with the rest.
+- The cross next to “done” is gone. It removed the card from the working area,
+  which nobody needed and everybody read as “delete the recording”; it stays
+  only where it means something — on a failed or cancelled job.
+
+### Fixed
+
+- **Dark theme left the system controls light-themed** — black arrows in the
+  selects, light scrollbars. The fix is `color-scheme`, which is how a page
+  tells the browser what to paint those with; our own colour variables never
+  reached them.
+- The icons at the bottom of the archive were pushed outside the panel by the
+  long *Open the folder* button; the button shrinks now, the icons do not.
+- The credit line about the icons sat beside the buttons in the settings
+  footer, stretching them; it is a line under them now.
+- The hint under *Window theme* explained that Save is not needed — that is
+  what an instantly applied switch already says.
+- The screen-source button was a different height from the buttons beside it.
+  Every small button has an explicit height now.
+
 ## [1.7.0] — 2026-08-30
 
 ### Added

@@ -838,13 +838,22 @@ def main() -> int:
             page.wait_for_timeout(120)
             page.screenshot(path=str(out_dir / f"9-library-{scheme}.png"))
             docs_shot(page, scheme, "dark", "archive-dark.ru.png")
-            # удаление в два клика: первый спрашивает, второй убирает
+            # Удаление спрашивает отдельным окном: на маленькой кнопке в
+            # списке вопрос читался плохо и срабатывал случайно.
+            page.hover('[data-lib="lib3"]')
             page.click('[data-libdel="lib3"]')
-            page.wait_for_timeout(150)
-            if "удалить?" not in (page.text_content("#side") or ""):
-                errors.append(f"{scheme}: удаление не переспрашивает")
+            page.wait_for_timeout(250)
+            if not page.locator(".ask .ask-note").count():
+                errors.append(f"{scheme}: удаление не переспрашивает окном")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+            if page.locator(".ask").count():
+                errors.append(f"{scheme}: вопрос об удалении не закрывается")
+            page.hover('[data-lib="lib3"]')
             page.click('[data-libdel="lib3"]')
-            page.wait_for_timeout(300)
+            page.wait_for_timeout(250)
+            page.click('.ask .ask-row')
+            page.wait_for_timeout(350)
             page.click("#btn-side")
             page.wait_for_timeout(150)
             if page.locator("#side").is_visible():
@@ -855,6 +864,15 @@ def main() -> int:
             page.click("#btn-settings")
             page.wait_for_timeout(300)
             page.screenshot(path=str(out_dir / f"4-settings-{scheme}.png"))
+
+            # Настройки разложены по вкладкам: сначала проверяем, что они есть
+            # и переключаются, потом ходим по ним.
+            if page.locator(".settabs .settab").count() != 4:
+                errors.append(f"{scheme}: настройки не разложены по вкладкам")
+            page.click('.settab[data-settab="work"]')
+            page.wait_for_timeout(200)
+            if page.locator('.setpane[data-setpane="main"]').is_visible():
+                errors.append(f"{scheme}: вкладки настроек не переключаются")
 
             # --- подключение языковой модели ---
             page.select_option("#llm-backend", "gguf")
@@ -895,6 +913,8 @@ def main() -> int:
             page.screenshot(path=str(out_dir / f"8-custom-{scheme}.png"))
             page.select_option("#preset-select", "meeting")
             page.wait_for_timeout(120)
+            page.click('.settab[data-settab="main"]')
+            page.wait_for_timeout(200)
             # --- тема окна: выбор сильнее системы ---
             if "Тема окна" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки темы")
@@ -919,8 +939,19 @@ def main() -> int:
             if page.evaluate("document.documentElement.dataset.theme || ''") != "":
                 errors.append(f"{scheme}: «как в системе» не снимает выбор")
 
+            page.click('.settab[data-settab="who"]')
+            page.wait_for_timeout(200)
             if "Различать собеседников по голосам" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки разделения собеседников")
+            # Скрытая вкладка не должна терять введённое: «Сохранить» собирает
+            # значения со всей формы разом.
+            page.click('.settab[data-settab="more"]')
+            page.wait_for_timeout(150)
+            page.fill("[data-k=record_notes_minutes]", "7")
+            page.click('.settab[data-settab="main"]')
+            page.wait_for_timeout(150)
+            if page.evaluate("formValues().record_notes_minutes") != "7":
+                errors.append(f"{scheme}: значение со скрытой вкладки теряется")
 
             # --- плеер и метки ---
             page.click("#btn-close")          # выходим из настроек
@@ -1151,6 +1182,8 @@ def main() -> int:
             page.wait_for_timeout(300)
 
             # --- справочник людей и команд ---
+            page.click('.settab[data-settab="who"]')
+            page.wait_for_timeout(200)
             if "Люди и команды" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет раздела справочника")
             directory = page.text_content("#people-list") or ""
