@@ -232,6 +232,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "app.files_docs": {"ru": "Документы (*.pdf;*.docx;*.pptx;*.xlsx;*.txt;*.md;*.csv;*.rtf)",
                        "en": "Documents (*.pdf;*.docx;*.pptx;*.xlsx;*.txt;*.md;*.csv;*.rtf)"},
     "lib.gone": {"ru": "Файлы уже удалены", "en": "The files are already gone"},
+    "lib.emptyTitle": {"ru": "Название не может быть пустым",
+                       "en": "The title cannot be empty"},
     "edit.no_summary": {"ru": "У этой записи нет саммари",
                         "en": "This recording has no summary"},
     "edit.no_section": {"ru": "Такого раздела в записи нет",

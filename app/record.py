@@ -205,18 +205,37 @@ def request_permissions() -> dict:
         return {"screen": False, "microphone": False, "error": str(exc)}
 
 
-def running_apps() -> list[dict]:
-    """Что сейчас запущено и может быть записано — для выбора источника."""
+def running_apps(shots: bool = False) -> list[dict]:
+    """Что сейчас запущено и может быть записано — для выбора источника.
+
+    С `shots=True` помощник заодно снимает каждый источник: выбирать экран по
+    названию приложения неудобно, картинка отвечает на вопрос сразу. Снимки
+    занимают секунды, поэтому список без картинок остаётся быстрым и берётся
+    при каждом опросе окружения, а с картинками — только когда человек открыл
+    окно выбора.
+    """
     if not helper_ready():
         return []
+    command = [str(HELPER), "list-apps"] + (["--shots"] if shots else [])
     try:
-        out = subprocess.run([str(HELPER), "list-apps"], capture_output=True,
-                             text=True, timeout=15)
+        out = subprocess.run(command, capture_output=True, text=True,
+                             timeout=60 if shots else 15)
         found = json.loads(out.stdout.strip() or "[]")
-    except Exception:
+    except Exception as exc:
+        log(f"список источников не собрался: {exc!r}")
         return []
-    return [{"id": str(item.get("id") or ""), "name": str(item.get("name") or "")}
-            for item in found if item.get("id") and item.get("name")]
+    rows = []
+    for item in found:
+        ident = str(item.get("id") or "")
+        if not ident:
+            continue
+        rows.append({
+            "id": ident,
+            "name": str(item.get("name") or ""),
+            "kind": str(item.get("kind") or ("screen" if ident == "screen" else "app")),
+            "shot": str(item.get("shot") or ""),
+        })
+    return rows
 
 
 def mic_busy() -> bool:

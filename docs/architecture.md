@@ -379,6 +379,38 @@ contradiction: the Iconsax site says CC BY 4.0 while the `LICENSE` file in
 their repository contains GPLv3. Fine while the app is given away as is; worth
 settling before it is ever sold.
 
+## Shelves: pinning, folders, renaming
+
+Recordings sit on disk as a flat list of files, and that is the right call:
+Finder shows them, they survive a reinstall, the archive rebuilds itself from
+them. But past a hundred recordings a flat list stops helping.
+
+**The folders are not folders on disk** (`app/shelf.py`). Moving the files into
+real directories would rewrite paths already recorded in every `.result.json`
+and in the links to attached documents. So a folder is a label, the tree is
+drawn in the window, and the files stay where Finder expects them. The shelf is
+keyed by the same identifier the archive uses (a hash of the path).
+
+**Renaming moves the files too.** The app invents a title and does not always
+get it right. Fixing it only inside the document would leave the old name in
+Finder, and one recording would be called two things. So `library.retitle()`
+moves every file of the recording and its attachments folder, then rewrites
+`meta`. The path changes, so the identifier changes — `shelf.move()` carries the
+pin and the folder across, or a shelf would be lost on every title fix.
+
+## Picking what to record from the screen
+
+A dropdown of application names did not work: one app can have several windows
+open and the name does not say which. So the choice is a window of tiles, the
+way Zoom and Telemost do it: the helper snapshots each source
+(`SCScreenshotManager`, macOS 14+) and returns a small jpeg as a data URI.
+
+Snapshots cost seconds, so the list is gathered two ways: without pictures on
+every environment poll, with pictures (`list-apps --shots`) only when the person
+opens the picker. The window opens immediately on what is already known and
+fills in when the snapshots arrive. On macOS 13, which has no such API, the
+tiles show an icon instead and the choice still works.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three

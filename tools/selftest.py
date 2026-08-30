@@ -974,6 +974,63 @@ def main() -> int:
     silent.unlink(missing_ok=True)
     with_sound.unlink(missing_ok=True)
 
+    print("\n23. Полки: закрепление, папки, переименование")
+    # Название приложение придумывает само и попадает не всегда, а искать
+    # нужную запись среди сотни — работа. Проверяем весь путь: закрепить,
+    # положить в папку, переименовать — и чтобы полка переехала за записью.
+    from app import shelf
+
+    real_store = shelf.STORE
+    shelf.STORE = Path("/tmp/selftest-shelf.json")
+    shelf.STORE.unlink(missing_ok=True)
+
+    out_dir = Path(settings["output_dir"])
+    # Прошлый прогон мог оборваться посреди переименования — тогда рядом
+    # осталась запись с тем же именем, и проверка «файлы переименованы»
+    # ловила бы не поломку, а мусор.
+    for stale in out_dir.glob("Планёрка по релизу*"):
+        shutil.rmtree(stale, ignore_errors=True) if stale.is_dir() else stale.unlink()
+    library._cache.clear()
+    rows = library.entries([out_dir])
+    first = rows[0]["id"]
+    shelf.pin(first, True)
+    shelf.put(first, "Клиенты")
+    rows = library.entries([out_dir])
+    failures += not check("закреплённая запись идёт первой",
+                          rows[0]["id"] == first and rows[0]["pinned"],
+                          str(rows[0].get("title")))
+    failures += not check("папка видна в списке",
+                          rows[0]["folder"] == "Клиенты" and "Клиенты" in shelf.folders())
+
+    was = Path(rows[0]["path"])
+    result = library.retitle([out_dir], first, "Планёрка по релизу")
+    failures += not check("название меняется", result.get("ok"), str(result))
+    fresh = out_dir / "Планёрка по релизу.result.json"
+    failures += not check("файлы переименованы",
+                          fresh.exists() and not was.exists(),
+                          f"было {was.name}")
+    rows = library.entries([out_dir])
+    moved = next((r for r in rows if r["id"] == result.get("id")), None)
+    failures += not check("полка переехала за записью",
+                          bool(moved) and moved["pinned"] and moved["folder"] == "Клиенты",
+                          str(moved and (moved["pinned"], moved["folder"])))
+    failures += not check("новое название стоит и в документе",
+                          (moved or {}).get("title") == "Планёрка по релизу",
+                          str((moved or {}).get("title")))
+    empty = library.retitle([out_dir], result.get("id"), "   ")
+    failures += not check("пустое название не принимается", not empty.get("ok"))
+    shelf.remove_folder("Клиенты")
+    rows = library.entries([out_dir])
+    kept = next((r for r in rows if r["id"] == result.get("id")), None)
+    failures += not check("после удаления папки запись остаётся",
+                          bool(kept) and not kept["folder"] and kept["pinned"])
+
+    # Возвращаем имя обратно: дальше разделы работают с файлами этой записи.
+    back = library.retitle([out_dir], result.get("id"), was.name[: -len(".result.json")])
+    failures += not check("название возвращается назад", back.get("ok"), str(back))
+    shelf.STORE.unlink(missing_ok=True)
+    shelf.STORE = real_store
+
     print("\n19. Документы к записи")
     # Половина задач на созвоне ссылается на документ, который живёт отдельно.
     # Проверяем весь путь: приложить → достать текст → отдать модели → убрать.

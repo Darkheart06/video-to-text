@@ -22,6 +22,7 @@ from . import (
     presets,
     record,
     serve,
+    shelf,
     voices,
 )
 from .pipeline import Runner
@@ -169,6 +170,13 @@ class Api:
             "apps": record.running_apps() if record.helper_ready() else [],
             **llm.probe(self.settings),
         }
+
+    def screen_sources(self) -> dict:
+        """Что можно записать с экрана — с картинками, для окна выбора."""
+        try:
+            return {"items": record.running_apps(shots=True) if record.helper_ready() else []}
+        except Exception as exc:
+            return {"items": [], "error": str(exc)}
 
     def _media_port(self) -> int:
         try:
@@ -356,6 +364,54 @@ class Api:
     def voices_forget(self, name: str) -> dict:
         try:
             return {"ok": voices.forget(str(name or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def library_retitle(self, entry_id: str, title: str) -> dict:
+        """Правит название записи — и в документах, и в именах файлов."""
+        try:
+            return library.retitle(self.settings.library_paths, str(entry_id or ""),
+                                   str(title or ""), self.settings.ui_lang)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def library_pin(self, entry_id: str, on: bool = True) -> dict:
+        """Закрепляет запись наверху списка."""
+        try:
+            shelf.pin(str(entry_id or ""), bool(on))
+            return {"ok": True, "pinned": bool(on)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def folders(self) -> dict:
+        try:
+            return {"items": shelf.folders()}
+        except Exception as exc:
+            return {"items": [], "error": str(exc)}
+
+    def folder_add(self, name: str) -> dict:
+        try:
+            return {"ok": True, "items": shelf.add_folder(str(name or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def folder_remove(self, name: str) -> dict:
+        try:
+            return {"ok": True, "items": shelf.remove_folder(str(name or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def folder_rename(self, name: str, fresh: str) -> dict:
+        try:
+            return {"ok": True, "items": shelf.rename_folder(str(name or ""), str(fresh or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def folder_put(self, entry_id: str, name: str = "") -> dict:
+        """Кладёт запись в папку. Пустое имя — вынуть обратно в общий список."""
+        try:
+            shelf.put(str(entry_id or ""), str(name or ""))
+            return {"ok": True}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 

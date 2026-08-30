@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import i18n, media, merge, presets, render
+from . import i18n, media, merge, presets, render, shelf
 
 # Скрытый список рядом с записями: он только ускоряет открытие папки, и его
 # можно спокойно удалить.
@@ -90,7 +90,7 @@ def entries(where, query: str = "", lang: str = "") -> list[dict]:
         for folder in folders:
             out += entries(folder, query, lang)
         out.sort(key=lambda e: -float(e.get("at") or 0))
-        return out
+        return shelf.decorate(out)
     output_dir = folders[0]
 
     index = _load_index(output_dir)
@@ -121,7 +121,7 @@ def entries(where, query: str = "", lang: str = "") -> list[dict]:
     _save_index(output_dir, index)
 
     found.sort(key=lambda e: e["at"], reverse=True)
-    return _filter(found, query)
+    return shelf.decorate(_filter(found, query))
 
 
 def _cached_entry(key: str, mtime: float, index: dict) -> dict | None:
@@ -383,6 +383,77 @@ def rename(where, entry_id: str, names: dict[str, str], lang: str = "") -> dict 
     _cache.pop(str(path), None)
     _text_cache.pop(str(directory / f"{stem}.transcript.txt"), None)
     return snapshot(directory, entry_id, lang)
+
+
+def retitle(where, entry_id: str, title: str, lang: str = "") -> dict:
+    """Меняет название записи — и в документах, и в именах файлов.
+
+    Название приложение придумывает само, по теме разговора, и попадает не
+    всегда. Исправлять его нужно там же, где читают, — поэтому правка идёт не
+    только в `.result.json`, но и по именам файлов: иначе в Finder осталась бы
+    старая подпись, и одна и та же запись называлась бы двумя способами.
+    """
+    path = _path_of(where, entry_id)
+    if path is None:
+        return {"ok": False, "error": i18n.t("lib.missing")}
+    title = re.sub(r"\s+", " ", str(title or "")).strip()[:120]
+    if not title:
+        return {"ok": False, "error": i18n.t("lib.emptyTitle")}
+
+    data = _load_json(path)
+    if data is None:
+        return {"ok": False, "error": i18n.t("lib.missing")}
+    directory = path.parent
+    stem = path.name[: -len(RESULT_SUFFIX)]
+    fresh = render.safe_stem(title)
+    if fresh != stem:
+        fresh = _free_stem(directory, fresh)
+
+    moved: dict[str, str] = {}
+    for name, target in files_of(directory, stem).items():
+        source = Path(target)
+        suffix = source.name[len(stem):]
+        destination = directory / f"{fresh}{suffix}"
+        if destination == source:
+            moved[name] = str(source)
+            continue
+        try:
+            source.replace(destination)
+            moved[name] = str(destination)
+        except OSError:
+            moved[name] = str(source)
+    # Прикреплённые документы лежат в папке рядом и должны переехать следом,
+    # иначе запись потеряет их молча.
+    papers = directory / f"{stem}.files"
+    if papers.is_dir() and fresh != stem:
+        try:
+            papers.replace(directory / f"{fresh}.files")
+        except OSError:
+            pass
+
+    result = Path(moved.get("result") or (directory / f"{fresh}{RESULT_SUFFIX}"))
+    meta = data.setdefault("meta", {})
+    meta["title"] = title
+    if moved.get("audio"):
+        meta["source"] = moved["audio"]
+    meta["files"] = dict(moved)
+    result.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+
+    forget_cache(path)
+    forget_cache(result)
+    shelf.move(entry_id, _ident(result))
+    return {"ok": True, "id": _ident(result), "title": title}
+
+
+def _free_stem(directory: Path, stem: str) -> str:
+    """Чужую запись не затираем, даже если названия совпали."""
+    if not (directory / f"{stem}{RESULT_SUFFIX}").exists():
+        return stem
+    for n in range(2, 60):
+        candidate = f"{stem} ({n})"
+        if not (directory / f"{candidate}{RESULT_SUFFIX}").exists():
+            return candidate
+    return stem
 
 
 def forget_cache(path: Path) -> None:

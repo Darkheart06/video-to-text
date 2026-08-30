@@ -4,6 +4,45 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.7.0] — 2026-08-30
+
+### Added
+
+- **Pinned recordings and folders.** A hundred recordings in a flat list stop
+  being a list. Pin the ones you keep returning to and they stay at the top;
+  group the rest into folders and the archive becomes a tree that collapses.
+  **The folders are not folders on disk**: moving the files would break the
+  paths already written into every `.result.json` and into the attached
+  documents. A folder is a label, the tree is drawn in the window, and the
+  files stay exactly where Finder expects them.
+- **The title can be corrected by hand.** The app invents a title from the
+  subject of the conversation and does not always get it right. The pencil in
+  the card header fixes it — in the documents *and* in the file names, so the
+  same recording is not called two different things in two different places.
+  A pinned recording keeps its pin and its folder through the rename.
+- **Picking what to record from the screen now shows pictures**, the way Zoom
+  and Telemost do it. One app can have several windows open and the name alone
+  does not say which one is meant; a snapshot answers immediately. On macOS 13,
+  where the system has no screenshot API for this, the tiles fall back to icons
+  and the choice still works.
+
+### Changed
+
+- **The card's actions no longer hide behind the tabs.** With seven tabs the
+  row scrolled and took *Copy* and *Edit* with it — to copy a summary you first
+  had to scroll. The actions now sit in their own, non-scrolling part of the
+  row, as icons with tooltips.
+- The cross next to “done” says what it does now (it removes the card from the
+  working area, not the recording) and stands beside the rename and pin
+  buttons.
+- **The window theme is chosen with buttons, not a dropdown** — all three
+  options visible at once, applied immediately, no *Save* needed.
+- **Every field is the same height.** A `select` has its own intrinsic metrics
+  and came out shorter than the input next to it; in a column of settings that
+  is impossible not to see.
+- The hint under *Interface language* repeated the label word for word and is
+  gone.
+
 ## [1.6.3] — 2026-08-30
 
 ### Changed

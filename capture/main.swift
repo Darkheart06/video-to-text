@@ -4,7 +4,10 @@
 //                                — пишет mic.pcm и sys.pcm (16 кГц, моно, int16 LE),
 //                                  а с --video ещё и картинку: весь экран или
 //                                  окно одного приложения
-//   v2t-capture list-apps        — что сейчас запущено и может быть записано
+//   v2t-capture list-apps [--shots]
+//                                — что сейчас запущено и может быть записано;
+//                                  с --shots ещё и картинка каждого источника,
+//                                  чтобы выбирать глазами, а не по названию
 //   v2t-capture mic <папка>      — только mic.pcm: встреча в комнате, где все
 //                                  голоса и так идут в один микрофон
 //   v2t-capture mic-status       — «1», если микрофон кем-то занят (идёт созвон)
@@ -17,7 +20,9 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import ImageIO
 import ScreenCaptureKit
+import UniformTypeIdentifiers
 
 // MARK: - Запись дорожки в файл
 
@@ -498,6 +503,42 @@ func quote(_ text: String) -> String {
     return "\"" + escaped + "\""
 }
 
+/// Снимок источника для окна выбора: маленький jpeg строкой data-URI.
+///
+/// Выбирать, что записывать, по названию приложения неудобно — открытых окон
+/// у одного и того же приложения бывает несколько, и человек не помнит, где
+/// что. Поэтому показываем картинку, как это делают Зум и Телемост.
+///
+/// Снимок берётся штатным `SCScreenshotManager` (macOS 14+). На macOS 13 его
+/// нет — тогда возвращаем пустую строку, и окно рисует плитку со значком:
+/// выбор остаётся рабочим, просто без картинки.
+@available(macOS 13.0, *)
+func preview(_ filter: SCContentFilter, width: Int = 400) async -> String? {
+    guard #available(macOS 14.0, *) else { return nil }
+    let config = SCStreamConfiguration()
+    let side = filter.contentRect
+    let scale = min(1.0, Double(width) / max(1.0, side.width))
+    config.width = max(2, Int(side.width * scale)) & ~1
+    config.height = max(2, Int(side.height * scale)) & ~1
+    config.showsCursor = false
+    guard let image = try? await SCScreenshotManager.captureImage(
+        contentFilter: filter, configuration: config) else { return nil }
+    guard let data = jpeg(image) else { return nil }
+    return "data:image/jpeg;base64," + data.base64EncodedString()
+}
+
+/// CGImage → jpeg. Через ImageIO, чтобы не тянуть в помощник весь AppKit.
+func jpeg(_ image: CGImage, quality: Double = 0.55) -> Data? {
+    let out = NSMutableData()
+    guard let sink = CGImageDestinationCreateWithData(
+        out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+    CGImageDestinationAddImage(sink, image, [
+        kCGImageDestinationLossyCompressionQuality: quality,
+    ] as CFDictionary)
+    guard CGImageDestinationFinalize(sink) else { return nil }
+    return out as Data
+}
+
 /// Держим источники сигналов живыми: без ссылки их приберёт сборщик
 /// и остановка по Ctrl-C перестанет работать.
 var signalSources: [DispatchSourceSignal] = []
@@ -508,27 +549,45 @@ let command = args.count > 1 ? args[1] : "check"
 switch command {
 case "list-apps":
     guard #available(macOS 13.0, *) else { print("[]"); exit(0) }
+    let wantShots = args.contains("--shots")
     let done = DispatchSemaphore(value: 0)
     Task {
         var rows: [String] = []
         if let content = try? await SCShareableContent.excludingDesktopWindows(
             true, onScreenWindowsOnly: true) {
+            // Весь экран идёт первой плиткой: чаще всего показывают именно его.
+            if let display = content.displays.first {
+                let filter = SCContentFilter(display: display, excludingWindows: [])
+                let shot = wantShots ? await preview(filter) : nil
+                rows.append("{\"id\":\"screen\",\"name\":\"\",\"kind\":\"screen\","
+                            + "\"width\":\(display.width),\"height\":\(display.height),"
+                            + "\"shot\":\(quote(shot ?? ""))}")
+            }
             // Только то, у чего есть окно на экране: записывать фоновую службу
             // человеку незачем, а список из двухсот строк бесполезен.
             let visible = Set(content.windows.compactMap { $0.owningApplication?.bundleIdentifier })
             var seen = Set<String>()
+            var apps: [String] = []
             for app in content.applications
                 where visible.contains(app.bundleIdentifier) && !app.applicationName.isEmpty {
                 if seen.contains(app.bundleIdentifier) { continue }
                 seen.insert(app.bundleIdentifier)
-                rows.append("{\"id\":\(quote(app.bundleIdentifier)),"
-                            + "\"name\":\(quote(app.applicationName))}")
+                var shot: String? = nil
+                if wantShots, let display = content.displays.first {
+                    shot = await preview(SCContentFilter(display: display, including: [app],
+                                                         exceptingWindows: []))
+                }
+                apps.append("{\"id\":\(quote(app.bundleIdentifier)),"
+                            + "\"name\":\(quote(app.applicationName)),"
+                            + "\"kind\":\"app\",\"shot\":\(quote(shot ?? ""))}")
             }
+            rows += apps.sorted()
         }
-        print("[" + rows.sorted().joined(separator: ",") + "]")
+        print("[" + rows.joined(separator: ",") + "]")
         done.signal()
     }
-    _ = done.wait(timeout: .now() + 20)
+    // Снимки берут время: без них хватает и пяти секунд, с ними — нет.
+    _ = done.wait(timeout: .now() + (wantShots ? 40 : 20))
     exit(0)
 
 case "mic-status":

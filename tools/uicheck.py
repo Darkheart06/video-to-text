@@ -275,6 +275,8 @@ EN_PEOPLE = {
 }
 
 BRIDGE = """
+window.__folders = ["Клиенты"];
+window.__shelf = {};
 window.pywebview = {api: {
   get_settings: async () => (%(settings)s),
   environment: async () => (%(env)s),
@@ -316,12 +318,38 @@ window.pywebview = {api: {
   },
   open_privacy: async () => true,
   presets: async () => (%(presets)s),
-  library: async q => ({items: (%(lib)s).filter(
-      i => !q || (i.title + " " + i.preview).toLowerCase().includes(q.toLowerCase())),
+  library: async q => ({items: (%(lib)s)
+      .filter(i => !q || (i.title + " " + i.preview).toLowerCase().includes(q.toLowerCase()))
+      .map(i => Object.assign({}, i, window.__shelf[i.id] || {}))
+      .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)),
     dir: "/Users/sergey/output"}),
   library_open: async id => Object.assign({}, %(estimate)s, {id: id, archived: true,
-    title: (%(lib)s).find(i => i.id === id).title, message: "Из архива"}),
+    title: ((%(lib)s).find(i => i.id === id) || {title: "Из архива"}).title,
+    message: "Из архива"}),
   library_delete: async () => ({ok: true, removed: 5}),
+  // Полки живут в памяти заглушки: список перечитывается после каждой правки,
+  // как и в настоящем приложении.
+  screen_sources: async () => ({items: [
+    {id: "screen", name: "", kind: "screen",
+     shot: "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="},
+    {id: "com.apple.Safari", name: "Safari", kind: "app",
+     shot: "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="},
+    {id: "com.tinyspeck.slackmacgap", name: "Slack", kind: "app", shot: ""}]}),
+  folders: async () => ({items: window.__folders}),
+  folder_add: async n => { window.__folders.push(n); return {ok: true, items: window.__folders}; },
+  folder_remove: async n => { window.__folders = window.__folders.filter(x => x !== n);
+    Object.keys(window.__shelf).forEach(k => { if (window.__shelf[k].folder === n)
+      window.__shelf[k].folder = ""; });
+    return {ok: true, items: window.__folders}; },
+  folder_put: async (id, name) => {
+    window.__shelf[id] = Object.assign({}, window.__shelf[id], {folder: name});
+    if (name && !window.__folders.includes(name)) window.__folders.push(name);
+    return {ok: true}; },
+  library_pin: async (id, on) => {
+    window.__shelf[id] = Object.assign({}, window.__shelf[id], {pinned: !!on});
+    return {ok: true, pinned: !!on}; },
+  library_retitle: async (id, title) => { window.__renamed = {id: id, title: title};
+    return {ok: true, id: id, title: title}; },
   trash: async () => ({days: 30, items: [
     {id: "1756000000-abc", title: "Созвон 24.08 10-15", when: "2026-08-28 12:40",
      days_left: 30, files: 6}]}),
@@ -870,11 +898,16 @@ def main() -> int:
             # --- тема окна: выбор сильнее системы ---
             if "Тема окна" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки темы")
-            page.select_option("[data-k=theme]", "dark")
-            page.evaluate("applyTheme({theme:'dark'})")
-            page.wait_for_timeout(150)
+            # Тема переключается кнопками, а не списком: выбор виден целиком и
+            # срабатывает сразу, без «Сохранить».
+            if page.locator("#theme-pick button").count() != 3:
+                errors.append(f"{scheme}: тема выбирается не кнопками")
+            page.click('#theme-pick button[data-theme="dark"]')
+            page.wait_for_timeout(200)
             if page.evaluate("document.documentElement.dataset.theme") != "dark":
-                errors.append(f"{scheme}: тёмная тема не включается")
+                errors.append(f"{scheme}: тёмная тема не включается кнопкой")
+            if not page.locator('#theme-pick button[data-theme="dark"].on').count():
+                errors.append(f"{scheme}: выбранная тема не подсвечена")
             dark_bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
             page.evaluate("applyTheme({theme:'light'})")
             page.wait_for_timeout(150)
@@ -953,17 +986,77 @@ def main() -> int:
             }""", media_port)
             page.wait_for_timeout(250)
 
+            # --- полки: закрепление, папки, переименование ---
+            page.evaluate("state.rec=null; render();")
+            page.wait_for_timeout(200)
+            page.hover(".lib-item")
+            page.click('.lib-item [data-libpin]')
+            page.wait_for_timeout(400)
+            if not page.locator(".lib-cap").count():
+                errors.append(f"{scheme}: закреплённые не выделились в списке")
+            if not page.locator(".lib-item .lib-act.on").count():
+                errors.append(f"{scheme}: закрепление не подсвечено")
+            # Папки: дерево сворачивается и запись в него кладётся.
+            if not page.locator('.lib-folder[data-branch="Клиенты"]').count():
+                errors.append(f"{scheme}: папки не показаны деревом")
+            page.click('.lib-folder[data-branch="Клиенты"]')
+            page.wait_for_timeout(200)
+            if page.locator('.lib-folder[data-branch="Клиенты"].shut').count() != 1:
+                errors.append(f"{scheme}: папка не сворачивается")
+            page.click('.lib-folder[data-branch="Клиенты"]')
+            page.wait_for_timeout(200)
+            page.hover(".lib-item")
+            page.click('.lib-item [data-libfolder]')
+            page.wait_for_timeout(300)
+            if not page.locator(".ask .ask-row").count():
+                errors.append(f"{scheme}: не открылся выбор папки")
+            page.click('.ask .ask-row:nth-child(2)')
+            page.wait_for_timeout(400)
+            moved = page.evaluate("Object.values(window.__shelf).some(x => x.folder === 'Клиенты')")
+            if not moved:
+                errors.append(f"{scheme}: запись не кладётся в папку")
+            # Название правится прямо в карточке.
+            page.evaluate("openJob('demo1234')")
+            page.wait_for_timeout(300)
+            page.click('[data-renameon="demo1234"]')
+            page.wait_for_timeout(200)
+            box = page.locator("#rename-demo1234")
+            if not box.count():
+                errors.append(f"{scheme}: название нельзя править")
+            else:
+                box.fill("Планёрка по релизу")
+                page.click('[data-renamesave="demo1234"]')
+                page.wait_for_timeout(400)
+                got = page.evaluate("window.__renamed || null")
+                if not got or got.get("title") != "Планёрка по релизу":
+                    errors.append(f"{scheme}: название не сохраняется: {got}")
+            # Действия карточки видны без прокрутки вкладок.
+            page.evaluate("job => { state.jobs.set('demo1234', job); openJob('demo1234'); }", JOB)
+            page.wait_for_timeout(250)
+            if not page.locator(".tabs-bar .tab-acts [data-copytab]").is_visible():
+                errors.append(f"{scheme}: «копировать» спрятано за прокруткой вкладок")
+
             # --- что писать с экрана ---
             page.evaluate("state.rec=null; renderRec();")
             page.wait_for_timeout(200)
-            options = page.locator("#screen-source option").count()
-            if options != 4:
-                errors.append(f"{scheme}: в выборе источника экрана {options} пунктов")
-            page.select_option("#screen-source", "com.apple.Safari")
+            # Выбор — окном с плитками, как в Зуме: по названию приложения
+            # непонятно, то ли это окно, а по картинке — сразу.
+            page.click("#screen-pick")
+            page.wait_for_timeout(600)
+            tiles = page.locator(".ask .tile").count()
+            if tiles != 4:
+                errors.append(f"{scheme}: в окне выбора экрана {tiles} плиток, ожидалось 4")
+            if not page.locator('.ask .tile .pic img').count():
+                errors.append(f"{scheme}: у плиток нет снимков экрана")
+            page.click('.ask .tile[data-src="com.apple.Safari"]')
             page.wait_for_timeout(300)
             saved = page.evaluate("window.__savedSettings || null")
             if not saved or saved.get("record_video_source") != "com.apple.Safari":
                 errors.append(f"{scheme}: выбор источника экрана не сохраняется: {saved}")
+            if page.locator(".ask").count():
+                errors.append(f"{scheme}: окно выбора экрана не закрылось")
+            if "Safari" not in (page.text_content("#screen-pick") or ""):
+                errors.append(f"{scheme}: выбранный источник не показан на кнопке")
 
             # --- документы к записи ---
             page.evaluate("openJob('demo1234')")

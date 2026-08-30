@@ -114,6 +114,47 @@
   .side-head input{width:100%}
   .side-count{font-size:12.5px; color:var(--muted); margin-top:7px; display:block}
   .side-list{flex:1; overflow:auto; padding:8px}
+  /* Дерево архива: заголовок группы, папка со сворачиванием, вложенные записи. */
+  .lib-cap{display:flex; align-items:center; gap:6px; padding:10px 8px 5px;
+     font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+     font-weight:600}
+  .lib-folder{display:flex; align-items:center; gap:7px; padding:7px 8px; border-radius:9px;
+     cursor:pointer; font-size:13.5px; font-weight:600; color:var(--text)}
+  .lib-folder:hover{background:var(--panel-2)}
+  .lib-folder .tri{color:var(--muted); transform:rotate(90deg); transition:transform .15s}
+  .lib-folder.shut .tri{transform:none}
+  .lib-folder .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .lib-folder .n{font-family:var(--mono); font-size:11px; color:var(--muted)}
+  .lib-folder .fx{opacity:0; color:var(--muted); width:20px; height:20px; border-radius:6px}
+  .lib-folder:hover .fx{opacity:1}
+  .lib-folder .fx:hover{color:var(--err); background:var(--panel)}
+  .lib-kids{padding-left:12px; border-left:1px solid var(--line); margin-left:14px}
+  .side-empty.sm{padding:8px 10px; font-size:12px; text-align:left}
+  .lib-acts{position:absolute; right:8px; bottom:7px; display:flex; gap:3px; opacity:0;
+     transition:.15s}
+  .lib-item:hover .lib-acts, .lib-item.active .lib-acts{opacity:1}
+  .lib-act{width:24px; height:24px; border-radius:7px; color:var(--muted);
+     display:inline-flex; align-items:center; justify-content:center}
+  .lib-act:hover{background:var(--panel-2); color:var(--text)}
+  .lib-act.on{color:var(--accent); opacity:1}
+  .lib-item .lib-acts .lib-act.on{opacity:1}
+  .lib-item:has(.lib-act.on) .lib-acts{opacity:1}
+  .lib-act.del:hover{color:var(--err)}
+  .lib-act.ask{width:auto; padding:0 8px; font-size:11.5px; color:var(--err)}
+  /* Окошко выбора: папка для записи и подобные короткие решения. */
+  .ask{position:fixed; inset:0; z-index:70; display:flex; align-items:center;
+     justify-content:center; background:rgba(0,0,0,.4); padding:30px}
+  .ask-box{background:var(--panel); border:1px solid var(--line); border-radius:14px;
+     box-shadow:0 24px 60px rgba(0,0,0,.28); width:340px; max-width:100%; padding:16px}
+  .ask-box h4{margin:0 0 10px; font-size:14px; font-weight:650}
+  .ask-list{display:flex; flex-direction:column; gap:2px; max-height:40vh; overflow:auto}
+  .ask-row{display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:9px;
+     font-size:13.5px; text-align:left; color:var(--text)}
+  .ask-row:hover{background:var(--panel-2)}
+  .ask-row.on{background:var(--accent-soft); color:var(--accent); font-weight:600}
+  .ask-new{display:flex; gap:7px; margin-top:10px}
+  .ask-new input{flex:1}
+  .ask-foot{display:flex; justify-content:flex-end; margin-top:10px}
   .side-foot{padding:8px 12px 12px; border-top:1px solid var(--line); display:flex; gap:6px}
   .lib-item{
     position:relative; display:block; width:100%; text-align:left; padding:9px 26px 9px 10px;
@@ -128,20 +169,12 @@
   }
   .lib-dur{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; flex:0 0 auto}
   .lib-sub{font-size:12.5px; color:var(--muted); margin-top:3px; display:block}
+  .lib-item{padding-bottom:30px}
   .lib-prev{
     font-size:12.5px; color:var(--muted); margin-top:5px; display:-webkit-box;
     -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.4;
   }
   .lib-hit{color:var(--accent)}
-  .lib-del{
-    position:absolute; top:7px; right:6px; width:24px; height:24px; border-radius:7px;
-    display:flex; align-items:center; justify-content:center;
-    color:var(--muted); opacity:0; transition:.12s;
-  }
-  .lib-item:hover .lib-del, .lib-del:focus-visible{opacity:1}
-  .lib-del:hover{background:var(--panel-2); color:var(--err)}
-  .lib-del.ask{opacity:1; width:auto; padding:0 8px; font-size:12px; color:var(--err);
-    border:1px solid var(--err)}
 
   /* ---------- корзина ---------- */
   .trash-head{display:flex; align-items:center; gap:8px; padding:10px 12px;
@@ -230,7 +263,18 @@
     display:flex; gap:8px; align-items:center; padding:12px 0 2px; flex-wrap:wrap;
   }
   .edit-foot .note{font-size:11.5px; color:var(--muted); flex:1 1 200px}
-  .tabs{display:flex; gap:2px; padding:0 12px; border-bottom:1px solid var(--line); overflow-x:auto}
+  /* Ряд вкладок прокручивается, действия рядом — нет: до «Копировать» не
+     должно приходиться доскроллить. */
+  .tabs-bar{display:flex; align-items:stretch; border-bottom:1px solid var(--line)}
+  .tabs{display:flex; gap:2px; padding:0 4px 0 12px; overflow-x:auto; flex:1; min-width:0;
+        scrollbar-width:thin}
+  .tab-acts{display:flex; align-items:center; gap:6px; padding:0 12px 0 8px;
+        flex:0 0 auto; background:var(--panel);
+        box-shadow:-10px 0 12px -8px rgba(0,0,0,.12)}
+  .tab-acts .btn.on{border-color:var(--accent); color:var(--accent)}
+  .job-rename{display:flex; gap:8px; align-items:center; margin-bottom:2px}
+  .job-rename input{height:34px; font-size:15px; font-weight:600; max-width:420px}
+  .job-actions .btn.icon.on{color:var(--accent); border-color:var(--accent)}
   .tab{padding:11px 14px; font-size:14px; color:var(--muted); border-bottom:2px solid transparent; white-space:nowrap}
   .tab.active{color:var(--text); border-bottom-color:var(--accent); font-weight:600}
   .tab .count{font-size:12px; opacity:.6; margin-left:3px}
@@ -391,12 +435,25 @@
   .field{margin-bottom:15px}
   .field label{display:block; font-size:13.5px; color:var(--muted); margin-bottom:5px}
   .field .hint{font-size:12.5px; color:var(--muted); margin-top:5px; line-height:1.5}
+  /* Высота задана явно и одинаково: у select своя внутренняя метрика, и без
+     этого он выходил ниже соседнего поля ввода — в столбик настроек это
+     сразу видно. */
   select,input[type=text],input[type=number],textarea{
-    width:100%; padding:8px 10px; border-radius:8px; background:var(--panel-2);
-    border:1px solid var(--line); color:var(--text); font:inherit; font-size:14px; outline:none;
+    box-sizing:border-box; width:100%; height:38px; padding:0 11px; border-radius:9px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    font:inherit; font-size:14px; line-height:normal; outline:none;
   }
-  textarea{resize:vertical; line-height:1.5; min-height:64px}
+  textarea{height:auto; padding:9px 11px; resize:vertical; line-height:1.5; min-height:64px}
   select:focus,input:focus,textarea:focus{border-color:var(--accent)}
+  /* Переключатель из нескольких кнопок: выбор виден целиком, без раскрытия
+     списка, и срабатывает сразу. */
+  .seg{display:inline-flex; padding:3px; gap:3px; background:var(--panel-2);
+       border:1px solid var(--line); border-radius:10px; flex-wrap:wrap}
+  .seg button{padding:6px 12px; border-radius:7px; font-size:13.5px; color:var(--muted);
+       white-space:nowrap; transition:.15s}
+  .seg button:hover{color:var(--text)}
+  .seg button.on{background:var(--panel); color:var(--text); font-weight:600;
+       box-shadow:0 1px 2px rgba(0,0,0,.07)}
   .row{display:flex; align-items:center; gap:9px; margin-bottom:11px; font-size:14px}
   .row input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
   .group{border-top:1px solid var(--line); margin:18px 0 14px; padding-top:14px}
@@ -423,8 +480,26 @@
   .rec-title{font-weight:600; font-size:16px; letter-spacing:-.01em}
   .rec-sub{font-size:13px; color:var(--muted); margin-top:3px}
   .rec-actions{margin-left:auto; display:flex; gap:8px; align-items:center}
-  .screen-pick{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted)}
-  .screen-pick select{width:auto; max-width:190px; padding:6px 9px; font-size:13px}
+  /* Кнопка «что писать с экрана»: показывает выбранное, открывает окно с
+     плитками. */
+  .screen-pick{display:inline-flex; align-items:center; gap:7px; padding:6px 10px;
+     font-size:13px; color:var(--muted); background:var(--panel-2);
+     border:1px solid var(--line); border-radius:9px; max-width:250px}
+  .screen-pick:hover{border-color:var(--accent); color:var(--text)}
+  .screen-pick .what{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  /* Плитки источников: картинка сверху, подпись снизу — как в Зуме. */
+  .ask-box.wide{width:min(680px, 92vw)}
+  .tiles{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+     gap:10px; max-height:56vh; overflow:auto; padding:2px}
+  .tile{display:flex; flex-direction:column; gap:7px; padding:8px; border-radius:11px;
+     border:1px solid var(--line); background:var(--panel-2); text-align:left}
+  .tile:hover{border-color:var(--accent)}
+  .tile.on{border-color:var(--accent); background:var(--accent-soft)}
+  .tile .pic{display:flex; align-items:center; justify-content:center; height:92px;
+     border-radius:8px; overflow:hidden; background:var(--panel); color:var(--muted)}
+  .tile .pic img{width:100%; height:100%; object-fit:cover; display:block}
+  .tile .nm{font-size:12.5px; color:var(--text); overflow:hidden;
+     text-overflow:ellipsis; white-space:nowrap}
   .rec-body{display:grid; grid-template-columns:1fr 290px; border-top:1px solid var(--line)}
   @media (max-width:860px){ .rec-body{grid-template-columns:1fr} }
   .rec-live{padding:12px 18px; max-height:42vh; overflow:auto}
@@ -518,6 +593,10 @@
     <div class="side-list" id="lib-list"></div>
     <div class="side-foot">
       <button class="btn sm ghost" id="btn-lib-folder" style="flex:1" data-t="side.openFolder">Открыть папку с файлами</button>
+      <button class="btn sm ghost" id="btn-folder-new" title="Новая папка"
+        data-t-title="lib.folderNew">
+        <span class="ico" data-icon="folderAdd" data-size="16"></span>
+      </button>
       <button class="btn sm ghost" id="btn-trash" title="Корзина" data-t-title="trash.title">
         <span class="ico" data-icon="trash" data-size="16"></span>
         <span id="trash-count"></span>
@@ -580,6 +659,24 @@ const STR = {
     'btn.save': 'Сохранить',
     'btn.downloadModels': 'Скачать модели спикеров',
     'btn.cancel': 'Отмена',
+    'btn.add': 'Добавить',
+    'rec.screenLoading': 'Снимаю окна — картинки появятся через пару секунд.',
+    'lib.pin': 'Закрепить наверху списка',
+    'lib.unpin': 'Открепить',
+    'lib.pinnedHeading': 'Закреплённые',
+    'lib.noFolder': 'Без папки',
+    'lib.moveToFolder': 'Положить в папку',
+    'lib.folderNewPrompt': 'Название новой папки',
+    'lib.folderNew': 'Новая папка',
+    'lib.folderRemove': 'Убрать папку — записи останутся',
+    'lib.folderEmpty': 'Пока пусто',
+    'lib.folderGone': 'Папка «{name}» убрана — записи остались на месте',
+    'lib.renameTitle': 'Исправить название',
+    'lib.renamePh': 'Название записи',
+    'lib.renamed': 'Название и файлы переименованы',
+    'job.copyTab': 'Скопировать этот раздел',
+    'job.editTab': 'Править этот раздел',
+    'job.pinTitle': 'Закрепить запись наверху списка',
 
     'job.queued': 'В очереди',
     'job.speakerCount': '{n} спикер(ов)',
@@ -731,7 +828,7 @@ const STR = {
     'settings.themeDark': 'Тёмная',
     'settings.group.language': 'Язык',
     'settings.uiLanguage': 'Язык окна',
-    'settings.uiLanguageHint': 'Язык окна.',
+    'settings.appearanceHint': 'Применяется сразу и запоминается — «Сохранить» для этого нажимать не нужно.',
     'settings.docLanguage': 'Язык результата',
     'settings.docLanguageHint': 'На каком языке модель пишет саммари, бриф и задачи, и как называются папка и файлы результата.',
     'settings.langAutoSystem': 'Как в системе',
@@ -897,6 +994,24 @@ const STR = {
     'btn.save': 'Save',
     'btn.downloadModels': 'Download speaker models',
     'btn.cancel': 'Cancel',
+    'btn.add': 'Add',
+    'rec.screenLoading': 'Taking snapshots — the pictures appear in a couple of seconds.',
+    'lib.pin': 'Pin to the top of the list',
+    'lib.unpin': 'Unpin',
+    'lib.pinnedHeading': 'Pinned',
+    'lib.noFolder': 'No folder',
+    'lib.moveToFolder': 'Move to a folder',
+    'lib.folderNewPrompt': 'Name of the new folder',
+    'lib.folderNew': 'New folder',
+    'lib.folderRemove': 'Remove the folder — the recordings stay',
+    'lib.folderEmpty': 'Empty so far',
+    'lib.folderGone': 'The folder “{name}” is gone — the recordings stayed',
+    'lib.renameTitle': 'Fix the title',
+    'lib.renamePh': 'Recording title',
+    'lib.renamed': 'Title and files renamed',
+    'job.copyTab': 'Copy this section',
+    'job.editTab': 'Edit this section',
+    'job.pinTitle': 'Pin this recording to the top of the list',
 
     'job.queued': 'Queued',
     'job.speakerCount': '{n} speaker(s)',
@@ -1048,7 +1163,7 @@ const STR = {
     'settings.themeDark': 'Dark',
     'settings.group.language': 'Language',
     'settings.uiLanguage': 'Interface language',
-    'settings.uiLanguageHint': 'The language of the app window.',
+    'settings.appearanceHint': 'Applies at once and is remembered — no need to press Save for this.',
     'settings.docLanguage': 'Output language',
     'settings.docLanguageHint': 'The language the model uses for the summary, brief, and tasks, and for the output folder and file names.',
     'settings.langAutoSystem': 'Follow the system',
@@ -1256,6 +1371,13 @@ const ICONS = {
   plus: '<path d="M18 12.75H6C5.59 12.75 5.25 12.41 5.25 12C5.25 11.59 5.59 11.25 6 11.25H18C18.41 11.25 18.75 11.59 18.75 12C18.75 12.41 18.41 12.75 18 12.75Z"/><path d="M12 18.75C11.59 18.75 11.25 18.41 11.25 18V6C11.25 5.59 11.59 5.25 12 5.25C12.41 5.25 12.75 5.59 12.75 6V18C12.75 18.41 12.41 18.75 12 18.75Z"/>',
   expand: '<path d="M21 9.75C20.59 9.75 20.25 9.41 20.25 9V3.75H15C14.59 3.75 14.25 3.41 14.25 3C14.25 2.59 14.59 2.25 15 2.25H21C21.41 2.25 21.75 2.59 21.75 3V9C21.75 9.41 21.41 9.75 21 9.75Z"/><path d="M9 21.75H3C2.59 21.75 2.25 21.41 2.25 21V15C2.25 14.59 2.59 14.25 3 14.25C3.41 14.25 3.75 14.59 3.75 15V20.25H9C9.41 20.25 9.75 20.59 9.75 21C9.75 21.41 9.41 21.75 9 21.75Z"/><path d="M13.4995 11.2499C13.3095 11.2499 13.1195 11.1799 12.9695 11.0299C12.6795 10.7399 12.6795 10.2599 12.9695 9.96994L20.4695 2.46994C20.7595 2.17994 21.2395 2.17994 21.5295 2.46994C21.8195 2.75994 21.8195 3.23994 21.5295 3.52994L14.0295 11.0299C13.8795 11.1799 13.6895 11.2499 13.4995 11.2499Z"/><path d="M2.99945 21.7499C2.80945 21.7499 2.61945 21.6799 2.46945 21.5299C2.17945 21.2399 2.17945 20.7599 2.46945 20.4699L9.96945 12.9699C10.2595 12.6799 10.7395 12.6799 11.0295 12.9699C11.3195 13.2599 11.3195 13.7399 11.0295 14.0299L3.52945 21.5299C3.37945 21.6799 3.18945 21.7499 2.99945 21.7499Z"/>',
   chevron: '<path d="M10.7397 16.2802C10.5497 16.2802 10.3597 16.2102 10.2097 16.0602C9.91969 15.7702 9.91969 15.2902 10.2097 15.0002L13.2097 12.0002L10.2097 9.00016C9.91969 8.71016 9.91969 8.23016 10.2097 7.94016C10.4997 7.65016 10.9797 7.65016 11.2697 7.94016L14.7997 11.4702C15.0897 11.7602 15.0897 12.2402 14.7997 12.5302L11.2697 16.0602C11.1197 16.2102 10.9297 16.2802 10.7397 16.2802Z"/>',
+  copy: '<path d="M11.1 22.75H6.9C2.99 22.75 1.25 21.01 1.25 17.1V12.9C1.25 8.99 2.99 7.25 6.9 7.25H11.1C15.01 7.25 16.75 8.99 16.75 12.9V17.1C16.75 21.01 15.01 22.75 11.1 22.75ZM6.9 8.75C3.8 8.75 2.75 9.8 2.75 12.9V17.1C2.75 20.2 3.8 21.25 6.9 21.25H11.1C14.2 21.25 15.25 20.2 15.25 17.1V12.9C15.25 9.8 14.2 8.75 11.1 8.75H6.9Z"/><path d="M17.1 16.75H16C15.59 16.75 15.25 16.41 15.25 16V12.9C15.25 9.8 14.2 8.75 11.1 8.75H8C7.59 8.75 7.25 8.41 7.25 8V6.9C7.25 2.99 8.99 1.25 12.9 1.25H17.1C21.01 1.25 22.75 2.99 22.75 6.9V11.1C22.75 15.01 21.01 16.75 17.1 16.75ZM16.75 15.25H17.1C20.2 15.25 21.25 14.2 21.25 11.1V6.9C21.25 3.8 20.2 2.75 17.1 2.75H12.9C9.8 2.75 8.75 3.8 8.75 6.9V7.25H11.1C15.01 7.25 16.75 8.99 16.75 12.9V15.25Z"/>',
+  edit: '<path d="M5.53999 19.5201C4.92999 19.5201 4.35999 19.31 3.94999 18.92C3.42999 18.43 3.17999 17.69 3.26999 16.89L3.63999 13.65C3.70999 13.04 4.07999 12.23 4.50999 11.79L12.72 3.10005C14.77 0.930049 16.91 0.870049 19.08 2.92005C21.25 4.97005 21.31 7.11005 19.26 9.28005L11.05 17.97C10.63 18.42 9.84999 18.84 9.23999 18.9401L6.01999 19.49C5.84999 19.5 5.69999 19.5201 5.53999 19.5201ZM15.93 2.91005C15.16 2.91005 14.49 3.39005 13.81 4.11005L5.59999 12.8101C5.39999 13.0201 5.16999 13.5201 5.12999 13.8101L4.75999 17.05C4.71999 17.38 4.79999 17.65 4.97999 17.82C5.15999 17.99 5.42999 18.05 5.75999 18L8.97999 17.4501C9.26999 17.4001 9.74999 17.14 9.94999 16.93L18.16 8.24005C19.4 6.92005 19.85 5.70005 18.04 4.00005C17.24 3.23005 16.55 2.91005 15.93 2.91005Z"/><path d="M17.3404 10.9498C17.3204 10.9498 17.2904 10.9498 17.2704 10.9498C14.1504 10.6398 11.6404 8.26985 11.1604 5.16985C11.1004 4.75985 11.3804 4.37985 11.7904 4.30985C12.2004 4.24985 12.5804 4.52985 12.6504 4.93985C13.0304 7.35985 14.9904 9.21985 17.4304 9.45985C17.8404 9.49985 18.1404 9.86985 18.1004 10.2798C18.0504 10.6598 17.7204 10.9498 17.3404 10.9498Z"/><path d="M21 22.75H3C2.59 22.75 2.25 22.41 2.25 22C2.25 21.59 2.59 21.25 3 21.25H21C21.41 21.25 21.75 21.59 21.75 22C21.75 22.41 21.41 22.75 21 22.75Z"/>',
+  pin: '<path d="M8.68 15.3299C8.26 15.3299 7.87 15.2299 7.53 15.0399C6.7 14.5699 6.25 13.6399 6.25 12.4199V2.43994C6.25 2.02994 6.59 1.68994 7 1.68994C7.41 1.68994 7.75 2.02994 7.75 2.43994V12.4199C7.75 13.0699 7.94 13.5499 8.27 13.7299C8.62 13.9299 9.16 13.8299 9.75 13.4799L11.07 12.6899C11.61 12.3699 12.38 12.3699 12.92 12.6899L14.24 13.4799C14.84 13.8399 15.38 13.9299 15.72 13.7299C16.05 13.5399 16.24 13.0599 16.24 12.4199V2.43994C16.24 2.02994 16.58 1.68994 16.99 1.68994C17.4 1.68994 17.74 2.02994 17.74 2.43994V12.4199C17.74 13.6399 17.29 14.5699 16.46 15.0399C15.63 15.5099 14.54 15.4099 13.47 14.7699L12.15 13.9799C12.09 13.9399 11.9 13.9399 11.84 13.9799L10.52 14.7699C9.9 15.1399 9.26 15.3299 8.68 15.3299Z"/>',
+  folder: '<path d="M17 22.75H7C2.59 22.75 1.25 21.41 1.25 17V7C1.25 2.59 2.59 1.25 7 1.25H8.5C10.25 1.25 10.8 1.82 11.5 2.75L13 4.75C13.33 5.19 13.38 5.25 14 5.25H17C21.41 5.25 22.75 6.59 22.75 11V17C22.75 21.41 21.41 22.75 17 22.75ZM7 2.75C3.43 2.75 2.75 3.43 2.75 7V17C2.75 20.57 3.43 21.25 7 21.25H17C20.57 21.25 21.25 20.57 21.25 17V11C21.25 7.43 20.57 6.75 17 6.75H14C12.72 6.75 12.3 6.31 11.8 5.65L10.3 3.65C9.78 2.96 9.63 2.75 8.5 2.75H7Z"/>',
+  folderAdd: '<path d="M12.0605 17.25C11.6505 17.25 11.3105 16.91 11.3105 16.5V11.5C11.3105 11.09 11.6505 10.75 12.0605 10.75C12.4705 10.75 12.8105 11.09 12.8105 11.5V16.5C12.8105 16.91 12.4705 17.25 12.0605 17.25Z"/><path d="M14.5 14.75H9.5C9.09 14.75 8.75 14.41 8.75 14C8.75 13.59 9.09 13.25 9.5 13.25H14.5C14.91 13.25 15.25 13.59 15.25 14C15.25 14.41 14.91 14.75 14.5 14.75Z"/><path d="M17 22.75H7C2.59 22.75 1.25 21.41 1.25 17V7C1.25 2.59 2.59 1.25 7 1.25H8.5C10.25 1.25 10.8 1.82 11.5 2.75L13 4.75C13.33 5.19 13.38 5.25 14 5.25H17C21.41 5.25 22.75 6.59 22.75 11V17C22.75 21.41 21.41 22.75 17 22.75ZM7 2.75C3.43 2.75 2.75 3.43 2.75 7V17C2.75 20.57 3.43 21.25 7 21.25H17C20.57 21.25 21.25 20.57 21.25 17V11C21.25 7.43 20.57 6.75 17 6.75H14C12.72 6.75 12.3 6.31 11.8 5.65L10.3 3.65C9.78 2.96 9.63 2.75 8.5 2.75H7Z"/>',
+  monitor: '<path d="M17.56 17.97H6.44C2.46 17.97 1.25 16.76 1.25 12.78V6.44C1.25 2.46 2.46 1.25 6.44 1.25H17.55C21.53 1.25 22.74 2.46 22.74 6.44V12.77C22.75 16.76 21.54 17.97 17.56 17.97ZM6.44 2.75C3.3 2.75 2.75 3.3 2.75 6.44V12.77C2.75 15.91 3.3 16.46 6.44 16.46H17.55C20.69 16.46 21.24 15.91 21.24 12.77V6.44C21.24 3.3 20.69 2.75 17.55 2.75H6.44Z"/><path d="M12 22.75C11.59 22.75 11.25 22.41 11.25 22V17.22C11.25 16.81 11.59 16.47 12 16.47C12.41 16.47 12.75 16.81 12.75 17.22V22C12.75 22.41 12.41 22.75 12 22.75Z"/><path d="M16.5 22.75H7.5C7.09 22.75 6.75 22.41 6.75 22C6.75 21.59 7.09 21.25 7.5 21.25H16.5C16.91 21.25 17.25 21.59 17.25 22C17.25 22.41 16.91 22.75 16.5 22.75Z"/>',
+  window: '<path d="M16 22.75H8C4.35 22.75 2.25 20.65 2.25 17V7C2.25 3.35 4.35 1.25 8 1.25H16C19.65 1.25 21.75 3.35 21.75 7V17C21.75 20.65 19.65 22.75 16 22.75ZM8 2.75C5.14 2.75 3.75 4.14 3.75 7V17C3.75 19.86 5.14 21.25 8 21.25H16C18.86 21.25 20.25 19.86 20.25 17V7C20.25 4.14 18.86 2.75 16 2.75H8Z"/><path d="M21 7.75H3C2.59 7.75 2.25 7.41 2.25 7C2.25 6.59 2.59 6.25 3 6.25H21C21.41 6.25 21.75 6.59 21.75 7C21.75 7.41 21.41 7.75 21 7.75Z"/>',
   close: '<g transform="rotate(45 12 12)"><path d="M18 12.75H6C5.59 12.75 5.25 12.41 5.25 12C5.25 11.59 5.59 11.25 6 11.25H18C18.41 11.25 18.75 11.59 18.75 12C18.75 12.41 18.41 12.75 18 12.75Z"/><path d="M12 18.75C11.59 18.75 11.25 18.41 11.25 18V6C11.25 5.59 11.59 5.25 12 5.25C12.41 5.25 12.75 5.59 12.75 6V18C12.75 18.41 12.41 18.75 12 18.75Z"/></g>',
 };
 
@@ -1362,6 +1484,8 @@ async function copySelection(){
 const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
   presets:{items:[],current:'meeting',example:''}, preset:'',
   lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null,
+  // Папки архива, свёрнутые ветки дерева и запись, у которой правят название.
+  folders:[], libShut:new Set(), renaming:null,
   editing:new Map(), picking:null, voices:[], openId:null, docs:new Map(), docsOpen:new Set(), docsEdit:new Set(), thumbs:new Map(), people:[], orgs:[],
   trash:[], trashDays:30, trashOpen:false, trashAsk:null };
 
@@ -1416,17 +1540,67 @@ function mediaURL(path){
 /* Что писать с экрана: ничего, весь экран или одно приложение. Список
    запущенного приходит от помощника захвата вместе с остальным окружением. */
 function screenPicker(){
-  const apps=(state.env||{}).apps||[];
   const now=(state.settings||{}).record_video_source||'';
-  return `<label class="screen-pick" title="${T('rec.screenLabel')}">
-    <span>${T('rec.screenLabel')}</span>
-    <select id="screen-source">
-      <option value="" ${now===''?'selected':''}>${T('rec.screenOff')}</option>
-      <option value="screen" ${now==='screen'?'selected':''}>${T('rec.screenAll')}</option>
-      ${apps.map(a=>`<option value="${esc(a.id)}" ${now===a.id?'selected':''}
-        >${esc(a.name)}</option>`).join('')}
-    </select>
-  </label>`;
+  const label = now===''
+    ? T('rec.screenOff')
+    : (now==='screen' ? T('rec.screenAll')
+       : (((state.env||{}).apps||[]).find(a=>a.id===now)||{}).name || now);
+  return `<button class="screen-pick" id="screen-pick" title="${T('rec.screenLabel')}">
+    ${icon(now==='screen'?'monitor':(now?'window':'monitor'), 15)}
+    <span class="what">${esc(label)}</span>
+    ${icon('chevron', 14)}
+  </button>`;
+}
+
+/* Что писать с экрана — окном с плитками, как в Зуме и Телемосте. Выпадающий
+   список здесь не работал: открытых окон у одного приложения бывает несколько,
+   и по названию не понять, то ли это, что нужно. Картинка отвечает сразу. */
+async function askScreen(){
+  const box=document.createElement('div');
+  box.className='ask';
+  const draw=(items, loading)=>{
+    const now=(state.settings||{}).record_video_source||'';
+    const tile=(id, name, kind, shot, on)=>`
+      <button class="tile ${on?'on':''}" data-src="${esc(id)}">
+        <span class="pic">${shot
+          ? `<img src="${esc(shot)}" alt="">`
+          : icon(kind==='app'?'window':'monitor', 26)}</span>
+        <span class="nm">${esc(name)}</span>
+      </button>`;
+    box.innerHTML=`<div class="ask-box wide">
+      <h4>${T('rec.screenLabel')}</h4>
+      <div class="tiles">
+        ${tile('', T('rec.screenOff'), 'off', '', now==='')}
+        ${items.map(it=>tile(it.id,
+            it.id==='screen' ? T('rec.screenAll') : it.name,
+            it.kind, it.shot, now===it.id)).join('')}
+      </div>
+      ${loading?`<div class="hint">${T('rec.screenLoading')}</div>`:''}
+      <div class="ask-foot"><button class="btn sm" data-src-off="1">${T('btn.cancel')}</button></div>
+    </div>`;
+  };
+  // Пока помощник снимает картинки, показываем то, что уже известно из
+  // окружения: окно открывается сразу, а плитки дорисовываются.
+  const known=((state.env||{}).apps||[]).map(a=>({...a, shot:a.shot||''}));
+  draw(known, true);
+  box.onclick=async e=>{
+    if(e.target===box) return box.remove();
+    if(e.target.closest('[data-src-off]')) return box.remove();
+    const t=e.target.closest('[data-src]');
+    if(!t) return;
+    const value=t.dataset.src;
+    box.remove();
+    state.settings=await api().save_settings({record_video_source:value});
+    render();
+    const what=value===''?T('rec.screenOff'):(value==='screen'?T('rec.screenAll')
+      :(((state.env||{}).apps||[]).find(a=>a.id===value)||{}).name||value);
+    toast(T('rec.screenSaved',{what}));
+  };
+  document.body.appendChild(box);
+  try{
+    const r=await api().screen_sources();
+    if(document.body.contains(box)) draw(r.items||known, false);
+  }catch(e){ if(document.body.contains(box)) draw(known, false); }
 }
 
 function playerHTML(j){
@@ -1597,11 +1771,15 @@ function jobCard(j){
         k==='transcript'?`<span class="count">${(j.turns||[]).length}</span>`:''}</button>`).join('');
     const editable = active!=='transcript' && ((j.summary_sections||{})[active]||'').trim();
     const editing = state.editing.get(j.id)===active;
-    const copy = `<button class="btn sm ghost tab-copy" data-copytab="${j.id}"
-      title="${T('job.copyTitle')}">${T('job.copy')}</button>` + (editable
-      ? `<button class="btn sm ghost tab-edit ${editing?'on':''}" data-edittab="${j.id}"
-           title="${T('job.editTitle')}">${T('job.edit')}</button>` : '');
-    body = `<div class="tabs">${tabs}${copy}</div>` +
+    // Действия вынесены из ряда вкладок: вкладок бывает семь, они уезжают в
+    // прокрутку и утаскивали за собой «Копировать» и «Править» — до них
+    // приходилось доскроллить, чтобы просто скопировать саммари.
+    const copy = `<button class="btn sm ghost icon tab-copy" data-copytab="${j.id}"
+      title="${T('job.copyTab')}">${icon('copy', 15)}</button>` + (editable
+      ? `<button class="btn sm ghost icon tab-edit ${editing?'on':''}" data-edittab="${j.id}"
+           title="${T('job.editTab')}">${icon('edit', 15)}</button>` : '');
+    body = `<div class="tabs-bar"><div class="tabs">${tabs}</div>
+             <div class="tab-acts">${copy}</div></div>` +
            `<div class="pane ${editing?'':'md'}" id="pane-${j.id}">${
              editing ? editorHTML(j,active) : paneHTML(j,active)}</div>`;
     if(spk){
@@ -1630,11 +1808,20 @@ function jobCard(j){
     }
   }
 
+  const inLib = (state.lib||[]).find(x=>x.id===j.id) || null;
+  const renaming = state.renaming===j.id;
   return `<div class="job ${cls}" data-id="${j.id}">
     <div class="job-head">
       ${running?'<div class="spin"></div>':''}
-      <div style="min-width:0">
-        <div class="job-title">${esc(j.title)}</div>
+      <div style="min-width:0; flex:1">
+        ${renaming
+          ? `<div class="job-rename">
+               <input type="text" id="rename-${j.id}" value="${esc(j.title)}"
+                 placeholder="${T('lib.renamePh')}" maxlength="120">
+               <button class="btn sm primary" data-renamesave="${j.id}">${T('btn.save')}</button>
+               <button class="btn sm" data-renameoff="1">${T('btn.cancel')}</button>
+             </div>`
+          : `<div class="job-title">${esc(j.title)}</div>`}
         <div class="job-sub">${sub}</div>
       </div>
       <div class="job-actions">
@@ -1642,6 +1829,11 @@ function jobCard(j){
           <button class="btn sm ghost" data-cancel="${j.id}">${T('job.cancel')}</button>`:''}
         ${j.status==='done'?`<span class="pct" style="color:var(--ok)">${T('job.done')}</span>`:''}
         ${j.status==='cancelled'?`<span class="pct">${T('job.cancelled')}</span>`:''}
+        ${j.status==='done'&&!renaming?`
+          <button class="btn sm ghost icon" data-renameon="${j.id}"
+            title="${T('lib.renameTitle')}">${icon('edit', 15)}</button>
+          <button class="btn sm ghost icon ${inLib&&inLib.pinned?'on':''}" data-jobpin="${j.id}"
+            title="${inLib&&inLib.pinned?T('lib.unpin'):T('job.pinTitle')}">${icon('pin', 15)}</button>`:''}
         ${j.status!=='running'&&j.status!=='pending'?`<button class="btn sm ghost icon" data-remove="${j.id}"
           title="${T('job.hide')}">${icon('close', 15)}</button>`:''}
       </div>
@@ -1829,7 +2021,37 @@ function renderLib(){
       : T('lib.emptyHint')}</div>`;
     return;
   }
-  list.innerHTML=items.map(it=>{
+
+  /* Дерево: сначала закреплённое, потом папки, потом всё остальное. Пустые
+     папки тоже видны — иначе только что созданная папка пропадает, и человек
+     решает, что кнопка не сработала. */
+  const pinned = items.filter(it=>it.pinned);
+  const rest = items.filter(it=>!it.pinned);
+  const byFolder = new Map();
+  rest.forEach(it=>{
+    const key = it.folder || '';
+    if(!byFolder.has(key)) byFolder.set(key, []);
+    byFolder.get(key).push(it);
+  });
+  (state.folders||[]).forEach(name=>{ if(!byFolder.has(name)) byFolder.set(name, []); });
+
+  const branch=(key, rows)=>{
+    const shut = state.libShut.has(key);
+    return `<div class="lib-branch">
+      <div class="lib-folder ${shut?'shut':''}" data-branch="${esc(key)}">
+        <span class="tri ico">${icon('chevron', 16)}</span>
+        ${icon('folder', 15)}
+        <span class="nm">${esc(key)}</span>
+        <span class="n">${rows.length}</span>
+        <button class="fx" data-folderdel="${esc(key)}"
+          title="${T('lib.folderRemove')}">${icon('close', 13)}</button>
+      </div>
+      ${shut ? '' : `<div class="lib-kids">${rows.map(row).join('') ||
+        `<div class="side-empty sm">${T('lib.folderEmpty')}</div>`}</div>`}
+    </div>`;
+  };
+
+  const row = it => {
     const ask=state.libAsk===it.id;
     return `<div class="lib-item ${state.libOpen===it.id?'active':''}" data-lib="${it.id}">
       <div class="lib-top"><span class="lib-name">${esc(it.title)}</span>
@@ -1837,10 +2059,88 @@ function renderLib(){
       <span class="lib-sub">${esc(libSub(it))}</span>
       ${it.preview?`<span class="lib-prev">${esc(it.preview)}${
         it.matched?` <span class="lib-hit">· ${T('lib.matched')} ${esc(it.matched)}</span>`:''}</span>`:''}
-      <button class="lib-del ${ask?'ask':''}" data-libdel="${it.id}"
-        title="${T('lib.deleteTitle')}">${ask?T('lib.confirmDelete'):TRASH_ICON}</button>
+      <div class="lib-acts">
+        <button class="lib-act ${it.pinned?'on':''}" data-libpin="${it.id}"
+          title="${it.pinned?T('lib.unpin'):T('lib.pin')}">${icon('pin', 14)}</button>
+        <button class="lib-act" data-libfolder="${it.id}"
+          title="${T('lib.moveToFolder')}">${icon('folder', 14)}</button>
+        <button class="lib-act del ${ask?'ask':''}" data-libdel="${it.id}"
+          title="${T('lib.deleteTitle')}">${ask?T('lib.confirmDelete'):icon('trash', 14)}</button>
+      </div>
     </div>`;
-  }).join('');
+  };
+
+  let html = '';
+  if(pinned.length){
+    html += `<div class="lib-cap">${icon('pin', 12)} ${T('lib.pinnedHeading')}</div>`
+          + pinned.map(row).join('');
+  }
+  [...byFolder.keys()].filter(k=>k).sort((a,b)=>a.localeCompare(b))
+    .forEach(k=>{ html += branch(k, byFolder.get(k)); });
+  const loose = byFolder.get('') || [];
+  if(loose.length){
+    if(byFolder.size > (byFolder.has('')?1:0))
+      html += `<div class="lib-cap">${T('lib.noFolder')}</div>`;
+    html += loose.map(row).join('');
+  }
+  list.innerHTML = html;
+}
+
+async function loadFolders(){
+  try{ const r=await api().folders(); state.folders=r.items||[]; }
+  catch(e){ state.folders=[]; }
+}
+
+/* Маленькое окно выбора. Системный prompt() здесь не годится: в окне
+   приложения (WKWebView) он то не показывается вовсе, то блокирует всё
+   происходящее. Своё окошко ведёт себя предсказуемо и выглядит как остальное. */
+function askPick(title, options, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const box=document.createElement('div');
+    box.className='ask';
+    box.innerHTML=`<div class="ask-box">
+      <h4>${esc(title)}</h4>
+      <div class="ask-list">${(options||[]).map((o,i)=>
+        `<button class="ask-row ${o.on?'on':''}" data-pick="${i}">${
+          o.icon?icon(o.icon,15):''}<span>${esc(o.label)}</span></button>`).join('')}</div>
+      ${opts.newLabel?`<div class="ask-new">
+        <input type="text" id="ask-input" placeholder="${esc(opts.newLabel)}" maxlength="60">
+        <button class="btn sm primary" data-pick="new">${T('btn.add')}</button>
+      </div>`:''}
+      <div class="ask-foot"><button class="btn sm" data-pick="off">${T('btn.cancel')}</button></div>
+    </div>`;
+    const done=v=>{ box.remove(); document.removeEventListener('keydown', esc2); resolve(v); };
+    const esc2=e=>{ if(e.key==='Escape') done(null); };
+    box.onclick=e=>{
+      if(e.target===box) return done(null);
+      const t=e.target.closest('[data-pick]');
+      if(!t) return;
+      const v=t.dataset.pick;
+      if(v==='off') return done(null);
+      if(v==='new'){
+        const name=(box.querySelector('#ask-input').value||'').trim();
+        return name ? done({fresh:name}) : null;
+      }
+      done(options[Number(v)]);
+    };
+    document.addEventListener('keydown', esc2);
+    document.body.appendChild(box);
+    const input=box.querySelector('#ask-input');
+    if(input) input.focus();
+  });
+}
+
+/* Куда положить запись: уже заведённые папки плюс поле для новой. */
+async function askFolder(id){
+  const now=(state.lib||[]).find(x=>x.id===id)||{};
+  const options=[{label:T('lib.noFolder'), value:'', on:!now.folder},
+    ...(state.folders||[]).map(n=>({label:n, value:n, icon:'folder', on:n===now.folder}))];
+  const pick=await askPick(T('lib.moveToFolder'), options, {newLabel:T('lib.folderNewPrompt')});
+  if(pick===null) return;
+  await api().folder_put(id, pick.fresh !== undefined ? pick.fresh : pick.value);
+  await loadFolders();
+  await loadLib();
 }
 
 let libTimer=null;
@@ -1986,14 +2286,14 @@ function settingsHTML(){
         <option value="ru" ${s.ui_language==='ru'?'selected':''}>${T('settings.langRu')}</option>
         <option value="en" ${s.ui_language==='en'?'selected':''}>${T('settings.langEn')}</option>
       </select>
-      <div class="hint">${T('settings.uiLanguageHint')}</div>
     </div>
     <div class="field"><label>${T('settings.appearance')}</label>
-      <select data-k="theme">
-        <option value="auto" ${(!s.theme||s.theme==='auto')?'selected':''}>${T('settings.themeAuto')}</option>
-        <option value="light" ${s.theme==='light'?'selected':''}>${T('settings.themeLight')}</option>
-        <option value="dark" ${s.theme==='dark'?'selected':''}>${T('settings.themeDark')}</option>
-      </select>
+      <div class="seg" id="theme-pick">
+        ${[['auto','settings.themeAuto'],['light','settings.themeLight'],['dark','settings.themeDark']]
+          .map(([v,k])=>`<button data-theme="${v}"
+            class="${(s.theme||'auto')===v?'on':''}">${T(k)}</button>`).join('')}
+      </div>
+      <div class="hint">${T('settings.appearanceHint')}</div>
     </div>
     <div class="field"><label>${T('settings.docLanguage')}</label>
       <select data-k="doc_language">
@@ -2308,7 +2608,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen],[data-full],[data-at]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen],[data-full],[data-theme],[data-libpin],[data-libfolder],[data-branch],[data-folderdel],[data-renameon],[data-renameoff],[data-renamesave],[data-jobpin],[data-at]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -2320,6 +2620,57 @@ document.addEventListener('click', async ev=>{
     // Не удаляем сразу: пока не нажато «Сохранить», всё можно вернуть.
     const row=t.closest('.edit-item, .row');
     if(row) row.classList.toggle('gone');
+    return;
+  }
+  if(t.dataset.branch !== undefined){
+    // Папка сворачивается кликом по строке, но не по кнопке внутри неё.
+    const key=t.dataset.branch;
+    if(state.libShut.has(key)) state.libShut.delete(key); else state.libShut.add(key);
+    renderLib(); return;
+  }
+  if(t.dataset.folderdel){
+    // Папку убираем сразу, без вопроса: записи из неё никуда не деваются,
+    // а лишний диалог на безобидном действии только раздражает.
+    const name=t.dataset.folderdel;
+    await api().folder_remove(name);
+    await loadFolders(); await loadLib();
+    toast(T('lib.folderGone',{name})); return;
+  }
+  if(t.dataset.libfolder){ askFolder(t.dataset.libfolder); return; }
+  if(t.dataset.libpin || t.dataset.jobpin){
+    const id=t.dataset.libpin || t.dataset.jobpin;
+    const now=(state.lib||[]).find(x=>x.id===id);
+    await api().library_pin(id, !(now && now.pinned));
+    await loadLib(); render(); return;
+  }
+  if(t.dataset.renameon){ state.renaming=t.dataset.renameon; render();
+    const box=document.getElementById('rename-'+t.dataset.renameon);
+    if(box){ box.focus(); box.select(); } return; }
+  if(t.dataset.renameoff){ state.renaming=null; render(); return; }
+  if(t.dataset.renamesave){
+    const id=t.dataset.renamesave;
+    const box=document.getElementById('rename-'+id);
+    const title=(box && box.value || '').trim();
+    if(!title) return;
+    const r=await api().library_retitle(id, title);
+    state.renaming=null;
+    if(!r || !r.ok){ toast((r&&r.error)||T('lib.filesNotFound')); render(); return; }
+    // Файлы переехали — у записи новый идентификатор, открываем её заново.
+    state.jobs.delete(id);
+    await loadLib();
+    if(r.id) await openLib(r.id); else render();
+    toast(T('lib.renamed'));
+    return;
+  }
+  if(t.dataset.theme){
+    // Тему запоминаем сразу и только её: остальную форму настроек не трогаем,
+    // иначе несохранённые правки в соседних полях сбросились бы.
+    const pick = t.dataset.theme;
+    state.settings.theme = pick;
+    applyTheme(state.settings);
+    t.parentElement.querySelectorAll('button').forEach(b=>
+      b.classList.toggle('on', b.dataset.theme === pick));
+    api().save_settings({theme: pick});
     return;
   }
   if(t.dataset.full){ goFull(t.dataset.full); return; }
@@ -2504,16 +2855,10 @@ document.addEventListener('click', async ev=>{
 
 /* Cmd+C и Cmd+A. Без строки меню macOS сама их не обрабатывает, а привычка
    копировать выделенное клавишами никуда не девается. */
-/* Выбор источника экрана живёт в карточке, которая перерисовывается по
-   таймеру, — поэтому слушаем change на документе, а не на самом элементе. */
-document.addEventListener('change', async ev=>{
-  const select=ev.target.closest('#screen-source');
-  if(!select) return;
-  const value=select.value;
-  state.settings=await api().save_settings({record_video_source:value});
-  const what=value===''?T('rec.screenOff'):(value==='screen'?T('rec.screenAll')
-    :(((state.env||{}).apps||[]).find(a=>a.id===value)||{}).name||value);
-  toast(T('rec.screenSaved',{what}));
+/* Кнопка выбора экрана живёт в карточке, которая перерисовывается по таймеру,
+   — поэтому слушаем клик на документе, а не на самом элементе. */
+document.addEventListener('click', ev=>{
+  if(ev.target.closest('#screen-pick')) askScreen();
 });
 
 document.addEventListener('keydown', async ev=>{
@@ -2910,6 +3255,12 @@ async function refreshEnv(){
   finally{ envBusy=false; }
 }
 $('#chips').onclick=async()=>{ await refreshEnv(); toast(T('chips.checked')); };
+$('#btn-folder-new').onclick=async()=>{
+  const pick=await askPick(T('lib.folderNew'), [], {newLabel:T('lib.folderNewPrompt')});
+  if(!pick || !pick.fresh) return;
+  await api().folder_add(pick.fresh);
+  await loadFolders(); renderLib();
+};
 $('#btn-trash').onclick=async()=>{
   state.trashOpen=!state.trashOpen; state.trashAsk=null;
   $('#btn-trash').classList.toggle('primary', state.trashOpen);
@@ -2931,6 +3282,7 @@ window.addEventListener('pywebviewready', async()=>{
   state.recPerms=await api().rec_permissions();
   state.rec=await api().rec_state();
   renderChips(); render();
+  loadFolders();
   loadLib();
   loadTrash();
   loadPeople();
