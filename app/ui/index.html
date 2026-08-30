@@ -246,6 +246,18 @@
   .spk input:focus{border-bottom-color:var(--accent)}
   .spk .m{font-size:12px; color:var(--muted); font-family:var(--mono)}
 
+  .people-form{display:flex; gap:8px; margin:4px 0 12px; flex-wrap:wrap}
+  .people-form input{flex:1 1 130px; width:auto}
+  .people-org{margin-bottom:12px}
+  .people-org h5{margin:0 0 6px; font-size:12.5px; font-weight:600; color:var(--muted)}
+  .people-row{display:flex; align-items:center; gap:8px; padding:6px 0;
+    border-bottom:1px solid var(--line); font-size:13.5px}
+  .people-row .who{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis}
+  .people-row .mark{font-size:11.5px; color:var(--ok)}
+  .people-row .role{font-size:12px; color:var(--muted)}
+  .people-row .x{width:20px; height:20px; border-radius:6px; color:var(--muted); font-size:14px}
+  .people-row .x:hover{background:var(--panel-2); color:var(--err)}
+
   .voice-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
   .voice-list .spk b{font-weight:600; font-size:12.5px}
   .voice-list .x{width:18px; height:18px; border-radius:5px; font-size:14px;
@@ -253,6 +265,32 @@
   .voice-list .x:hover{background:var(--panel-2); color:var(--err)}
 
   .files{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line)}
+
+  /* ---------- документы к записи ---------- */
+  .docs{border-top:1px solid var(--line); background:var(--panel-2)}
+  .docs summary{
+    display:flex; align-items:center; gap:8px; padding:12px 20px; cursor:pointer;
+    font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); font-weight:600; list-style:none;
+  }
+  .docs summary::-webkit-details-marker{display:none}
+  .docs summary:hover{color:var(--text)}
+  .docs summary .tri{display:inline-block; transition:transform .15s; font-size:15px}
+  .docs[open] summary .tri{transform:rotate(90deg)}
+  .docs summary .count{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:0; text-transform:none;
+    padding:1px 8px; border-radius:20px; background:var(--panel); border:1px solid var(--line);
+  }
+  .docs .inner{padding:0 20px 14px}
+  .docs .hint{font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.5}
+  .docs .list{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px}
+  .doc{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:9px;
+    background:var(--panel); border:1px solid var(--line); font-size:13px}
+  .doc .kb{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
+  .doc .no{color:var(--warn); font-size:11.5px}
+  .doc .x{width:18px; height:18px; border-radius:5px; color:var(--muted); font-size:14px; line-height:1}
+  .doc .x:hover{background:var(--panel-2); color:var(--err)}
+  .docs .acts{display:flex; gap:8px; flex-wrap:wrap}
 
   /* ---------- настройки ---------- */
   .backdrop{position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:40}
@@ -348,6 +386,7 @@
   .person:hover{border-color:var(--accent); background:var(--accent-soft)}
   .person.on{border-color:var(--accent); background:var(--accent-soft); font-weight:600}
   .person .n{font-family:var(--mono); font-size:11px; color:var(--muted)}
+  .person.org{border-style:dashed}
   .people input{
     width:140px; padding:5px 12px; font-size:13.5px; border-radius:20px;
     border:1px dashed var(--line); background:none;
@@ -465,6 +504,18 @@ const STR = {
     'job.noSplit': 'без разделения',
     'job.copy': 'Копировать',
     'job.working': 'Сейчас в работе',
+    'docs.heading': 'Документы к записи',
+    'docs.hint': 'Смета, техзадание, письмо — то, о чём говорили. Их текст пойдёт в модель вместе с расшифровкой.',
+    'docs.add': 'Приложить документ',
+    'docs.remove': 'Убрать',
+    'docs.empty': 'Пока ничего не приложено',
+    'docs.unreadable': 'текст не читается',
+    'docs.added': 'Приложено: {n}',
+    'docs.failed': 'Не удалось приложить',
+    'docs.resummarize': 'Пересобрать саммари с документами',
+    'docs.resummarizing': 'Пересобираю саммари — это займёт минуту-другую',
+    'docs.kb': 'КБ',
+    'docs.none': 'нет',
     'job.copyTitle': 'Скопировать текст этой вкладки',
     'job.edit': 'Править',
     'job.editTitle': 'Убрать лишнее или поправить формулировку',
@@ -642,6 +693,18 @@ const STR = {
     'settings.cleanupFillers': 'Убирать эканье и слова-паразиты',
     'settings.cleanupHint': 'Вычищает «э-э», «ну», «вот», «как бы», «типа» и повторы слов. Осмысленные обороты вроде «вот здесь» и «ну и что» остаются. Дословный текст сохраняется в файле .result.json.',
 
+    'people.group': 'Люди и команды',
+    'people.hint': 'Кто с кем работает. Перед созвоном список участников подставляется целиком — поправить дешевле, чем набрать заново.',
+    'people.name': 'Имя',
+    'people.org': 'Команда или компания',
+    'people.add': 'Добавить',
+    'people.empty': 'Пока никого. Заведите людей, с которыми созваниваетесь чаще всего.',
+    'people.noOrg': 'Без команды',
+    'people.hasVoice': 'голос запомнен',
+    'people.remove': 'Убрать из справочника',
+    'people.added': 'В справочнике: {name}',
+    'rec.fromDirectory': 'Из справочника',
+    'rec.orgAdded': 'Добавлены: {names}',
     'settings.group.voices': 'Знакомые голоса',
     'settings.knownVoices': 'Узнавать знакомых по голосу',
     'settings.knownVoicesHint': 'Запомненный голос подписывается именем сразу, как только человек заговорит, — и в живом разговоре, и после разбора. Само приложение никого не запоминает: вы открываете разобранную запись, проверяете имена и нажимаете «Запомнить голоса». Иначе одна ошибка разделения запомнилась бы навсегда.',
@@ -731,6 +794,18 @@ const STR = {
     'job.noSplit': 'no speaker split',
     'job.copy': 'Copy',
     'job.working': 'Working on now',
+    'docs.heading': 'Documents for this recording',
+    'docs.hint': 'An estimate, a brief, an email — whatever was discussed. Their text goes to the model together with the transcript.',
+    'docs.add': 'Attach a document',
+    'docs.remove': 'Remove',
+    'docs.empty': 'Nothing attached yet',
+    'docs.unreadable': 'text cannot be read',
+    'docs.added': 'Attached: {n}',
+    'docs.failed': 'Could not attach',
+    'docs.resummarize': 'Rebuild the summary with the documents',
+    'docs.resummarizing': 'Rebuilding the summary — a minute or two',
+    'docs.kb': 'KB',
+    'docs.none': 'none',
     'job.copyTitle': "Copy this tab's text",
     'job.edit': 'Edit',
     'job.editTitle': "Cut what doesn't belong or fix the wording",
@@ -908,6 +983,18 @@ const STR = {
     'settings.cleanupFillers': 'Strip filler words',
     'settings.cleanupHint': 'Removes "um", "uh", "like", "you know" and repeated words. Meaningful phrases stay untouched. The verbatim text is kept in the .result.json file.',
 
+    'people.group': 'People and teams',
+    'people.hint': 'Who works with whom. Before a call the participant list is filled in at once — correcting it is cheaper than typing it again.',
+    'people.name': 'Name',
+    'people.org': 'Team or company',
+    'people.add': 'Add',
+    'people.empty': 'Nobody yet. Add the people you talk to most.',
+    'people.noOrg': 'No team',
+    'people.hasVoice': 'voice remembered',
+    'people.remove': 'Remove from the directory',
+    'people.added': 'In the directory: {name}',
+    'rec.fromDirectory': 'From the directory',
+    'rec.orgAdded': 'Added: {names}',
     'settings.group.voices': 'Familiar voices',
     'settings.knownVoices': 'Recognise people by voice',
     'settings.knownVoicesHint': 'A remembered voice gets its name the moment that person speaks — both live and after processing. The app never remembers anyone on its own: you open a processed recording, check the names, and press "Remember voices". Otherwise one splitting mistake would be learned forever.',
@@ -1097,7 +1184,7 @@ async function copySelection(){
 const state={ jobs:new Map(), tabs:new Map(), settings:{}, env:{},
   presets:{items:[],current:'meeting',example:''}, preset:'',
   lib:[], libQuery:'', libDir:'', libOpen:null, libAsk:null,
-  editing:new Map(), picking:null, voices:[], openId:null,
+  editing:new Map(), picking:null, voices:[], openId:null, docs:new Map(), docsOpen:new Set(), people:[], orgs:[],
   trash:[], trashDays:30, trashOpen:false, trashAsk:null };
 
 /* Набор вкладок зависит от профиля: у сметы свои разделы, у встречи свои.
@@ -1138,6 +1225,51 @@ function renderChips(){
   $('#chips').title=T('chips.recheckTitle');
 }
 
+/* Документы к записи. Созвон почти никогда не самодостаточен: половина задач
+   ссылается на смету или письмо, и без них через неделю не разобраться. */
+const PLUS_ICON = `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path
+  fill="currentColor" d="M8 2.6c.4 0 .75.34.75.75V7.2h3.9a.75.75 0 0 1 0 1.5h-3.9v3.85a.75.75 0 0 1-1.5 0V8.7H3.3a.75.75 0 0 1 0-1.5h3.95V3.35c0-.41.34-.75.75-.75Z"/></svg>`;
+
+function docsHTML(j){
+  // Пока запись считается, прикладывать нечего: файлы записи ещё не готовы.
+  if(j.status!=='done') return '';
+  const items = state.docs.get(j.id) || [];
+  // Свёрнуто по умолчанию: документы есть не у каждой записи, а место они
+  // занимают у всех. Открытое состояние держим в памяти, иначе перерисовка
+  // (а она бывает каждую секунду) захлопывала бы блок под руками.
+  const open = state.docsOpen.has(j.id) || false;
+  return `<details class="docs" ${open?'open':''} data-docs="${j.id}">
+    <summary>
+      <span class="tri" aria-hidden="true">›</span>
+      ${T('docs.heading')}
+      <span class="count">${items.length ? items.length : T('docs.none')}</span>
+    </summary>
+    <div class="inner">
+      <div class="hint">${T('docs.hint')}</div>
+      ${items.length ? `<div class="list">${items.map(d=>`
+        <span class="doc">${esc(d.name)}
+          <span class="kb">${Math.max(1, Math.round(d.size/1024))} ${T('docs.kb')}</span>
+          ${d.readable?'':`<span class="no">${T('docs.unreadable')}</span>`}
+          <button class="x" data-docdel="${esc(d.name)}" data-job="${j.id}"
+            title="${T('docs.remove')}">×</button>
+        </span>`).join('')}</div>` : ''}
+      <div class="acts">
+        <button class="btn sm primary" data-docadd="${j.id}">${PLUS_ICON}${T('docs.add')}</button>
+        ${items.length ? `<button class="btn sm ghost" data-resum="${j.id}"
+          >${T('docs.resummarize')}</button>` : ''}
+      </div>
+    </div>
+  </details>`;
+}
+
+async function loadDocs(id){
+  try{
+    const r=await api().attachments(id);
+    state.docs.set(id, r.items||[]);
+  }catch(e){ state.docs.set(id, []); }
+  render();
+}
+
 function jobCard(j){
   const running = j.status==='pending'||j.status==='running';
   const cls = j.status==='error'?'err':(j.status==='done'?'done':'');
@@ -1173,6 +1305,7 @@ function jobCard(j){
         `<button class="btn sm ghost" data-learn="${j.id}"
            title="${T('job.learnVoicesTitle')}">${T('job.learnVoices')}</button></div>`;
     }
+    body += docsHTML(j);
     const files = Object.entries(j.files||{});
     if(files.length){
       body += `<div class="files">` +
@@ -1418,6 +1551,7 @@ async function openLib(id){
   state.libOpen=id;
   state.jobs.set(snap.id, snap);
   openJob(snap.id);
+  if(!state.docs.has(snap.id)) loadDocs(snap.id);
 }
 
 async function deleteLib(id){
@@ -1576,6 +1710,15 @@ function settingsHTML(){
     <div class="row"><input type="checkbox" data-k="speaker_merge_auto" ${s.speaker_merge_auto?'checked':''}><span>${T('settings.speakerMergeAuto')}</span></div>
     <div class="hint">${T('settings.speakerMergeHint',{val:s.speaker_merge_similarity})}</div>
   </div>
+  <div class="group"><h3>${T('people.group')}</h3>
+    <div class="field"><div class="hint" style="margin-top:-4px">${T('people.hint')}</div></div>
+    <div class="people-form">
+      <input type="text" id="person-name" placeholder="${esc(T('people.name'))}">
+      <input type="text" id="person-org" placeholder="${esc(T('people.org'))}">
+      <button class="btn sm" id="btn-person-add">${T('people.add')}</button>
+    </div>
+    <div id="people-list"></div>
+  </div>
   <div class="group"><h3>${T('settings.group.voices')}</h3>
     <div class="row"><input type="checkbox" data-k="known_voices" ${s.known_voices?'checked':''}><span>${T('settings.knownVoices')}</span></div>
     <div class="field"><div class="hint" style="margin-top:-4px">${T('settings.knownVoicesHint')}</div></div>
@@ -1717,6 +1860,34 @@ function syncLlmBlocks(){
 
 /* Кого приложение уже узнаёт по голосу. Список приходит с диска, поэтому
    рисуется отдельно от формы: настройки открываются сразу, имена — следом. */
+/* Справочник людей: кого мы знаем и из какой они команды. Голос отмечается
+   галочкой — он живёт в памяти голосов, а не здесь. */
+function directoryHTML(){
+  const groups=state.orgs||[];
+  if(!groups.length) return `<div class="hint">${T('people.empty')}</div>`;
+  return groups.map(g=>{
+    const rows=(state.people||[]).filter(p=>p.org===g.org);
+    return `<div class="people-org">
+      <h5>${esc(g.org || T('people.noOrg'))}</h5>
+      ${rows.map(p=>`<div class="people-row">
+        <span class="who">${esc(p.name)}${p.role?` <span class="role">· ${esc(p.role)}</span>`:''}</span>
+        ${p.voice?`<span class="mark">${T('people.hasVoice')}</span>`:''}
+        <button class="x" data-personout="${esc(p.name)}" title="${T('people.remove')}">×</button>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function loadPeople(){
+  try{
+    const r=await api().people_list();
+    state.people=r.items||[]; state.orgs=r.orgs||[];
+  }catch(e){ state.people=[]; state.orgs=[]; }
+  const box=$('#people-list');
+  if(box) box.innerHTML=directoryHTML();
+  renderRec();
+}
+
 function knownVoicesHTML(){
   const items=state.voices||[];
   if(!items.length) return `<div class="hint">${T('settings.voicesEmpty')}</div>`;
@@ -1737,6 +1908,25 @@ async function loadVoices(){
 function openSettings(){
   $('#settings-body').innerHTML=settingsHTML();
   loadVoices();
+  loadPeople();
+  const addPerson=async()=>{
+    const name=$('#person-name').value.trim();
+    if(!name) return;
+    const r=await api().people_add(name, $('#person-org').value.trim(), '');
+    if(r && r.ok){
+      state.people=r.items||[]; state.orgs=r.orgs||[];
+      $('#people-list').innerHTML=directoryHTML();
+      $('#person-name').value=''; $('#person-name').focus();
+      toast(T('people.added',{name}));
+      renderRec();
+    }
+  };
+  const btnPerson=$('#btn-person-add');
+  if(btnPerson) btnPerson.onclick=addPerson;
+  ['#person-name','#person-org'].forEach(sel=>{
+    const el=$(sel);
+    if(el) el.onkeydown=ev=>{ if(ev.key==='Enter') addPerson(); };
+  });
   $('#drawer').classList.add('show'); $('#backdrop').classList.add('show');
   syncLlmBlocks();
   $('#llm-backend').onchange=syncLlmBlocks;
@@ -1796,7 +1986,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -1844,6 +2034,34 @@ document.addEventListener('click', async ev=>{
     return;
   }
   if(t.dataset.openjob){ openJob(t.dataset.openjob); return; }
+  if(t.dataset.docs!==undefined){
+    // <details> переключается сам — нам нужно только запомнить состояние.
+    const box=t.closest('details');
+    setTimeout(()=>{ if(box.open) state.docsOpen.add(t.dataset.docs);
+                     else state.docsOpen.delete(t.dataset.docs); }, 0);
+    return;
+  }
+  if(t.dataset.docadd){
+    const id=t.dataset.docadd;
+    const r=await api().attach_add(id);
+    if(r && r.ok){ state.docs.set(id, r.items||[]); state.docsOpen.add(id); render();
+      toast(T('docs.added',{n:(r.added||[]).length})); }
+    else if(r && !r.cancelled) toast((r&&r.error)||T('docs.failed'));
+    return;
+  }
+  if(t.dataset.docdel){
+    const id=t.dataset.job;
+    const r=await api().attach_remove(id, t.dataset.docdel);
+    if(r) state.docs.set(id, r.items||[]);
+    render(); return;
+  }
+  if(t.dataset.resum){
+    toast(T('docs.resummarizing'));
+    const r=await api().resummarize(t.dataset.resum);
+    if(r && r.ok && r.job){ state.jobs.set(r.job.id, r.job); openJob(r.job.id); }
+    else toast((r&&r.error)||T('docs.failed'));
+    return;
+  }
   if(t.dataset.libdel){ ev.stopPropagation(); await deleteLib(t.dataset.libdel); return; }
   if(t.dataset.restore){
     const r=await api().trash_restore(t.dataset.restore);
@@ -1925,6 +2143,22 @@ document.addEventListener('click', async ev=>{
                 'no-speech':T('job.learnNoSpeech')}[(r||{}).error] ||
                (r&&r.error) || T('job.learnFailed'));
     if(r && r.ok) loadVoices();
+    return;
+  }
+  if(t.dataset.orgadd){
+    const group=(state.orgs||[]).find(g=>g.org===t.dataset.orgadd);
+    if(!group) return;
+    const have=new Set(((state.rec&&state.rec.people)||[]).map(n=>n.toLowerCase()));
+    const fresh=group.people.filter(n=>!have.has(n.toLowerCase()));
+    if(!fresh.length) return;
+    const session=await api().rec_people([...((state.rec&&state.rec.people)||[]), ...fresh]);
+    if(session){ setRec(session); renderRec(); toast(T('rec.orgAdded',{names:fresh.join(', ')})); }
+    return;
+  }
+  if(t.dataset.personout){
+    const r=await api().people_remove(t.dataset.personout);
+    if(r){ state.people=r.items||[]; state.orgs=r.orgs||[];
+      const box=$('#people-list'); if(box) box.innerHTML=directoryHTML(); renderRec(); }
     return;
   }
   if(t.dataset.forget){
@@ -2203,8 +2437,21 @@ function peopleHTML(r){
         title="${T('rec.tagLastTitle')}">${esc(name)}
         <span class="n">${i+1}</span></button>`).join('')}
     <input type="text" id="person-add" placeholder="${T('rec.addNamePh')}" maxlength="40">
+    ${orgChips(people)}
     <span class="hint">${T('rec.peopleHint')}</span>
   </div>`;
+}
+
+/* Команды из справочника: один клик — и все участники на месте. Показываем
+   только те, кого ещё нет в списке: добавлять дважды незачем. */
+function orgChips(current){
+  const have=new Set((current||[]).map(n=>n.toLowerCase()));
+  const left=(state.orgs||[]).filter(g=>g.org &&
+    g.people.some(n=>!have.has(n.toLowerCase())));
+  if(!left.length) return '';
+  return `<span class="lbl">${T('rec.fromDirectory')}</span>` + left.map(g=>
+    `<button class="person org" data-orgadd="${esc(g.org)}">${esc(g.org)}
+      <span class="n">${g.people.length}</span></button>`).join('');
 }
 
 function pickbarHTML(r,line){
@@ -2335,6 +2582,7 @@ window.addEventListener('pywebviewready', async()=>{
   renderChips(); render();
   loadLib();
   loadTrash();
+  loadPeople();
 });
 </script>
 </body>

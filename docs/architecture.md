@@ -257,6 +257,44 @@ it can, invisibly.
 Hence the rule in `is_active()`: only the recording itself counts as busy. The
 previous call's processing no longer locks the microphone.
 
+## Documents attached to a recording: context, not content
+
+Half the tasks from a call point at a document that lives elsewhere. So attached
+files are copied next to the recording (`<recording>.files`) rather than kept as
+a link: the original gets renamed, and the record has to stay whole a year later.
+
+Text is extracted with what the system already has: docx, pptx and xlsx are zip
+archives of xml with the tags stripped; pdf goes through `pdftotext`, or `pypdf`
+if it happens to be installed. When neither works the file still sits beside the
+recording and opens on click — the card says plainly that its text cannot be
+read.
+
+In the prompt the documents come **before** the transcript, under a heading that
+says “this is context for the conversation, not its content”: otherwise the
+model starts retelling an attached estimate in the summary of a meeting where it
+was mentioned once. The file names also go into the header the map stage sees,
+so the model knows documents exist even when their text is not in that chunk.
+
+There are limits: 6 000 characters per document, 12 000 for all of them. An
+hour-long call is some forty thousand characters of transcript, and the
+documents must not crowd it out of the context window.
+
+Rebuilding the summary is an explicit command, not automatic: the transcript has
+not changed, only the document made from it has to. That is minutes of model
+time — spending it unasked on every attached file would be rude.
+
+## A directory of people: a name beats a print
+
+Voice prints on calls are unreliable (see the measurement above), and the
+participant list is something the person already knows. So the directory keeps
+people and their teams separately from voices: a person may have no remembered
+voice, and a voice without a name is not a person. The name is the link, and
+that is enough.
+
+The payoff is twofold: the “who's on the call” list is filled in with one press,
+and that same list caps live voice splitting — the app will not invent more
+voices than there are named people, plus one spare.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three

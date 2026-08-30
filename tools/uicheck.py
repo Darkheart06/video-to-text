@@ -237,6 +237,30 @@ EN_LIB = [
      "preview": "Weekly product team meeting on release 2.4."},
 ]
 
+PEOPLE = {
+    "items": [
+        {"name": "Ирина Волкова", "org": "Подрядчик", "role": "прораб", "voice": True},
+        {"name": "Сергей Ким", "org": "Подрядчик", "role": "", "voice": False},
+        {"name": "Дмитрий", "org": "Наш продукт", "role": "дизайн", "voice": False},
+    ],
+    "orgs": [
+        {"org": "Наш продукт", "people": ["Дмитрий"]},
+        {"org": "Подрядчик", "people": ["Ирина Волкова", "Сергей Ким"]},
+    ],
+}
+
+EN_PEOPLE = {
+    "items": [
+        {"name": "Irina Volkova", "org": "Contractor", "role": "site manager", "voice": True},
+        {"name": "Sergey Kim", "org": "Contractor", "role": "", "voice": False},
+        {"name": "Dmitry", "org": "Our product", "role": "design", "voice": False},
+    ],
+    "orgs": [
+        {"org": "Contractor", "people": ["Irina Volkova", "Sergey Kim"]},
+        {"org": "Our product", "people": ["Dmitry"]},
+    ],
+}
+
 BRIDGE = """
 window.pywebview = {api: {
   get_settings: async () => (%(settings)s),
@@ -290,12 +314,32 @@ window.pywebview = {api: {
   trash_restore: async id => { window.__restored = id;
                                return {ok: true, restored: 6, title: "Созвон 24.08 10-15"}; },
   trash_purge: async id => { window.__purged = id; return {ok: true, removed: 1}; },
+  attachments: async () => ({items: [
+    {name: "Смета подрядчика.pdf", path: "/x/Смета подрядчика.pdf", size: 184320, readable: true},
+    {name: "Схема интеграции.png", path: "/x/Схема интеграции.png", size: 96000, readable: false}]}),
+  attach_add: async id => { window.__attached = id;
+    return {ok: true, added: ["Письмо от заказчика.docx"], items: [
+      {name: "Смета подрядчика.pdf", path: "/x/1.pdf", size: 184320, readable: true},
+      {name: "Схема интеграции.png", path: "/x/2.png", size: 96000, readable: false},
+      {name: "Письмо от заказчика.docx", path: "/x/3.docx", size: 24576, readable: true}]}; },
+  attach_remove: async (id, name) => { window.__detached = name;
+    return {ok: true, items: [
+      {name: "Смета подрядчика.pdf", path: "/x/1.pdf", size: 184320, readable: true}]}; },
+  resummarize: async id => { window.__resum = id;
+    return {ok: true, job: Object.assign({}, %(estimate)s, {id: "resum1",
+      status: "running", stage: "summary", progress: 0.3,
+      message: "Сборка итогового документа · Ollama"})}; },
   library_rename: async () => (%(estimate)s),
   voices_list: async () => ({items: [{name: "Леонид", prints: 6},
                                      {name: "Марина", prints: 3}]}),
   voices_learn: async id => { window.__learned = id;
                               return {ok: true, learned: {"Леонид": 6}}; },
   voices_forget: async name => { window.__forgot = name; return {ok: true}; },
+  people_list: async () => (%(people)s),
+  people_add: async (name, org) => { window.__personAdded = {name: name, org: org};
+                                     return Object.assign({ok: true}, %(people)s); },
+  people_remove: async name => { window.__personGone = name;
+                                 return Object.assign({ok: true}, %(people)s); },
   copy: async text => { window.__copied = text; return true; },
   edit_summary: async (id, key, markdown) => {
     window.__edited = {id: id, key: key, markdown: markdown};
@@ -342,7 +386,8 @@ def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path
     bridge = BRIDGE % {"settings": json.dumps(english), "env": json.dumps(env),
                        "rec": json.dumps(EN_REC), "presets": json.dumps(catalogue),
                        "lib": json.dumps(EN_LIB), "estimate": json.dumps(EN_ESTIMATE_JOB),
-                       "sections": json.dumps(EN_SECTIONS)}
+                       "sections": json.dumps(EN_SECTIONS),
+                       "people": json.dumps(EN_PEOPLE)}
 
     for scheme in ("light", "dark"):
         page = browser.new_page(viewport={"width": 1180, "height": 820},
@@ -449,7 +494,8 @@ def main() -> int:
     bridge = BRIDGE % {"settings": json.dumps(settings), "env": json.dumps(env),
                        "rec": json.dumps(REC), "presets": json.dumps(catalogue),
                        "lib": json.dumps(LIB), "estimate": json.dumps(ESTIMATE_JOB),
-                       "sections": json.dumps(SUMMARY_SECTIONS)}
+                       "sections": json.dumps(SUMMARY_SECTIONS),
+                       "people": json.dumps(PEOPLE)}
 
     errors: list[str] = []
     with sync_playwright() as pw:
@@ -774,9 +820,44 @@ def main() -> int:
             if "Различать собеседников по голосам" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки разделения собеседников")
 
-            # --- корзина: удаление, возврат, срок ---
-            page.click("#btn-close")
+            # --- документы к записи ---
+            page.click("#btn-close")          # выходим из настроек
+            page.wait_for_timeout(250)
+            page.evaluate("openJob('demo1234')")
+            page.evaluate("loadDocs('demo1234')")
+            page.wait_for_timeout(300)
+            # Документы свёрнуты по умолчанию и раскрываются кликом.
+            if page.locator(".docs .inner").is_visible():
+                errors.append(f"{scheme}: документы не свёрнуты по умолчанию")
+            page.click(".docs summary")
             page.wait_for_timeout(200)
+            if not page.locator(".docs .inner").is_visible():
+                errors.append(f"{scheme}: документы не раскрываются")
+            docs = page.text_content(".docs") or ""
+            for probe in ("Документы к записи", "Смета подрядчика.pdf", "текст не читается"):
+                if probe not in docs:
+                    errors.append(f"{scheme}: в блоке документов нет «{probe}»")
+            if not page.locator('[data-resum="demo1234"]').count():
+                errors.append(f"{scheme}: нет кнопки пересборки саммари")
+            if not page.locator('[data-docadd="demo1234"].primary svg').count():
+                errors.append(f"{scheme}: кнопка «приложить» не акцентная и без плюса")
+            page.screenshot(path=str(out_dir / f"14-docs-{scheme}.png"))
+            page.click('[data-docadd="demo1234"]')
+            page.wait_for_timeout(300)
+            if page.evaluate("window.__attached") != "demo1234":
+                errors.append(f"{scheme}: документ не прикладывается")
+            if "Письмо от заказчика.docx" not in (page.text_content(".docs") or ""):
+                errors.append(f"{scheme}: приложенный документ не появился в списке")
+            page.click('[data-docdel="Смета подрядчика.pdf"]')
+            page.wait_for_timeout(250)
+            if page.evaluate("window.__detached") != "Смета подрядчика.pdf":
+                errors.append(f"{scheme}: документ не убирается")
+            page.click('[data-resum="demo1234"]')
+            page.wait_for_timeout(300)
+            if page.evaluate("window.__resum") != "demo1234":
+                errors.append(f"{scheme}: пересборка саммари не запускается")
+
+            # --- корзина: удаление, возврат, срок ---
             page.click("#btn-trash")
             page.wait_for_timeout(300)
             trash_text = page.text_content("#lib-list") or ""
@@ -798,6 +879,25 @@ def main() -> int:
                 errors.append(f"{scheme}: у удаления нет иконки корзины")
             page.click("#btn-settings")
             page.wait_for_timeout(300)
+
+            # --- справочник людей и команд ---
+            if "Люди и команды" not in (page.text_content("#settings-body") or ""):
+                errors.append(f"{scheme}: нет раздела справочника")
+            directory = page.text_content("#people-list") or ""
+            for probe in ("Подрядчик", "Ирина Волкова", "голос запомнен", "Наш продукт"):
+                if probe not in directory:
+                    errors.append(f"{scheme}: в справочнике нет «{probe}»")
+            page.fill("#person-name", "Ольга Фокина")
+            page.fill("#person-org", "Заказчик")
+            page.click("#btn-person-add")
+            page.wait_for_timeout(250)
+            added = page.evaluate("window.__personAdded")
+            if not added or added["name"] != "Ольга Фокина" or added["org"] != "Заказчик":
+                errors.append(f"{scheme}: человек не добавляется: {added}")
+            page.click('[data-personout="Сергей Ким"]')
+            page.wait_for_timeout(250)
+            if page.evaluate("window.__personGone") != "Сергей Ким":
+                errors.append(f"{scheme}: человек не убирается из справочника")
 
             # --- знакомые голоса ---
             if "Знакомые голоса" not in (page.text_content("#settings-body") or ""):

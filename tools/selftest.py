@@ -336,6 +336,8 @@ def main() -> int:
         # Удаляем копию, а не саму запись: она ещё нужна следующим проверкам.
         stem = Path(entry["path"]).name[: -len(library.RESULT_SUFFIX)]
         for src_file in out_dir.glob(f"{stem}.*"):
+            if src_file.is_dir():          # папка с приложенными документами
+                continue
             shutil.copy2(src_file, out_dir / src_file.name.replace(stem, f"{stem} копия"))
         copy = next((i for i in library.entries(out_dir) if "копия" in i["title"]
                      or "копия" in Path(i["path"]).name), None)
@@ -864,6 +866,117 @@ def main() -> int:
 
     voices.STORE.unlink(missing_ok=True)
     voices.STORE = real_store
+
+    print("\n19. Документы к записи")
+    # Половина задач на созвоне ссылается на документ, который живёт отдельно.
+    # Проверяем весь путь: приложить → достать текст → отдать модели → убрать.
+    from app import attach
+
+    result_file = Path(job.files["result"])
+    papers = Path("/tmp/selftest-docs")
+    papers.mkdir(exist_ok=True)
+    (papers / "смета.md").write_text(
+        "# Смета на онбординг\n\nДемонтаж перегородки — 12 часов по 3 000 ₽.\n", "utf-8")
+    # docx — это zip с xml; собираем настоящий, а не подделку с расширением.
+    import zipfile
+
+    docx = papers / "техзадание.docx"
+    with zipfile.ZipFile(docx, "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("word/document.xml",
+                    "<w:document><w:body>"
+                    "<w:p><w:r><w:t>Требование 4.2: онбординг из трёх экранов.</w:t></w:r></w:p>"
+                    "<w:p><w:r><w:t>Срок приёмки — 15 сентября.</w:t></w:r></w:p>"
+                    "</w:body></w:document>")
+    added = attach.add(result_file, [str(papers / "смета.md"), str(docx)])
+    failures += not check("документы приложились", added.get("ok")
+                          and len(added.get("added", [])) == 2,
+                          ", ".join(added.get("added", [])))
+    listed = attach.items(result_file)
+    failures += not check("оба документа видны в карточке", len(listed) == 2
+                          and all(item["readable"] for item in listed),
+                          ", ".join(f"{i['name']}:{i['readable']}" for i in listed))
+    text = attach.context(result_file)
+    failures += not check("текст достаётся и из markdown, и из docx",
+                          "Демонтаж перегородки" in text and "Требование 4.2" in text,
+                          text[:60].replace("\n", " "))
+    failures += not check("каждый документ подписан именем",
+                          "### смета.md" in text and "### техзадание.docx" in text)
+
+    # Тот же документ приложили второй раз — первая версия не затирается.
+    attach.add(result_file, [str(papers / "смета.md")])
+    failures += not check("одинаковые имена не затирают друг друга",
+                          len(attach.items(result_file)) == 3,
+                          ", ".join(i["name"] for i in attach.items(result_file)))
+
+    # Модель должна увидеть документы в задании на саммари.
+    FakeOllama.calls.clear()
+    fresh_job = runner.resummarize(str(result_file))
+    while fresh_job.status in ("pending", "running"):
+        time.sleep(0.2)
+    failures += not check("саммари пересобирается по команде",
+                          fresh_job.status == "done", fresh_job.error)
+    failures += not check("документы дошли до модели",
+                          any("Требование 4.2" in call for call in FakeOllama.calls),
+                          f"запросов: {len(FakeOllama.calls)}")
+    failures += not check("имена документов попали в шапку задания",
+                          any("смета.md" in call for call in FakeOllama.calls))
+    failures += not check("файлы записи переписаны",
+                          Path(fresh_job.files["summary"]).exists())
+
+    attach.remove(result_file, "смета.md")
+    failures += not check("документ убирается",
+                          [i["name"] for i in attach.items(result_file)]
+                          == ["смета (2).md", "техзадание.docx"],
+                          ", ".join(i["name"] for i in attach.items(result_file)))
+    shutil.rmtree(papers, ignore_errors=True)
+    shutil.rmtree(attach.folder_for(result_file), ignore_errors=True)
+
+    print("\n20. Справочник людей и команд")
+    # Список участников созвона каждый раз набирался заново, хотя люди те же.
+    from app import people
+
+    people.STORE, real_people = Path("/tmp/selftest-people.json"), people.STORE
+    people.STORE.unlink(missing_ok=True)
+    people.add("Ирина Волкова", "Подрядчик", "прораб")
+    people.add("Сергей Ким", "Подрядчик")
+    people.add("Дмитрий", "Наш продукт", "дизайн")
+    failures += not check("люди заводятся и сортируются по командам",
+                          [p["name"] for p in people.items(with_voices=False)]
+                          == ["Дмитрий", "Ирина Волкова", "Сергей Ким"],
+                          ", ".join(p["name"] for p in people.items(with_voices=False)))
+    people.add("Ирина Волкова", role="руководитель работ")
+    same = next(p for p in people.load() if p["name"] == "Ирина Волкова")
+    failures += not check("повторное добавление уточняет, а не плодит двойников",
+                          len(people.load()) == 3 and same["org"] == "Подрядчик"
+                          and same["role"] == "руководитель работ",
+                          f"{len(people.load())} человек, {same}")
+    failures += not check("команда отдаёт всех своих участников",
+                          people.of_org("подрядчик") == ["Ирина Волкова", "Сергей Ким"],
+                          ", ".join(people.of_org("подрядчик")))
+    groups = people.orgs()
+    failures += not check("команды собираются для подстановки на созвоне",
+                          [g["org"] for g in groups] == ["Наш продукт", "Подрядчик"],
+                          ", ".join(g["org"] for g in groups))
+    failures += not check("подпись человека знает его команду",
+                          people.describe("Дмитрий") == "Дмитрий · Наш продукт",
+                          people.describe("Дмитрий"))
+
+    # Голос и человек связаны именем: справочник показывает, чей голос запомнен.
+    voices.STORE, keep_store = Path("/tmp/selftest-voices2.json"), voices.STORE
+    voices.STORE.unlink(missing_ok=True)
+    voices.remember("Дмитрий", [_vector(3)])
+    marked = {p["name"]: p["voice"] for p in people.items()}
+    failures += not check("в справочнике видно, чей голос уже запомнен",
+                          marked.get("Дмитрий") and not marked.get("Сергей Ким"),
+                          str(marked))
+    voices.STORE.unlink(missing_ok=True)
+    voices.STORE = keep_store
+
+    failures += not check("человек убирается из справочника",
+                          people.remove("Сергей Ким") and len(people.load()) == 2)
+    people.STORE.unlink(missing_ok=True)
+    people.STORE = real_people
 
     print("\n18. Очередь разбора: новый созвон важнее")
     # Разбор прошлой записи не должен запирать микрофон: пока идёт разговор,

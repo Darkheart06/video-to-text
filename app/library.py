@@ -374,6 +374,18 @@ def rename(where, entry_id: str, names: dict[str, str], lang: str = "") -> dict 
     return snapshot(directory, entry_id, lang)
 
 
+def forget_cache(path: Path) -> None:
+    """Файлы записи переписали — забываем всё, что о ней помнили."""
+    stem = path.name[: -len(RESULT_SUFFIX)]
+    for name in list(_cache) + list(_text_cache):
+        if stem in name:
+            _cache.pop(name, None)
+            _text_cache.pop(name, None)
+    index = _load_index(path.parent)
+    index.pop(str(path), None)
+    _save_index(path.parent, index)
+
+
 def _turns_of(data: dict) -> list[merge.Turn]:
     """Собирает реплики обратно в объекты, которые понимает ``render``."""
     out = []

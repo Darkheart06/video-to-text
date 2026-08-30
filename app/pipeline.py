@@ -13,6 +13,7 @@ from typing import Callable
 
 from . import (
     asr,
+    attach,
     cleanup,
     diarize,
     i18n,
@@ -293,6 +294,74 @@ class Runner:
                     wav.unlink()
                 except OSError:
                     pass
+
+    # --- пересборка саммари с приложенными документами ---------------------
+
+    def resummarize(self, result_path: str, preset: str = "") -> Job:
+        """Собирает саммари заново — теперь уже с документами, которые к записи
+        приложили после разбора.
+
+        Расшифровку не трогаем: она не изменилась. Меняется только документ,
+        который из неё делают, и это ровно то, чего человек ждёт, приложив к
+        созвону смету или техзадание.
+        """
+        path = Path(result_path)
+        data = json.loads(path.read_text("utf-8"))
+        meta = dict(data.get("meta") or {})
+        job = Job(id=uuid.uuid4().hex[:12], source=str(path),
+                  title=str(meta.get("title") or path.stem),
+                  preset=preset or (data.get("summary") or {}).get("preset")
+                  or self.settings.get("preset", presets.DEFAULT))
+        with self._lock:
+            self.jobs[job.id] = job
+        threading.Thread(target=self._resummary, args=(job, path, data),
+                         daemon=True).start()
+        return job
+
+    def _resummary(self, job: Job, path: Path, data: dict) -> None:
+        from . import library
+
+        try:
+            s = self.settings
+            self._update(job, status="running", stage="summary",
+                         message=i18n.t("stage.check"), progress=0.05)
+            turns = library._turns_of(data)
+            job.turns = turns
+            speakers = data.get("speakers") or {}
+            names = {key: value.get("label", key) for key, value in speakers.items()}
+            job.speakers = {key: {"label": value.get("label", key),
+                                  "seconds": float(value.get("speaking_seconds") or 0)}
+                            for key, value in speakers.items()}
+            meta = dict(data.get("meta") or {})
+            context = attach.context(path)
+            meta["files"] = attach.names(path)
+            job.meta = meta
+
+            summary = summarize.summarize(
+                turns, s, meta=meta, names=names, context=context,
+                progress=self._stage_progress(job, "summary", 0.1, 0.8),
+                preset=presets.resolve({**s, "preset": job.preset}),
+            )
+            job.summary_md = summary.markdown
+            job.summary_sections = summary.sections
+            job.summary_tabs = [list(x) for x in summary.tabs]
+
+            self._update(job, stage="write", message=i18n.t("stage.save"), progress=0.92)
+            stem = path.name[: -len(library.RESULT_SUFFIX)]
+            transcript = asr.Transcript(segments=[], language=str(meta.get("language") or ""),
+                                        duration=float(meta.get("duration") or 0),
+                                        backend="", model=str(meta.get("models") or ""))
+            job.files = render.write_all(path.parent, stem, transcript, turns, [],
+                                         summary, meta, names=names, lang=s.doc_lang)
+            library.forget_cache(path)
+            self._update(job, stage="done", message=i18n.t("state.done"),
+                         progress=1.0, status="done")
+        except Exception as exc:
+            job.status = "error"
+            job.error = str(exc) or exc.__class__.__name__
+            job.message = i18n.t("state.error")
+            job.meta.setdefault("traceback", traceback.format_exc()[-2000:])
+            self._emit(job)
 
     # --- переименование спикеров -----------------------------------------
 

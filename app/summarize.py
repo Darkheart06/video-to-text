@@ -51,7 +51,11 @@ PROMPTS = {
         "meta_title": "Название файла",
         "meta_duration": "Длительность",
         "meta_speakers": "Участников распознано",
+        "meta_files": "Приложенные документы",
         "transcript": "РАСШИФРОВКА",
+        "attached": ("ДОКУМЕНТЫ, ПРИЛОЖЕННЫЕ К ЗАПИСИ. Это контекст разговора, а не его "
+                     "содержание: бери отсюда точные названия, цифры и формулировки, но не "
+                     "пересказывай документ там, где о нём не говорили"),
         "notes": "РАБОЧИЕ ЗАМЕТКИ ПО ФРАГМЕНТАМ (по порядку)",
         "document": "ГОТОВЫЙ ДОКУМЕНТ",
         "fragment": "Ниже — фрагмент {idx} из {total} расшифровки записи.",
@@ -108,7 +112,11 @@ PROMPTS = {
         "meta_title": "File name",
         "meta_duration": "Duration",
         "meta_speakers": "Speakers detected",
+        "meta_files": "Attached documents",
         "transcript": "TRANSCRIPT",
+        "attached": ("DOCUMENTS ATTACHED TO THE RECORDING. This is context for the "
+                     "conversation, not its content: take exact names, figures and wording "
+                     "from here, but do not retell a document nobody discussed"),
         "notes": "WORKING NOTES PER FRAGMENT (in order)",
         "document": "THE DOCUMENT SO FAR",
         "fragment": "Below is fragment {idx} of {total} of the transcript.",
@@ -224,7 +232,8 @@ def _chunks(text: str, size: int) -> list[str]:
 def summarize(turns: list[Turn], settings: Settings, meta: dict | None = None,
               names: dict[str, str] | None = None,
               progress: Progress | None = None,
-              preset: Preset | None = None) -> Summary:
+              preset: Preset | None = None,
+              context: str = "") -> Summary:
     meta = meta or {}
     lang = settings.doc_lang
     preset = preset or presets.resolve(settings)
@@ -238,7 +247,7 @@ def summarize(turns: list[Turn], settings: Settings, meta: dict | None = None,
         if progress:
             progress(0.2, i18n.t("summary.making", who=backend.name, what=preset.what))
         final = backend.chat(system,
-                             _final_prompt(preset, header, text, None, lang))
+                             _final_prompt(preset, header, text, None, lang, context))
     else:
         notes = []
         for i, part in enumerate(parts):
@@ -251,7 +260,7 @@ def summarize(turns: list[Turn], settings: Settings, meta: dict | None = None,
         if progress:
             progress(0.8, i18n.t("summary.assemble", who=backend.name))
         final = backend.chat(system, _final_prompt(
-            preset, header, None, "\n\n---\n\n".join(notes), lang))
+            preset, header, None, "\n\n---\n\n".join(notes), lang, context))
 
     # Второй заход: что важного не попало в документ. Модель может только
     # дописать пункт, переписать готовое ей не дают. Нужен весь текст сразу,
@@ -420,6 +429,8 @@ def _meta_header(meta: dict, lang: str) -> str:
         bits.append(f"{words['meta_duration']}: {_hhmm(meta['duration'])}")
     if meta.get("speakers"):
         bits.append(f"{words['meta_speakers']}: {meta['speakers']}")
+    if meta.get("files"):
+        bits.append(f"{words['meta_files']}: {', '.join(meta['files'])}")
     return "\n".join(bits)
 
 
@@ -436,19 +447,21 @@ def _map_prompt(preset: Preset, header: str, part: str, idx: int, total: int,
 
 
 def _final_prompt(preset: Preset, header: str, text: str | None,
-                  notes: str | None, lang: str) -> str:
+                  notes: str | None, lang: str, context: str = "") -> str:
     words = PROMPTS[lang]
     source = (
         f"{words['transcript']}:\n{text}" if text is not None
         else f"{words['notes']}:\n{notes}"
     )
     rules = preset.rules.strip()
-    return "\n\n".join([
-        header,
-        source,
-        words["final_rules"].format(template=preset.template,
-                                    rules=("\n" + rules) if rules else ""),
-    ])
+    # Документы идут перед расшифровкой: так модель читает их как справку, а не
+    # как продолжение разговора.
+    blocks = [header]
+    if context.strip():
+        blocks.append(f"{words['attached']}:\n{context.strip()}")
+    blocks += [source, words["final_rules"].format(
+        template=preset.template, rules=("\n" + rules) if rules else "")]
+    return "\n\n".join(blocks)
 
 
 def parse_sections(markdown: str,

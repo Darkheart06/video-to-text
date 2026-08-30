@@ -10,7 +10,19 @@ import threading
 import time
 from pathlib import Path
 
-from . import diarize, edits, i18n, library, llm, media, presets, record, voices
+from . import (
+    attach,
+    diarize,
+    edits,
+    i18n,
+    library,
+    llm,
+    media,
+    people,
+    presets,
+    record,
+    voices,
+)
 from .pipeline import Runner
 from .settings import WHISPER_MODELS, Settings
 
@@ -278,6 +290,29 @@ class Api:
         except Exception:
             return None
 
+    # --- справочник людей и организаций ------------------------------------
+
+    def people_list(self) -> dict:
+        """Кого мы знаем и из каких команд — для настроек и для созвона."""
+        try:
+            return {"items": people.items(), "orgs": people.orgs()}
+        except Exception as exc:
+            return {"items": [], "orgs": [], "error": str(exc)}
+
+    def people_add(self, name: str, org: str = "", role: str = "") -> dict:
+        try:
+            result = people.add(name, org, role)
+            return {**result, "items": people.items(), "orgs": people.orgs()}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def people_remove(self, name: str) -> dict:
+        try:
+            return {"ok": people.remove(str(name or "")),
+                    "items": people.items(), "orgs": people.orgs()}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     # --- знакомые голоса ---------------------------------------------------
 
     def voices_list(self) -> dict:
@@ -312,6 +347,48 @@ class Api:
     def library_delete(self, entry_id: str) -> dict:
         try:
             return library.delete(self.settings.library_paths, entry_id)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    # --- документы к записи ------------------------------------------------
+
+    def attachments(self, entry_id: str) -> dict:
+        """Что приложено к записи: сметы, техзадания, письма."""
+        path = library._path_of(self.settings.library_paths, str(entry_id or ""))
+        if path is None:
+            return {"items": []}
+        return {"items": attach.items(path)}
+
+    def attach_add(self, entry_id: str) -> dict:
+        """Диалог выбора файлов и копия рядом с записью."""
+        import webview
+
+        path = library._path_of(self.settings.library_paths, str(entry_id or ""))
+        if path is None:
+            return {"ok": False, "error": i18n.t("lib.missing")}
+        chosen = _window.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=True,
+                                            file_types=(i18n.t("app.files_docs"),
+                                                        i18n.t("app.files_all")))
+        if not chosen:
+            return {"ok": False, "cancelled": True}
+        result = attach.add(path, [str(x) for x in chosen])
+        return {**result, "items": attach.items(path)}
+
+    def attach_remove(self, entry_id: str, name: str) -> dict:
+        path = library._path_of(self.settings.library_paths, str(entry_id or ""))
+        if path is None:
+            return {"ok": False, "error": i18n.t("lib.missing")}
+        result = attach.remove(path, str(name or ""))
+        return {**result, "items": attach.items(path)}
+
+    def resummarize(self, entry_id: str) -> dict:
+        """Пересобрать саммари с учётом приложенных документов."""
+        path = library._path_of(self.settings.library_paths, str(entry_id or ""))
+        if path is None:
+            return {"ok": False, "error": i18n.t("lib.missing")}
+        try:
+            job = self.runner.resummarize(str(path))
+            return {"ok": True, "job": job.snapshot()}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 

@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.5.0] — 2026-08-30
+
+### Added
+
+- **Documents attached to a recording.** Half the tasks from a call point at
+  something that lives elsewhere — an estimate, a brief, an email — and a week
+  later “fix it per the comments” means nothing. Attach those files to the
+  recording and their text goes to the model together with the transcript, so
+  the summary uses the real names, figures and wording. The files are copied
+  next to the recording, so renaming or deleting the original leaves the record
+  whole. Text is pulled from `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.txt`, `.md`,
+  `.csv` and `.rtf`; anything else still sits there as a file. **Rebuild the
+  summary with the documents** re-runs just the summary — the transcript is not
+  touched.
+- **A directory of people and teams.** Participants had to be typed in again
+  before every call, though the people are the same. Settings → *People and
+  teams* keeps who works where; during a call one press on a team chip fills in
+  everyone from it, and the directory marks whose voice is already remembered.
+
 ## [1.4.1] — 2026-08-30
 
 ### Changed

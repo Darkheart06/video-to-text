@@ -330,6 +330,33 @@ python tools/speakertest.py "~/Documents/Transcripts/Call.wav" --было 4    #
 python tools/speakertest.py "~/Documents/Transcripts" --список truth.txt
 ```
 
+### Documents attached to a recording
+
+A call is almost never self-contained: people discuss an estimate, a brief, an
+email from the client, and the transcript is left saying “as in that document”.
+A week later “fix it per the comments” means nothing.
+
+The **Documents for this recording** block on the card (collapsed, opens on
+click) attaches files to the recording. Their text goes to the model together
+with the transcript, so the summary carries the real names, figures and wording.
+**Rebuild the summary with the documents** re-runs only the summary — the
+transcript is untouched, because it has not changed.
+
+Files are copied next to the recording, into `<recording>.files`: renaming or
+deleting the original leaves the record whole. Text is pulled from `.pdf`,
+`.docx`, `.pptx`, `.xlsx`, `.txt`, `.md`, `.csv` and `.rtf`; anything else just
+sits there and opens on click.
+
+### A directory of people and teams
+
+Participants had to be typed in again before every call, though you talk to the
+same people — and usually to a whole team. Settings → **People and teams** keeps
+who works where, and marks whose voice the app already remembers.
+
+During a call the teams from the directory appear next to “Who's on the call”:
+one press puts everyone from that team on the list, and correcting it is cheaper
+than typing it. The 1–9 keys for tagging lines work off that same list.
+
 ### One recording in the working area
 
 The middle of the window shows exactly the recording you opened — from the list
