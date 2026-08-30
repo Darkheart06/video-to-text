@@ -173,7 +173,10 @@ class Api:
     def _media_port(self) -> int:
         try:
             return serve.start(self.settings.library_paths)
-        except Exception:
+        except Exception as exc:
+            # Без порта в карточке пропадает плеер вместе с метками. Раньше это
+            # происходило беззвучно — теперь причина хотя бы записана.
+            record.log(f"плеер: локальный сервер не поднялся — {exc!r}")
             return 0
 
     def test_llm(self, values: dict | None = None) -> dict:

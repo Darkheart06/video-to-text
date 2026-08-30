@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.2] — 2026-08-30
+
+### Fixed
+
+- **The screen recording had no sound.** The helper writes the picture and the
+  audio separately — the picture into mp4, the audio into tracks for
+  transcription — so the video came out silent, which makes a recording of a
+  call close to useless. The mixed track (the same one Whisper listened to, so
+  the sound and the markers are counted from one point) is now muxed into the
+  same file. The picture is copied, not re-encoded, so this costs seconds.
+
+### Added
+
+- **Full screen for the recording.** A button next to the heading, and a
+  double-click on the picture. In a window the size of a palm it is often
+  impossible to make out what was being shown.
+- **The player no longer disappears in silence.** If the local media server
+  fails to start, the card says so and keeps the markers, instead of quietly
+  dropping the whole block; the reason goes into `.work/capture.log`.
+
 ## [1.6.1] — 2026-08-30
 
 ### Fixed

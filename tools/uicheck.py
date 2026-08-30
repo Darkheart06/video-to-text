@@ -920,6 +920,39 @@ def main() -> int:
             if abs(at - 152) > 2:
                 errors.append(f"{scheme}: метка на шкале не перематывает: {at}")
 
+            # Запись экрана разворачивается на весь экран: в окошке размером с
+            # ладонь не разобрать, что показывали.
+            page.evaluate("""() => {
+              const j = state.jobs.get('demo1234');
+              j.files = Object.assign({}, j.files, {video: j.files.audio});
+              render();
+            }""")
+            page.wait_for_timeout(250)
+            if not page.locator('.player [data-full="demo1234"]').count():
+                errors.append(f"{scheme}: у видео нет кнопки «во весь экран»")
+            if page.locator(".player video").count() != 1:
+                errors.append(f"{scheme}: запись экрана показана не видео-плеером")
+            broke = page.evaluate("""() => {
+              try { goFull('demo1234'); return ''; } catch (e) { return String(e); }
+            }""")
+            if broke:
+                errors.append(f"{scheme}: разворот на весь экран падает: {broke}")
+            # Без сервера плеера нет, но метки остаются — молча исчезать нельзя.
+            page.evaluate("""() => {
+              state.env = Object.assign({}, state.env, {media_port: 0});
+              render();
+            }""")
+            page.wait_for_timeout(250)
+            if not page.locator(".player .marklist .markrow").count():
+                errors.append(f"{scheme}: без сервера пропали и метки")
+            page.evaluate("""(port) => {
+              state.env = Object.assign({}, state.env, {media_port: port});
+              const j = state.jobs.get('demo1234');
+              delete j.files.video;
+              render();
+            }""", media_port)
+            page.wait_for_timeout(250)
+
             # --- что писать с экрана ---
             page.evaluate("state.rec=null; renderRec();")
             page.wait_for_timeout(200)

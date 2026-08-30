@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -950,6 +951,28 @@ def main() -> int:
     (stem_dir / f"{stem_name}.mp4").unlink(missing_ok=True)
     broken.unlink(missing_ok=True)
     whole.unlink(missing_ok=True)
+
+    # Помощник пишет картинку и звук порознь, поэтому сама по себе запись
+    # экрана немая. Звук созвона прирастает к ней здесь.
+    silent = Path("/tmp/selftest-silent.mp4")
+    made_ok = subprocess.run(
+        [media.tool("ffmpeg") or "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+         "-i", "color=c=black:s=320x240:r=8:d=3", "-c:v", "libx264", str(silent)],
+        capture_output=True).returncode == 0
+    with_sound = Path("/tmp/selftest-sound.mp4")
+    grew = made_ok and record._add_sound(silent, wav, with_sound)
+    failures += not check("звук прирастает к записи экрана", bool(grew))
+    if grew:
+        heard = subprocess.run(
+            [media.tool("ffprobe") or "ffprobe", "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(with_sound)],
+            capture_output=True, text=True).stdout.strip()
+        failures += not check("в готовом видео есть звуковая дорожка",
+                              heard.startswith("audio"), heard or "дорожки нет")
+        failures += not check("немой исходник после этого не остаётся",
+                              not silent.exists())
+    silent.unlink(missing_ok=True)
+    with_sound.unlink(missing_ok=True)
 
     print("\n19. Документы к записи")
     # Половина задач на созвоне ссылается на документ, который живёт отдельно.

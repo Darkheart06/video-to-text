@@ -55,7 +55,7 @@ LOG_FILE = WORK_DIR / "capture.log"
 LOG_LIMIT = 512 * 1024
 
 
-def _write_log(line: str) -> None:
+def log(line: str) -> None:
     try:
         WORK_DIR.mkdir(parents=True, exist_ok=True)
         if LOG_FILE.exists() and LOG_FILE.stat().st_size > LOG_LIMIT:
@@ -332,6 +332,35 @@ def _write_wav(path: Path, audio: np.ndarray) -> None:
         w.writeframes((data * 32767).astype(np.int16).tobytes())
 
 
+def _add_sound(video: Path, audio: Path, target: Path) -> bool:
+    """Приращивает к записи экрана звук созвона.
+
+    Помощник пишет картинку и звук порознь: картинку — в mp4, звук — в дорожки
+    для распознавания. Немое видео созвона бесполезно, поэтому здесь берётся уже
+    сведённая дорожка (та же, что слушал Whisper, — значит и метки, и звук
+    считаны от одной точки) и кладётся в тот же файл. Картинка при этом не
+    пережимается: копируется как есть, кодируется только звук.
+    """
+    ffmpeg = media.tool("ffmpeg")
+    if not ffmpeg or not audio.exists():
+        return False
+    try:
+        done = subprocess.run(
+            [ffmpeg, "-y", "-loglevel", "error", "-i", str(video), "-i", str(audio),
+             "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
+             "-b:a", "96k", "-movflags", "+faststart", "-shortest", str(target)],
+            capture_output=True, text=True, timeout=900)
+    except Exception as exc:
+        log(f"звук к видео не прирос: {exc!r}")
+        return False
+    if done.returncode != 0 or not media.playable_mp4(target):
+        log(f"звук к видео не прирос: {done.stderr.strip()[:400]}")
+        target.unlink(missing_ok=True)
+        return False
+    video.unlink(missing_ok=True)
+    return True
+
+
 # Слова-паразиты только мешают сравнивать два распознавания одной и той же
 # фразы: в одной дорожке Whisper их слышит, в другой нет.
 _FILLER = {"вот", "ну", "это", "эт", "как", "бы", "то", "есть", "да", "а", "и",
@@ -556,7 +585,7 @@ class Stenographer:
                     continue
                 self._helper_said.append(line)
                 del self._helper_said[:-200]
-                _write_log(line)
+                log(line)
         except Exception:
             pass
 
@@ -1440,17 +1469,19 @@ class Stenographer:
         if video.exists():
             if media.playable_mp4(video):
                 # Запись экрана переезжает к остальным файлам записи: рабочая
-                # папка сессии сейчас будет удалена.
+                # папка сессии сейчас будет удалена. Заодно к картинке
+                # прирастает звук — сама по себе она немая.
                 target = out_dir / f"{stem}.mp4"
                 try:
-                    video.replace(target)
+                    if not _add_sound(video, audio_path, target):
+                        video.replace(target)
                     session.files["video"] = str(target)
                 except OSError:
                     pass
             else:
                 # Битый файл не отдаём: человеку он бесполезен, а в списке
                 # файлов выглядит как обещание, которое не выполняется.
-                _write_log(f"видео не годится, файл удалён: {video}")
+                log(f"видео не годится, файл удалён: {video}")
                 video.unlink(missing_ok=True)
         session.state = "done"
         session.message = i18n.t("state.done")

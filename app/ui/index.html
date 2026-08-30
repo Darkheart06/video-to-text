@@ -283,8 +283,12 @@
   /* ---------- плеер и метки ---------- */
   .player{padding:14px 20px 16px; border-top:1px solid var(--line)}
   .player h4{margin:0 0 8px; font-size:12px; letter-spacing:.06em; text-transform:uppercase;
-    color:var(--muted); font-weight:600}
+    color:var(--muted); font-weight:600; display:flex; align-items:center; gap:10px}
+  .player h4 .btn{margin-left:auto; text-transform:none; letter-spacing:0}
   .player video, .player audio{width:100%; border-radius:12px; background:#000; display:block}
+  /* На весь экран картинка не должна обрезаться скруглением. */
+  .player video:fullscreen{border-radius:0; height:100%; object-fit:contain}
+  .player video:-webkit-full-screen{border-radius:0; height:100%; object-fit:contain}
   .player audio{background:var(--panel-2); height:40px}
   .player .strip{
     position:relative; height:30px; margin:10px 0 6px; border-radius:8px;
@@ -586,6 +590,9 @@ const STR = {
     'player.hint': 'Метки стоят там, где прозвучало то, что попало в документ. Клик — и запись играет с этого места.',
     'player.noMarks': 'Меток нет: в этой записи не нашлось решений и задач, привязанных к репликам.',
     'player.jump': 'Перейти к этому месту',
+    'player.noServer': 'Проигрыватель не поднялся: локальный сервер не запустился. Метки ниже работают, файл записи можно открыть кнопкой внизу.',
+    'player.full': 'Во весь экран',
+    'player.fullTitle': 'Развернуть запись на весь экран (или двойной клик по картинке)',
     'mark.note': 'Заметка',
     'mark.decisions': 'Решение',
     'mark.tasks': 'Задача',
@@ -898,6 +905,9 @@ const STR = {
     'player.hint': 'Markers sit where the things that made it into the document were actually said. Click one and the recording plays from there.',
     'player.noMarks': 'No markers: nothing in this recording tied a decision or a task to a line.',
     'player.jump': 'Jump to this moment',
+    'player.noServer': 'No player: the local media server did not start. The markers below still work, and the recording opens from the buttons at the bottom.',
+    'player.full': 'Full screen',
+    'player.fullTitle': 'Expand the recording to full screen (or double-click the picture)',
     'mark.note': 'Note',
     'mark.decisions': 'Decision',
     'mark.tasks': 'Task',
@@ -1382,14 +1392,21 @@ function screenPicker(){
 function playerHTML(j){
   if(j.status!=='done') return '';
   const files=j.files||{};
-  const src=mediaURL(files.video || files.audio || '');
-  if(!src) return '';
+  const path=files.video || files.audio || '';
+  if(!path) return '';
+  /* Плеер не исчезает молча. Если локальный сервер не поднялся, метки всё
+     равно нужны: по ним видно, где что обсуждалось, даже когда играть нечем. */
+  const src=mediaURL(path);
   const marks=(j.marks||[]).slice(0, 60);
   const total=Math.max(1, Number((j.meta||{}).duration||0));
   const tag=files.video ? 'video' : 'audio';
   return `<div class="player" data-player="${j.id}">
-    <h4>${T('player.heading')}</h4>
-    <${tag} controls preload="metadata" id="media-${j.id}" src="${esc(src)}"></${tag}>
+    <h4>${T('player.heading')}${src && files.video
+      ? `<button class="btn sm ghost" data-full="${j.id}"
+           title="${T('player.fullTitle')}">${FULL_ICON} ${T('player.full')}</button>` : ''}</h4>
+    ${src ? `<${tag} controls preload="metadata" id="media-${j.id}" src="${esc(src)}"
+             ${files.video ? `ondblclick="goFull('${j.id}')"` : ''}></${tag}>`
+          : `<div class="hint">${T('player.noServer')}</div>`}
     ${marks.length ? `<div class="strip" data-seekbar="${j.id}" data-total="${total}">
       ${marks.map((m,i)=>`<span class="pin ${esc(m.kind)}" data-pin="${i}" data-job="${j.id}"
         data-at="${m.at}" title="${esc(hhmmss(m.at))} · ${esc(m.text)}"
@@ -1416,6 +1433,23 @@ function wirePlayer(j){
   media.ontimeupdate=()=>{
     if(now) now.style.left=Math.min(100, 100*media.currentTime/total).toFixed(2)+'%';
   };
+}
+
+/* Разворот на весь экран. В маленьком окошке не разобрать, что показывали, а
+   встроенной кнопки у WebKit в этом окне нет — делаем свою. */
+const FULL_ICON = `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path
+  fill="currentColor" d="M2.6 2h3.2a.7.7 0 0 1 0 1.4H4.05l2.1 2.1a.7.7 0 1 1-1 1L3.05 4.4v1.75a.7.7 0
+  0 1-1.4 0V2.95c0-.52.43-.95.95-.95Zm10.8 0c.52 0 .95.43.95.95v3.2a.7.7 0 0 1-1.4 0V4.4l-2.1 2.1a.7.7
+  0 1 1-1-1l2.1-2.1h-1.75a.7.7 0 0 1 0-1.4h3.2ZM2.35 9.15c.39 0 .7.31.7.7v1.75l2.1-2.1a.7.7 0 1 1 1
+  1l-2.1 2.1h1.75a.7.7 0 0 1 0 1.4H2.6a.95.95 0 0 1-.95-.95v-3.2c0-.39.31-.7.7-.7Zm11.3 0c.39 0 .7.31.7.7v3.2c0
+  .52-.43.95-.95.95h-3.2a.7.7 0 0 1 0-1.4h1.75l-2.1-2.1a.7.7 0 1 1 1-1l2.1 2.1v-1.75c0-.39.31-.7.7-.7Z"/></svg>`;
+
+function goFull(jobId){
+  const media=document.getElementById('media-'+jobId);
+  if(!media) return;
+  const go = media.requestFullscreen || media.webkitRequestFullscreen
+          || media.webkitEnterFullscreen;   // на старом WebKit только этот
+  if(go) try{ go.call(media); }catch(e){}
 }
 
 function seekTo(jobId, seconds){
@@ -2240,7 +2274,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen],[data-at]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen],[data-full],[data-at]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -2254,6 +2288,7 @@ document.addEventListener('click', async ev=>{
     if(row) row.classList.toggle('gone');
     return;
   }
+  if(t.dataset.full){ goFull(t.dataset.full); return; }
   if(t.dataset.editcancel){ state.editing.delete(t.dataset.editcancel); render(); return; }
   if(t.dataset.editsave){
     const id=t.dataset.editsave, key=state.editing.get(id);
