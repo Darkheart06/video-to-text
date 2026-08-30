@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.3] — 2026-08-30
+
+### Changed
+
+- **Every icon now comes from one set.** The five icons in the window were
+  drawn by hand, one at a time, and it showed: different stroke weights,
+  different corner radii, a window that looked assembled from spare parts.
+  They are all replaced with **Iconsax** (outline, 24×24), taken from the
+  Panda Icons Library file in Figma. The typographic stand-ins went with them
+  — the `×` on every remove button and the `›` on the documents accordion are
+  now the set's own glyphs, so nothing is a letter pretending to be an icon.
+  The paths live in one `ICONS` object, colour is inherited from the button,
+  so both themes and every hover state work without a second copy of anything.
+- The icons ship inside the app like the typeface does — nothing is fetched
+  from a network. They are CC BY 4.0, so the credit is in Settings, in the
+  README, and in `app/ui/icons/LICENSE-Iconsax.md`, which also records a
+  contradiction worth knowing about before the app is ever sold.
+
 ## [1.6.2] — 2026-08-30
 
 ### Fixed

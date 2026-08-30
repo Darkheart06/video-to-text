@@ -514,3 +514,12 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 [MIT](LICENSE) — use it, change it, ship it, for free.
+
+Two things in here are not mine, and both ship inside the app rather than
+being fetched from anywhere:
+
+- **The Onest typeface** — SIL Open Font License, text in
+  [app/ui/fonts/LICENSE-Onest.txt](app/ui/fonts/LICENSE-Onest.txt).
+- **The Iconsax icons** by Vuesax, outline style — CC BY 4.0, i.e. with
+  attribution. Details, and one contradiction in the terms, in
+  [app/ui/icons/LICENSE-Iconsax.md](app/ui/icons/LICENSE-Iconsax.md).

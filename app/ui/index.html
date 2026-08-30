@@ -67,6 +67,11 @@
     -webkit-font-smoothing:antialiased; overflow:hidden;
   }
   button{font:inherit; color:inherit; cursor:pointer; border:none; background:none}
+  /* Кнопка со значком центрирует его сама: раньше на этом месте стоял
+     текстовый крестик и всё держалось на межстрочном интервале. */
+  .kill, .x, .close, .tri, .ico{display:inline-flex; align-items:center; justify-content:center}
+  .icn{display:block; flex:0 0 auto}
+  .credit{font-size:11px; color:var(--muted); flex:1 1 100%; line-height:1.4}
   .btn{
     display:inline-flex; align-items:center; gap:7px; padding:8px 15px; font-size:14px;
     border-radius:10px; background:var(--panel-2); border:1px solid var(--line);
@@ -324,7 +329,7 @@
   }
   .docs summary::-webkit-details-marker{display:none}
   .docs summary:hover{color:var(--text)}
-  .docs summary .tri{display:inline-block; transition:transform .15s; font-size:15px}
+  .docs summary .tri{transition:transform .15s; color:var(--muted)}
   .docs[open] summary .tri{transform:rotate(90deg)}
   .docs summary .count{
     font-family:var(--mono); font-size:11.5px; letter-spacing:0; text-transform:none;
@@ -500,9 +505,7 @@
     <button class="btn ghost sm" id="btn-side" data-t="head.archive" data-t-title="head.archiveTitle" title="Показать или скрыть архив">Архив</button>
     <button class="btn ghost sm icon" id="btn-settings" data-t-title="head.settings"
       data-t-aria="head.settings" title="Настройки" aria-label="Настройки">
-      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor"
-        d="M8 5.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2Zm0 1.4a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z"/>
-      <path fill="currentColor" d="M7.1 1.2h1.8c.5 0 .9.35.98.84l.12.75c.3.11.58.25.85.42l.7-.3a1 1 0 0 1 1.2.33l.9 1.24a1 1 0 0 1-.13 1.32l-.57.5c.03.16.04.33.04.5s-.01.34-.04.5l.57.5a1 1 0 0 1 .13 1.32l-.9 1.24a1 1 0 0 1-1.2.33l-.7-.3c-.27.17-.55.31-.85.42l-.12.75a1 1 0 0 1-.98.84H7.1a1 1 0 0 1-.98-.84l-.12-.75c-.3-.11-.58-.25-.85-.42l-.7.3a1 1 0 0 1-1.2-.33l-.9-1.24a1 1 0 0 1 .13-1.32l.57-.5A4.3 4.3 0 0 1 3 8c0-.17.01-.34.04-.5l-.57-.5a1 1 0 0 1-.13-1.32l.9-1.24a1 1 0 0 1 1.2-.33l.7.3c.27-.17.55-.31.85-.42l.12-.75c.08-.49.48-.84.98-.84Zm.32 1.4-.16 1a.7.7 0 0 1-.5.56c-.42.12-.8.34-1.13.63a.7.7 0 0 1-.75.11l-.93-.4-.52.72.76.66c.22.2.31.5.23.79-.06.2-.09.42-.09.63s.03.43.09.63a.7.7 0 0 1-.23.79l-.76.66.52.72.93-.4a.7.7 0 0 1 .75.11c.33.29.71.51 1.13.63a.7.7 0 0 1 .5.56l.16 1h1.16l.16-1a.7.7 0 0 1 .5-.56c.42-.12.8-.34 1.13-.63a.7.7 0 0 1 .75-.11l.93.4.52-.72-.76-.66a.7.7 0 0 1-.23-.79c.06-.2.09-.42.09-.63s-.03-.43-.09-.63a.7.7 0 0 1 .23-.79l.76-.66-.52-.72-.93.4a.7.7 0 0 1-.75-.11 3 3 0 0 0-1.13-.63.7.7 0 0 1-.5-.56l-.16-1H7.42Z"/></svg>
+      <span class="ico" data-icon="gear" data-size="17"></span>
     </button>
   </header>
 
@@ -516,8 +519,7 @@
     <div class="side-foot">
       <button class="btn sm ghost" id="btn-lib-folder" style="flex:1" data-t="side.openFolder">Открыть папку с файлами</button>
       <button class="btn sm ghost" id="btn-trash" title="Корзина" data-t-title="trash.title">
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor"
-          d="M6.2 1.5h3.6c.4 0 .7.3.7.7v.6h3c.4 0 .7.3.7.7s-.3.7-.7.7h-.6l-.7 9.1a1.9 1.9 0 0 1-1.9 1.7H5.7a1.9 1.9 0 0 1-1.9-1.7l-.7-9.1h-.6a.7.7 0 0 1 0-1.4h3v-.6c0-.4.3-.7.7-.7Zm-1.6 3 .7 9c0 .3.3.5.5.5h4.4c.3 0 .5-.2.5-.5l.7-9H4.6Zm2.1 1.9c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Zm2.6 0c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Z"/></svg>
+        <span class="ico" data-icon="trash" data-size="16"></span>
         <span id="trash-count"></span>
       </button>
     </div>
@@ -545,6 +547,8 @@
   <div class="foot">
     <button class="btn primary" id="btn-save" data-t="btn.save">Сохранить</button>
     <button class="btn" id="btn-models" data-t="btn.downloadModels">Скачать модели спикеров</button>
+    <!-- Значки — CC BY 4.0, а это требует видимого указания авторства. -->
+    <span class="credit" data-t="settings.credit">Значки — Iconsax (Vuesax), CC BY 4.0</span>
   </div>
 </aside>
 
@@ -591,6 +595,8 @@ const STR = {
     'player.noMarks': 'Меток нет: в этой записи не нашлось решений и задач, привязанных к репликам.',
     'player.jump': 'Перейти к этому месту',
     'player.noServer': 'Проигрыватель не поднялся: локальный сервер не запустился. Метки ниже работают, файл записи можно открыть кнопкой внизу.',
+    'job.hide': 'Убрать карточку из рабочей области',
+    'settings.credit': 'Значки — Iconsax (Vuesax), CC BY 4.0',
     'player.full': 'Во весь экран',
     'player.fullTitle': 'Развернуть запись на весь экран (или двойной клик по картинке)',
     'mark.note': 'Заметка',
@@ -906,6 +912,8 @@ const STR = {
     'player.noMarks': 'No markers: nothing in this recording tied a decision or a task to a line.',
     'player.jump': 'Jump to this moment',
     'player.noServer': 'No player: the local media server did not start. The markers below still work, and the recording opens from the buttons at the bottom.',
+    'job.hide': 'Remove this card from the working area',
+    'settings.credit': 'Icons — Iconsax by Vuesax, CC BY 4.0',
     'player.full': 'Full screen',
     'player.fullTitle': 'Expand the recording to full screen (or double-click the picture)',
     'mark.note': 'Note',
@@ -1223,6 +1231,38 @@ function applyStatic(){
   document.querySelectorAll('[data-t-title]').forEach(el=>{ el.title = T(el.dataset.tTitle); });
   document.querySelectorAll('[data-t-aria]').forEach(el=>{
     el.setAttribute('aria-label', T(el.dataset.tAria)); });
+  paintIcons(document);
+}
+
+/* Значки в неизменной разметке окна: в html стоит пустое место с именем
+   значка, картинку подставляем отсюда — чтобы набор был описан в одном
+   месте, а не переписан руками в каждой кнопке. */
+function paintIcons(root){
+  root.querySelectorAll('.ico[data-icon]').forEach(el=>{
+    el.innerHTML = icon(el.dataset.icon, Number(el.dataset.size) || 16);
+  });
+}
+
+/* ---------- значки ----------
+   Все значки в окне — из одного набора: Panda Icons Library (vuesax
+   outline), 24×24, обводка нарисована заливкой. Один набор вместо
+   самодельных картинок: линии одной толщины, скругления одного радиуса —
+   окно перестаёт выглядеть собранным из разных мест. Цвет всегда
+   наследуется от кнопки, поэтому подсветка и тёмная тема работают сами.
+   Крестик — тот же плюс, повёрнутый на 45°: так его рисует и сам набор. */
+const ICONS = {
+  gear: '<path d="M12 15.75C9.93 15.75 8.25 14.07 8.25 12C8.25 9.93 9.93 8.25 12 8.25C14.07 8.25 15.75 9.93 15.75 12C15.75 14.07 14.07 15.75 12 15.75ZM12 9.75C10.76 9.75 9.75 10.76 9.75 12C9.75 13.24 10.76 14.25 12 14.25C13.24 14.25 14.25 13.24 14.25 12C14.25 10.76 13.24 9.75 12 9.75Z"/><path d="M15.21 22.1898C15 22.1898 14.79 22.1598 14.58 22.1098C13.96 21.9398 13.44 21.5498 13.11 20.9998L12.99 20.7998C12.4 19.7798 11.59 19.7798 11 20.7998L10.89 20.9898C10.56 21.5498 10.04 21.9498 9.42 22.1098C8.79 22.2798 8.14 22.1898 7.59 21.8598L5.87 20.8698C5.26 20.5198 4.82 19.9498 4.63 19.2598C4.45 18.5698 4.54 17.8598 4.89 17.2498C5.18 16.7398 5.26 16.2798 5.09 15.9898C4.92 15.6998 4.49 15.5298 3.9 15.5298C2.44 15.5298 1.25 14.3398 1.25 12.8798V11.1198C1.25 9.6598 2.44 8.4698 3.9 8.4698C4.49 8.4698 4.92 8.2998 5.09 8.0098C5.26 7.7198 5.19 7.2598 4.89 6.7498C4.54 6.1398 4.45 5.4198 4.63 4.7398C4.81 4.0498 5.25 3.4798 5.87 3.1298L7.6 2.1398C8.73 1.4698 10.22 1.8598 10.9 3.0098L11.02 3.2098C11.61 4.2298 12.42 4.2298 13.01 3.2098L13.12 3.0198C13.8 1.8598 15.29 1.4698 16.43 2.1498L18.15 3.1398C18.76 3.4898 19.2 4.0598 19.39 4.7498C19.57 5.4398 19.48 6.1498 19.13 6.7598C18.84 7.2698 18.76 7.7298 18.93 8.0198C19.1 8.3098 19.53 8.4798 20.12 8.4798C21.58 8.4798 22.77 9.6698 22.77 11.1298V12.8898C22.77 14.3498 21.58 15.5398 20.12 15.5398C19.53 15.5398 19.1 15.7098 18.93 15.9998C18.76 16.2898 18.83 16.7498 19.13 17.2598C19.48 17.8698 19.58 18.5898 19.39 19.2698C19.21 19.9598 18.77 20.5298 18.15 20.8798L16.42 21.8698C16.04 22.0798 15.63 22.1898 15.21 22.1898ZM12 18.4898C12.89 18.4898 13.72 19.0498 14.29 20.0398L14.4 20.2298C14.52 20.4398 14.72 20.5898 14.96 20.6498C15.2 20.7098 15.44 20.6798 15.64 20.5598L17.37 19.5598C17.63 19.4098 17.83 19.1598 17.91 18.8598C17.99 18.5598 17.95 18.2498 17.8 17.9898C17.23 17.0098 17.16 15.9998 17.6 15.2298C18.04 14.4598 18.95 14.0198 20.09 14.0198C20.73 14.0198 21.24 13.5098 21.24 12.8698V11.1098C21.24 10.4798 20.73 9.9598 20.09 9.9598C18.95 9.9598 18.04 9.5198 17.6 8.7498C17.16 7.9798 17.23 6.9698 17.8 5.9898C17.95 5.7298 17.99 5.4198 17.91 5.1198C17.83 4.8198 17.64 4.5798 17.38 4.4198L15.65 3.4298C15.22 3.1698 14.65 3.3198 14.39 3.7598L14.28 3.9498C13.71 4.9398 12.88 5.4998 11.99 5.4998C11.1 5.4998 10.27 4.9398 9.7 3.9498L9.59 3.7498C9.34 3.3298 8.78 3.1798 8.35 3.4298L6.62 4.4298C6.36 4.5798 6.16 4.8298 6.08 5.1298C6 5.4298 6.04 5.7398 6.19 5.9998C6.76 6.9798 6.83 7.9898 6.39 8.7598C5.95 9.5298 5.04 9.9698 3.9 9.9698C3.26 9.9698 2.75 10.4798 2.75 11.1198V12.8798C2.75 13.5098 3.26 14.0298 3.9 14.0298C5.04 14.0298 5.95 14.4698 6.39 15.2398C6.83 16.0098 6.76 17.0198 6.19 17.9998C6.04 18.2598 6 18.5698 6.08 18.8698C6.16 19.1698 6.35 19.4098 6.61 19.5698L8.34 20.5598C8.55 20.6898 8.8 20.7198 9.03 20.6598C9.27 20.5998 9.47 20.4398 9.6 20.2298L9.71 20.0398C10.28 19.0598 11.11 18.4898 12 18.4898Z"/>',
+  trash: '<path d="M20.9997 6.72998C20.9797 6.72998 20.9497 6.72998 20.9197 6.72998C15.6297 6.19998 10.3497 5.99998 5.11967 6.52998L3.07967 6.72998C2.65967 6.76998 2.28967 6.46998 2.24967 6.04998C2.20967 5.62998 2.50967 5.26998 2.91967 5.22998L4.95967 5.02998C10.2797 4.48998 15.6697 4.69998 21.0697 5.22998C21.4797 5.26998 21.7797 5.63998 21.7397 6.04998C21.7097 6.43998 21.3797 6.72998 20.9997 6.72998Z"/><path d="M8.50074 5.72C8.46074 5.72 8.42074 5.72 8.37074 5.71C7.97074 5.64 7.69074 5.25 7.76074 4.85L7.98074 3.54C8.14074 2.58 8.36074 1.25 10.6907 1.25H13.3107C15.6507 1.25 15.8707 2.63 16.0207 3.55L16.2407 4.85C16.3107 5.26 16.0307 5.65 15.6307 5.71C15.2207 5.78 14.8307 5.5 14.7707 5.1L14.5507 3.8C14.4107 2.93 14.3807 2.76 13.3207 2.76H10.7007C9.64074 2.76 9.62074 2.9 9.47074 3.79L9.24074 5.09C9.18074 5.46 8.86074 5.72 8.50074 5.72Z"/><path d="M15.2104 22.7501H8.79039C5.30039 22.7501 5.16039 20.8201 5.05039 19.2601L4.40039 9.19007C4.37039 8.78007 4.69039 8.42008 5.10039 8.39008C5.52039 8.37008 5.87039 8.68008 5.90039 9.09008L6.55039 19.1601C6.66039 20.6801 6.70039 21.2501 8.79039 21.2501H15.2104C17.3104 21.2501 17.3504 20.6801 17.4504 19.1601L18.1004 9.09008C18.1304 8.68008 18.4904 8.37008 18.9004 8.39008C19.3104 8.42008 19.6304 8.77007 19.6004 9.19007L18.9504 19.2601C18.8404 20.8201 18.7004 22.7501 15.2104 22.7501Z"/><path d="M13.6601 17.25H10.3301C9.92008 17.25 9.58008 16.91 9.58008 16.5C9.58008 16.09 9.92008 15.75 10.3301 15.75H13.6601C14.0701 15.75 14.4101 16.09 14.4101 16.5C14.4101 16.91 14.0701 17.25 13.6601 17.25Z"/><path d="M14.5 13.25H9.5C9.09 13.25 8.75 12.91 8.75 12.5C8.75 12.09 9.09 11.75 9.5 11.75H14.5C14.91 11.75 15.25 12.09 15.25 12.5C15.25 12.91 14.91 13.25 14.5 13.25Z"/>',
+  plus: '<path d="M18 12.75H6C5.59 12.75 5.25 12.41 5.25 12C5.25 11.59 5.59 11.25 6 11.25H18C18.41 11.25 18.75 11.59 18.75 12C18.75 12.41 18.41 12.75 18 12.75Z"/><path d="M12 18.75C11.59 18.75 11.25 18.41 11.25 18V6C11.25 5.59 11.59 5.25 12 5.25C12.41 5.25 12.75 5.59 12.75 6V18C12.75 18.41 12.41 18.75 12 18.75Z"/>',
+  expand: '<path d="M21 9.75C20.59 9.75 20.25 9.41 20.25 9V3.75H15C14.59 3.75 14.25 3.41 14.25 3C14.25 2.59 14.59 2.25 15 2.25H21C21.41 2.25 21.75 2.59 21.75 3V9C21.75 9.41 21.41 9.75 21 9.75Z"/><path d="M9 21.75H3C2.59 21.75 2.25 21.41 2.25 21V15C2.25 14.59 2.59 14.25 3 14.25C3.41 14.25 3.75 14.59 3.75 15V20.25H9C9.41 20.25 9.75 20.59 9.75 21C9.75 21.41 9.41 21.75 9 21.75Z"/><path d="M13.4995 11.2499C13.3095 11.2499 13.1195 11.1799 12.9695 11.0299C12.6795 10.7399 12.6795 10.2599 12.9695 9.96994L20.4695 2.46994C20.7595 2.17994 21.2395 2.17994 21.5295 2.46994C21.8195 2.75994 21.8195 3.23994 21.5295 3.52994L14.0295 11.0299C13.8795 11.1799 13.6895 11.2499 13.4995 11.2499Z"/><path d="M2.99945 21.7499C2.80945 21.7499 2.61945 21.6799 2.46945 21.5299C2.17945 21.2399 2.17945 20.7599 2.46945 20.4699L9.96945 12.9699C10.2595 12.6799 10.7395 12.6799 11.0295 12.9699C11.3195 13.2599 11.3195 13.7399 11.0295 14.0299L3.52945 21.5299C3.37945 21.6799 3.18945 21.7499 2.99945 21.7499Z"/>',
+  chevron: '<path d="M10.7397 16.2802C10.5497 16.2802 10.3597 16.2102 10.2097 16.0602C9.91969 15.7702 9.91969 15.2902 10.2097 15.0002L13.2097 12.0002L10.2097 9.00016C9.91969 8.71016 9.91969 8.23016 10.2097 7.94016C10.4997 7.65016 10.9797 7.65016 11.2697 7.94016L14.7997 11.4702C15.0897 11.7602 15.0897 12.2402 14.7997 12.5302L11.2697 16.0602C11.1197 16.2102 10.9297 16.2802 10.7397 16.2802Z"/>',
+  close: '<g transform="rotate(45 12 12)"><path d="M18 12.75H6C5.59 12.75 5.25 12.41 5.25 12C5.25 11.59 5.59 11.25 6 11.25H18C18.41 11.25 18.75 11.59 18.75 12C18.75 12.41 18.41 12.75 18 12.75Z"/><path d="M12 18.75C11.59 18.75 11.25 18.41 11.25 18V6C11.25 5.59 11.59 5.25 12 5.25C12.41 5.25 12.75 5.59 12.75 6V18C12.75 18.41 12.41 18.75 12 18.75Z"/></g>',
+};
+
+function icon(name, size){
+  const px = size || 16;
+  return `<svg class="icn" viewBox="0 0 24 24" width="${px}" height="${px}"
+    fill="currentColor" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 }
 
 /* ========== мини-рендер markdown ========== */
@@ -1437,12 +1477,7 @@ function wirePlayer(j){
 
 /* Разворот на весь экран. В маленьком окошке не разобрать, что показывали, а
    встроенной кнопки у WebKit в этом окне нет — делаем свою. */
-const FULL_ICON = `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path
-  fill="currentColor" d="M2.6 2h3.2a.7.7 0 0 1 0 1.4H4.05l2.1 2.1a.7.7 0 1 1-1 1L3.05 4.4v1.75a.7.7 0
-  0 1-1.4 0V2.95c0-.52.43-.95.95-.95Zm10.8 0c.52 0 .95.43.95.95v3.2a.7.7 0 0 1-1.4 0V4.4l-2.1 2.1a.7.7
-  0 1 1-1-1l2.1-2.1h-1.75a.7.7 0 0 1 0-1.4h3.2ZM2.35 9.15c.39 0 .7.31.7.7v1.75l2.1-2.1a.7.7 0 1 1 1
-  1l-2.1 2.1h1.75a.7.7 0 0 1 0 1.4H2.6a.95.95 0 0 1-.95-.95v-3.2c0-.39.31-.7.7-.7Zm11.3 0c.39 0 .7.31.7.7v3.2c0
-  .52-.43.95-.95.95h-3.2a.7.7 0 0 1 0-1.4h1.75l-2.1-2.1a.7.7 0 1 1 1-1l2.1 2.1v-1.75c0-.39.31-.7.7-.7Z"/></svg>`;
+const FULL_ICON = icon('expand', 14);
 
 function goFull(jobId){
   const media=document.getElementById('media-'+jobId);
@@ -1462,8 +1497,7 @@ function seekTo(jobId, seconds){
   return true;
 }
 
-const PLUS_ICON = `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path
-  fill="currentColor" d="M8 2.6c.4 0 .75.34.75.75V7.2h3.9a.75.75 0 0 1 0 1.5h-3.9v3.85a.75.75 0 0 1-1.5 0V8.7H3.3a.75.75 0 0 1 0-1.5h3.95V3.35c0-.41.34-.75.75-.75Z"/></svg>`;
+const PLUS_ICON = icon('plus', 15);
 
 function docsHTML(j){
   // Пока запись считается, прикладывать нечего: файлы записи ещё не готовы.
@@ -1478,7 +1512,7 @@ function docsHTML(j){
   const open = state.docsOpen.has(j.id) || false;
   return `<details class="docs" ${open?'open':''} data-docs="${j.id}">
     <summary>
-      <span class="tri" aria-hidden="true">›</span>
+      <span class="tri ico" aria-hidden="true">${icon('chevron', 18)}</span>
       ${T('docs.heading')}
       <span class="count">${items.length ? items.length : T('docs.none')}</span>
     </summary>
@@ -1491,7 +1525,7 @@ function docsHTML(j){
             data-thumb="${esc(d.name)}" data-job="${j.id}"></button>
           <figcaption>${esc(d.name)}</figcaption>
           ${editing?`<button class="x" data-docdel="${esc(d.name)}" data-job="${j.id}"
-            title="${T('docs.remove')}">×</button>`:''}
+            title="${T('docs.remove')}">${icon('close', 15)}</button>`:''}
         </figure>`).join('')}</div>` : ''}
       ${docs.length ? `<div class="list">${docs.map(d=>`
         <span class="doc ${editing?'editing':''}">
@@ -1500,7 +1534,7 @@ function docsHTML(j){
           <span class="kb">${Math.max(1, Math.round(d.size/1024))} ${T('docs.kb')}</span>
           ${d.readable?'':`<span class="no">${T('docs.unreadable')}</span>`}
           ${editing?`<button class="x" data-docdel="${esc(d.name)}" data-job="${j.id}"
-            title="${T('docs.remove')}">×</button>`:''}
+            title="${T('docs.remove')}">${icon('close', 15)}</button>`:''}
         </span>`).join('')}</div>` : ''}
       <div class="acts">
         <button class="btn sm primary" data-docadd="${j.id}">${PLUS_ICON}${T('docs.add')}</button>
@@ -1530,7 +1564,7 @@ async function fillThumbs(){
 async function showShot(jobId, name){
   const box=document.createElement('div');
   box.className='lightbox';
-  box.innerHTML=`<button class="close" title="${T('docs.closeShot')}">×</button><img alt="${esc(name)}">`;
+  box.innerHTML=`<button class="close" title="${T('docs.closeShot')}">${icon('close', 24)}</button><img alt="${esc(name)}">`;
   box.onclick=()=>box.remove();
   document.body.appendChild(box);
   const big=await api().attach_preview(jobId, name, 1600);
@@ -1608,7 +1642,8 @@ function jobCard(j){
           <button class="btn sm ghost" data-cancel="${j.id}">${T('job.cancel')}</button>`:''}
         ${j.status==='done'?`<span class="pct" style="color:var(--ok)">${T('job.done')}</span>`:''}
         ${j.status==='cancelled'?`<span class="pct">${T('job.cancelled')}</span>`:''}
-        ${j.status!=='running'&&j.status!=='pending'?`<button class="btn sm ghost" data-remove="${j.id}">×</button>`:''}
+        ${j.status!=='running'&&j.status!=='pending'?`<button class="btn sm ghost icon" data-remove="${j.id}"
+          title="${T('job.hide')}">${icon('close', 15)}</button>`:''}
       </div>
     </div>
     <div class="bar"><i style="width:${(j.progress*100).toFixed(1)}%"></i></div>
@@ -1689,16 +1724,16 @@ function editorHTML(j,key){
     if(b.type==='table'){
       const head=`<div class="row">${b.header.map(c=>
         `<span class="cell" contenteditable="true" data-head="1">${esc(c)}</span>`).join('')}
-        <button class="kill" style="visibility:hidden">×</button></div>`;
+        <button class="kill" style="visibility:hidden">${icon('close', 15)}</button></div>`;
       const rows=b.rows.map(cells=>`<div class="row" data-row="1">${
         cells.map(c=>`<span class="cell" contenteditable="true">${esc(c)}</span>`).join('')}
-        <button class="kill" data-strike="1" title="${T('edit.removeRowTitle')}">×</button></div>`).join('');
+        <button class="kill" data-strike="1" title="${T('edit.removeRowTitle')}">${icon('close', 15)}</button></div>`).join('');
       return `<div class="edit-table" data-sep="${esc(b.sep)}">${head}${rows}</div>`;
     }
     const heading=/^\s*#{2,4}\s/.test(b.text);
     return `<div class="edit-item${heading?' head':''}" data-line="1">
       <span class="body${heading?' edit-head':''}" contenteditable="true">${esc(b.text)}</span>
-      <button class="kill" data-strike="1" title="${T('edit.removePointTitle')}">×</button></div>`;
+      <button class="kill" data-strike="1" title="${T('edit.removePointTitle')}">${icon('close', 15)}</button></div>`;
   }).join('');
   return out + `<div class="edit-foot">
       <button class="btn sm primary" data-editsave="${j.id}">${T('btn.save')}</button>
@@ -1740,8 +1775,7 @@ function libSub(it){
   return bits.join(' · ');
 }
 
-const TRASH_ICON = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor"
-  d="M6.2 1.5h3.6c.4 0 .7.3.7.7v.6h3c.4 0 .7.3.7.7s-.3.7-.7.7h-.6l-.7 9.1a1.9 1.9 0 0 1-1.9 1.7H5.7a1.9 1.9 0 0 1-1.9-1.7l-.7-9.1h-.6a.7.7 0 0 1 0-1.4h3v-.6c0-.4.3-.7.7-.7Zm-1.6 3 .7 9c0 .3.3.5.5.5h4.4c.3 0 .5-.2.5-.5l.7-9H4.6Zm2.1 1.9c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Zm2.6 0c.4 0 .7.3.7.7v4.6a.7.7 0 0 1-1.4 0V7.1c0-.4.3-.7.7-.7Z"/></svg>`;
+const TRASH_ICON = icon('trash', 15);
 
 /* Корзина живёт в той же панели: список записей подменяется списком удалённых,
    чтобы не заводить ещё одно окно ради четырёх строк. */
@@ -2159,7 +2193,7 @@ function directoryHTML(){
       ${rows.map(p=>`<div class="people-row">
         <span class="who">${esc(p.name)}${p.role?` <span class="role">· ${esc(p.role)}</span>`:''}</span>
         ${p.voice?`<span class="mark">${T('people.hasVoice')}</span>`:''}
-        <button class="x" data-personout="${esc(p.name)}" title="${T('people.remove')}">×</button>
+        <button class="x" data-personout="${esc(p.name)}" title="${T('people.remove')}">${icon('close', 14)}</button>
       </div>`).join('')}
     </div>`;
   }).join('');
@@ -2182,7 +2216,7 @@ function knownVoicesHTML(){
     `<span class="spk"><b>${esc(v.name)}</b>
       <span class="m">${T('settings.voicePrints',{n:v.prints})}</span>
       <button class="x" data-forget="${esc(v.name)}"
-        title="${T('settings.forgetVoice')}">×</button></span>`).join('') + `</div>`;
+        title="${T('settings.forgetVoice')}">${icon('close', 14)}</button></span>`).join('') + `</div>`;
 }
 
 async function loadVoices(){

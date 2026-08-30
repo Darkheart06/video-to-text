@@ -131,7 +131,7 @@ python tools/modeltest.py "~/Documents/Расшифровка записей/С�
 bash packaging/make-dmg.sh
 ```
 
-В папке `dist/` появится образ `Расшифровка-записей-1.6.2.dmg` — пара мегабайт.
+В папке `dist/` появится образ `Расшифровка-записей-1.6.3.dmg` — пара мегабайт.
 Внутри «Установить Расшифровку.app»: он сам скачивает Python, ffmpeg и модели,
 собирает приложение и кладёт его в «Программы». Терминал получателю не нужен.
 
@@ -631,3 +631,11 @@ ruff check .
 ## Лицензия
 
 [MIT](LICENSE) — пользуйтесь бесплатно, меняйте, распространяйте.
+
+Чужого в приложении две вещи, обе лежат внутри и наружу ни за чем не ходят:
+
+- **Шрифт Onest** — SIL Open Font License, текст в
+  [app/ui/fonts/LICENSE-Onest.txt](app/ui/fonts/LICENSE-Onest.txt).
+- **Значки Iconsax** (Vuesax), стиль outline — CC BY 4.0, то есть с указанием
+  авторства. Подробности и одна неувязка в условиях —
+  [app/ui/icons/LICENSE-Iconsax.md](app/ui/icons/LICENSE-Iconsax.md).

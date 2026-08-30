@@ -355,6 +355,30 @@ random port, restricted to the recording folders and to known extensions. The
 important part is the `Range` header: without it a player cannot seek, and
 seeking is the whole point.
 
+## One icon set, shipped inside
+
+The five icons in the window were drawn by hand, one at a time, and it showed:
+different stroke weights, different corner radii, a window that looked
+assembled from spare parts. They now all come from Iconsax (outline style, a
+24×24 grid), taken from the Panda Icons Library community file in Figma.
+
+The typographic stand-ins went with them: the `×` on every remove button and
+the `›` on the documents accordion were letters pretending to be icons. They
+are the set's own glyphs now — the cross is the plus rotated 45°, which is how
+Iconsax draws it too.
+
+The paths live in a single `ICONS` object in `app/ui/index.html` and the colour
+is always `currentColor`, so both themes, hover and highlight states work
+without a second copy of anything, and swapping the whole set costs one edit.
+There are no icon files and no network: the app promises to work offline, and
+that promise covers letters and icons as well.
+
+The terms are CC BY 4.0 — with attribution — which is in Settings, in the
+README and in `app/ui/icons/LICENSE-Iconsax.md`. That file also records a
+contradiction: the Iconsax site says CC BY 4.0 while the `LICENSE` file in
+their repository contains GPLv3. Fine while the app is given away as is; worth
+settling before it is ever sold.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three
