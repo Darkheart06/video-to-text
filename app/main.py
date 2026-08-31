@@ -367,6 +367,14 @@ class Api:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def reassign_turn(self, entry_id: str, index: int, name: str) -> dict | None:
+        """Отдаёт одну реплику другому человеку — и переписывает файлы записи."""
+        try:
+            return library.reassign(self.settings.library_paths, str(entry_id or ""),
+                                    int(index), str(name or ""), self.settings.ui_lang)
+        except Exception:
+            return None
+
     def library_retitle(self, entry_id: str, title: str) -> dict:
         """Правит название записи — и в документах, и в именах файлов."""
         try:

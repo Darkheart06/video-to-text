@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.7.2] — 2026-08-30
+
+### Fixed
+
+- **A name put on a line during a call could vanish by the time the transcript
+  was ready.** The transcript is assembled from the voice-cluster keys, and the
+  name the person typed survived only if it won a whole cluster; otherwise it
+  was dropped along with the marking it was made for. Now the person is asked
+  first: their name takes the cluster where that person spoke most, if that
+  cluster is still unnamed, and its own key otherwise. An automatic caption
+  (“Speaker 2”) never beats a human; another person's name does.
+- **The marks were read from the wrong recording.** `_enrolled()` looked at the
+  session in progress rather than the one being processed — and processing now
+  waits in a queue, so by the time it runs a new call may already be recording.
+
+### Added
+
+- **Any line can be given to a different person.** Click the name in the
+  transcript and pick who actually said it, or type a new name. Voice splitting
+  errs in small ways — two or three lines drift to a neighbour — and until now
+  that could only be corrected a whole voice at a time. This matters beyond
+  reading: **voice prints are learned from exactly this marking**, and learning
+  someone else's audio under your name is worse than not learning at all.
+- **Two voices given the same name merge into one.** They used to stay separate:
+  the person appeared twice in the card, and their voice print was learned twice
+  from half the lines each.
+
 ## [1.7.1] — 2026-08-30
 
 ### Changed

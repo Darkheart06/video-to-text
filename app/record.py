@@ -351,6 +351,66 @@ def _write_wav(path: Path, audio: np.ndarray) -> None:
         w.writeframes((data * 32767).astype(np.int16).tobytes())
 
 
+def _honour_tags(session: Session, keys: dict[int, str], names: dict[str, str],
+                 guessed: dict[str, str]) -> None:
+    """Отметки, поставленные человеком по ходу разговора, сильнее разделения.
+
+    Раньше отметка выживала, только если имя выигрывало целый кластер голосов:
+    транскрипт собирается по ключам кластеров, а `line.speaker` при сборке
+    выбрасывался. Отметил человек одну реплику именем — и оно исчезало вместе с
+    разметкой, ради которой всё и делалось.
+
+    Теперь наоборот: сначала спрашиваем человека. Имя, которое он поставил,
+    получает свой ключ — тот кластер, где этот человек наговорил больше всего,
+    если кластер ещё безымянный; иначе отдельный ключ, и отмеченные реплики
+    переезжают к нему. Автоматическая подпись («Спикер 2») человеку не помеха,
+    а вот чужое имя — помеха: его мы не перебиваем.
+
+    `guessed` — как назвало голоса само разделение, до подстановки имён: по нему
+    и отличаем «имя, которое никто не подтверждал» от настоящего.
+    """
+    said: dict[str, dict[str, float]] = {}
+    for i, line in enumerate(session.lines):
+        if not (line.tagged and line.speaker):
+            continue
+        seconds = max(0.0, line.end - line.start)
+        where = said.setdefault(line.speaker, {})
+        key = keys.get(i, "")
+        where[key] = where.get(key, 0.0) + seconds
+
+    mine: dict[str, str] = {}
+    # Кто наговорил больше, тот и выбирает кластер первым: иначе случайная
+    # короткая отметка занимает голос, которого ей не хватает.
+    for person in sorted(said, key=lambda p: -sum(said[p].values())):
+        hit = next((k for k, v in names.items() if v == person), None)
+        if hit:                                   # имя уже досталось кластеру
+            mine[person] = hit
+            continue
+        for key, _seconds in sorted(said[person].items(), key=lambda kv: -kv[1]):
+            # Свободен ли кластер: его подпись всё ещё автоматическая и никто
+            # другой на него не претендует.
+            if key and names.get(key) == guessed.get(key) and key not in mine.values():
+                names[key] = person
+                mine[person] = key
+                break
+        else:
+            fresh = _free_speaker_key(names)
+            names[fresh] = person
+            mine[person] = fresh
+
+    for i, line in enumerate(session.lines):
+        if line.tagged and line.speaker in mine:
+            keys[i] = mine[line.speaker]
+
+
+def _free_speaker_key(names: dict[str, str]) -> str:
+    for n in range(1, 200):
+        key = f"S{n}"
+        if key not in names:
+            return key
+    return "S999"
+
+
 def _add_sound(video: Path, audio: Path, target: Path) -> bool:
     """Приращивает к записи экрана звук созвона.
 
@@ -1146,9 +1206,14 @@ class Stenographer:
         self._emit()
         return session.snapshot()
 
-    def _enrolled(self) -> dict[str, list[tuple[float, float]]]:
-        """Отмеченные вручную куски речи, по именам."""
-        session = self.session
+    def _enrolled(self, session: Session | None = None) -> dict[str, list[tuple[float, float]]]:
+        """Отмеченные вручную куски речи, по именам.
+
+        Сессию берём ту, которую разбираем, а не текущую: разбор ушёл в очередь
+        и вполне может считаться, когда человек уже начал следующий созвон. С
+        `self.session` отметки брались бы от другой записи или не брались вовсе.
+        """
+        session = session or self.session
         assert session is not None
         out: dict[str, list[tuple[float, float]]] = {}
         for line in session.lines:
@@ -1173,7 +1238,7 @@ class Stenographer:
         """
         session = session or self.session
         assert session is not None
-        enrolled = self._enrolled()
+        enrolled = self._enrolled(session)
         if not enrolled:
             return names
         floor = float(self.settings.get("voice_match_floor", 0.35))
@@ -1394,6 +1459,9 @@ class Stenographer:
                        else self.split_others(spk, session))
 
         # Имена, расставленные по ходу, распространяем на всю запись по голосу.
+        # Запоминаем, как назвало голоса само разделение: ниже отметки человека
+        # будут сильнее автоматических подписей, но не сильнее друг друга.
+        guessed = dict(names)
         names = self.apply_names(mixed if room else spk, keys, names,
                                  only=None if room else "them", session=session)
         if not room:
@@ -1403,15 +1471,9 @@ class Stenographer:
             if mine:
                 names["S1"] = mine
 
+        _honour_tags(session, keys, names, guessed)
         for i, line in enumerate(session.lines):
-            if line.tagged and line.speaker:
-                # Человек уже сказал, кто это. Переносим реплику к тому голосу,
-                # который получил это имя, а подпись не трогаем.
-                match = next((k for k, v in names.items() if v == line.speaker), None)
-                if match:
-                    keys[i] = match
-                continue
-            line.speaker = names.get(keys.get(i, ""), "")
+            line.speaker = names.get(keys.get(i, ""), line.speaker)
 
         transcript = asr.Transcript(
             segments=[asr.Segment(line.start, line.end, line.text, [],

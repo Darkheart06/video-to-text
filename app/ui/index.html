@@ -313,7 +313,10 @@
   .turn{display:grid; grid-template-columns:78px 138px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid var(--line)}
   .turn:last-child{border-bottom:none}
   .turn .t{font-family:var(--mono); font-size:12.5px; color:var(--muted)}
-  .turn .s{font-size:13.5px; font-weight:600; color:var(--accent); overflow:hidden; text-overflow:ellipsis}
+  .turn .s{font-size:13.5px; font-weight:600; color:var(--accent); overflow:hidden;
+     text-overflow:ellipsis; text-align:left; white-space:nowrap; padding:0;
+     border-bottom:1px dashed transparent}
+  .turn .s:hover{border-bottom-color:var(--accent)}
   .turn .x{font-size:14.5px}
 
   .speakers{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line); background:var(--panel-2)}
@@ -692,6 +695,9 @@ const STR = {
     'btn.cancel': 'Отмена',
     'btn.add': 'Добавить',
     'btn.delete': 'Удалить',
+    'job.reassignTitle': 'Кто это сказал?',
+    'job.reassignNew': 'Другое имя',
+    'job.reassigned': 'Реплика отдана: {name}',
     'settings.tab.main': 'Основное',
     'settings.tab.work': 'Разбор',
     'settings.tab.who': 'Голоса',
@@ -1033,6 +1039,9 @@ const STR = {
     'btn.cancel': 'Cancel',
     'btn.add': 'Add',
     'btn.delete': 'Delete',
+    'job.reassignTitle': 'Who said this?',
+    'job.reassignNew': 'Someone else',
+    'job.reassigned': 'Line reassigned: {name}',
     'settings.tab.main': 'General',
     'settings.tab.work': 'Processing',
     'settings.tab.who': 'Voices',
@@ -1918,9 +1927,14 @@ function paneHTML(j,key){
     const labels={};
     Object.entries(j.speakers||{}).forEach(([k,v])=>labels[k]=v.label);
     if(!(j.turns||[]).length) return `<div class="pane empty">${T('edit.transcriptEmpty')}</div>`;
-    return j.turns.map(t=>`<div class="turn">
+    // По имени спикера можно кликнуть и отдать реплику другому человеку.
+    // Разделение по голосам ошибается точечно — две-три реплики уезжают к
+    // соседу, — а поправить это до сих пор можно было только целым голосом.
+    return j.turns.map((t,i)=>`<div class="turn">
         <span class="t">${hhmmss(t.start)}</span>
-        <span class="s">${esc(labels[t.speaker]|| (t.speaker==='unknown'?T('job.unknownSpeaker'):t.speaker))}</span>
+        <button class="s" data-whosaid="${j.id}" data-turn="${i}"
+          title="${T('job.reassignTitle')}">${esc(labels[t.speaker]
+            || (t.speaker==='unknown'?T('job.unknownSpeaker'):t.speaker))}</button>
         <span class="x">${esc(t.text)}</span></div>`).join('');
   }
   const text=((j.summary_sections||{})[key]||'').trim();
@@ -2190,6 +2204,30 @@ async function askYes(title, note, yes){
   const pick=await askPick(title, [{label: yes || T('btn.delete'), value:'yes', icon:'trash'}],
                            {note: note});
   return !!(pick && pick.value==='yes');
+}
+
+/* Кто это сказал: список уже известных голосов плюс поле для нового имени.
+   Правка идёт сразу в файлы записи — по этой же разметке потом запоминаются
+   голосовые отпечатки, и ошибка здесь стоит дороже, чем в тексте. */
+async function askWhoSaid(jobId, index){
+  const job=state.jobs.get(jobId);
+  if(!job) return;
+  const turn=(job.turns||[])[index];
+  if(!turn) return;
+  const now=((job.speakers||{})[turn.speaker]||{}).label||'';
+  const options=Object.entries(job.speakers||{}).map(([key,v])=>
+    ({label:v.label||key, value:v.label||key, on:(v.label||key)===now}));
+  const pick=await askPick(T('job.reassignTitle'), options,
+                           {note:'«'+String(turn.text||'').slice(0,90)+'»',
+                            newLabel:T('job.reassignNew')});
+  if(!pick) return;
+  const name=pick.fresh !== undefined ? pick.fresh : pick.value;
+  if(!name || name===now) return;
+  const snap=await api().reassign_turn(jobId, index, name);
+  if(!snap){ toast(T('lib.deleteFailed')); return; }
+  state.jobs.set(snap.id, snap);
+  render();
+  toast(T('job.reassigned',{name}));
 }
 
 /* Куда положить запись: уже заведённые папки плюс поле для новой. */
@@ -2685,7 +2723,7 @@ async function startJobs(paths){
 }
 
 document.addEventListener('click', async ev=>{
-  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen],[data-full],[data-theme],[data-settab],[data-libpin],[data-libfolder],[data-branch],[data-folderdel],[data-renameon],[data-renameoff],[data-renamesave],[data-jobpin],[data-at]');
+  const t=ev.target.closest('[data-voice],[data-tab],[data-cancel],[data-remove],[data-reveal],[data-open],[data-copy],[data-copytab],[data-reccopy],[data-rename],[data-rec],[data-rectab],[data-lib],[data-libdel],[data-edittab],[data-editsave],[data-editcancel],[data-strike],[data-pick],[data-tag],[data-person],[data-learn],[data-forget],[data-restore],[data-purge],[data-openjob],[data-docadd],[data-docdel],[data-resum],[data-personout],[data-orgadd],[data-docs],[data-docedit],[data-shot],[data-docopen],[data-full],[data-theme],[data-settab],[data-whosaid],[data-libpin],[data-libfolder],[data-branch],[data-folderdel],[data-renameon],[data-renameoff],[data-renamesave],[data-jobpin],[data-at]');
   if(!t) return;
   if(t.dataset.edittab){
     const id=t.dataset.edittab, key=state.tabs.get(id) || firstTab(state.jobs.get(id));
@@ -2737,6 +2775,10 @@ document.addEventListener('click', async ev=>{
     await loadLib();
     if(r.id) await openLib(r.id); else render();
     toast(T('lib.renamed'));
+    return;
+  }
+  if(t.dataset.whosaid){
+    await askWhoSaid(t.dataset.whosaid, Number(t.dataset.turn));
     return;
   }
   if(t.dataset.settab){

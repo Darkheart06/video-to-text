@@ -1031,6 +1031,75 @@ def main() -> int:
     shelf.STORE.unlink(missing_ok=True)
     shelf.STORE = real_store
 
+    print("\n24. Отметки человека и правка спикеров")
+    # Отметил человек реплику именем по ходу созвона — имя обязано дожить до
+    # расшифровки. Раньше оно выживало, только если выигрывало целый кластер
+    # голосов, а иначе выбрасывалось вместе с разметкой, ради которой всё и
+    # затевалось.
+    steno = record.Stenographer(settings)
+    talk = record.Session(id="t1", started_at=time.time(),
+                          directory=Path("/tmp/selftest-rec"), title="Созвон")
+    talk.lines = [
+        record.Line(0.0, 6.0, "them", "Первая реплика", speaker="Ирина", tagged=True),
+        record.Line(6.5, 12.0, "them", "Вторая реплика"),
+        record.Line(12.5, 18.0, "them", "Третья реплика", speaker="Дмитрий", tagged=True),
+    ]
+    keys = {0: "S2", 1: "S2", 2: "S3"}
+    names = {"S2": "Собеседник 1", "S3": "Собеседник 2"}
+    record._honour_tags(talk, keys, names, dict(names))
+    failures += not check("отмеченное имя дожило до расшифровки",
+                          names.get(keys[0]) == "Ирина", f"{keys[0]} → {names.get(keys[0])}")
+    failures += not check("второе имя не затёрло первое",
+                          names.get(keys[2]) == "Дмитрий" and keys[0] != keys[2],
+                          f"{keys[2]} → {names.get(keys[2])}")
+    failures += not check("неотмеченная реплика осталась в своём голосе",
+                          keys[1] == "S2")
+
+    # Имя, которое человек поставил, сильнее автоматической подписи, но не
+    # сильнее имени, подтверждённого голосованием по голосу.
+    keys2 = {0: "S2"}
+    names2 = {"S2": "Сергей"}
+    talk2 = record.Session(id="t2", started_at=time.time(),
+                           directory=Path("/tmp/selftest-rec"), title="Созвон")
+    talk2.lines = [record.Line(0.0, 5.0, "them", "Реплика", speaker="Ирина", tagged=True)]
+    record._honour_tags(talk2, keys2, names2, {"S2": "Собеседник 1"})
+    failures += not check("чужое подтверждённое имя не перебивается",
+                          names2["S2"] == "Сергей" and names2.get(keys2[0]) == "Ирина",
+                          f"{keys2[0]} → {names2.get(keys2[0])}")
+
+    # Правка спикера у готовой записи: реплика переезжает, файлы переписываются,
+    # и по новой разметке учатся голоса.
+    result_path = Path(job.files["result"])
+    out_dir = result_path.parent
+    entry = next(r for r in library.entries([out_dir])
+                 if Path(r["path"]) == result_path)
+    before = json.loads(result_path.read_text("utf-8"))
+    keep = before["turns"][0].get("speaker")
+    snap = library.reassign([out_dir], entry["id"], 0, "Ирина Волкова")
+    failures += not check("реплика отдана другому человеку", bool(snap), "не вернулась")
+    after = json.loads(result_path.read_text("utf-8"))
+    fresh_key = after["turns"][0].get("speaker")
+    label = (after.get("speakers") or {}).get(fresh_key, {}).get("label")
+    failures += not check("в файле записи новый спикер", label == "Ирина Волкова",
+                          f"{fresh_key} → {label}")
+    failures += not check("транскрипт переписан",
+                          "Ирина Волкова" in (out_dir / f"{result_path.name[:-12]}.transcript.txt")
+                          .read_text("utf-8"))
+    failures += not check("время речи пересчитано",
+                          (after["speakers"][fresh_key].get("speaking_seconds") or 0) > 0,
+                          str(after["speakers"][fresh_key]))
+    # Два голоса с одним именем — один человек: иначе отпечаток запомнится
+    # дважды по половине реплик.
+    others = [k for k in after.get("speakers", {}) if k != fresh_key]
+    if others:
+        library.rename([out_dir], entry["id"], {others[0]: "Ирина Волкова"})
+        folded = json.loads(result_path.read_text("utf-8"))
+        same = [k for k, v in (folded.get("speakers") or {}).items()
+                if v.get("label") == "Ирина Волкова"]
+        failures += not check("голоса с одним именем сведены в один",
+                              len(same) == 1, f"голосов с этим именем: {len(same)}")
+    library.rename([out_dir], entry["id"], {fresh_key: str(keep or "S1")})
+
     print("\n19. Документы к записи")
     # Половина задач на созвоне ссылается на документ, который живёт отдельно.
     # Проверяем весь путь: приложить → достать текст → отдать модели → убрать.

@@ -365,6 +365,11 @@ def rename(where, entry_id: str, names: dict[str, str], lang: str = "") -> dict 
     speakers = data.get("speakers") or {}
     for key, value in speakers.items():
         value["label"] = names.get(key, value.get("label", key))
+    # Двум голосам дали одно имя — значит, это один человек, и держать их
+    # порознь незачем: в карточке он двоился бы, а голосовой отпечаток
+    # запоминался бы дважды по половине реплик.
+    _fold_same_names(data)
+    speakers = data.get("speakers") or {}
     labels = {key: value.get("label", key) for key, value in speakers.items()}
 
     turns = _turns_of(data)
@@ -383,6 +388,110 @@ def rename(where, entry_id: str, names: dict[str, str], lang: str = "") -> dict 
     _cache.pop(str(path), None)
     _text_cache.pop(str(directory / f"{stem}.transcript.txt"), None)
     return snapshot(directory, entry_id, lang)
+
+
+def reassign(where, entry_id: str, index: int, name: str, lang: str = "") -> dict | None:
+    """Отдаёт одну реплику другому человеку.
+
+    Разделение по голосам ошибается, и до сих пор поправить его можно было
+    только целиком — переименовав весь голос. А ошибка обычно точечная: две-три
+    реплики уехали к соседу. Это важно не только для чтения: по этим же
+    репликам запоминаются голосовые отпечатки, и запомнить чужой кусок под
+    своим именем хуже, чем не запоминать вовсе.
+
+    Имя может быть и новым — тогда заводится ещё один голос.
+    """
+    path = _path_of(where, entry_id)
+    if path is None:
+        return None
+    data = _load_json(path)
+    if not data:
+        return None
+    turns = data.get("turns") or []
+    if not (0 <= int(index) < len(turns)):
+        return None
+    name = re.sub(r"\s+", " ", str(name or "")).strip()[:60]
+    if not name:
+        return None
+
+    speakers = data.setdefault("speakers", {})
+    key = next((k for k, v in speakers.items()
+                if str(v.get("label") or k) == name), None)
+    if key is None:
+        key = _free_key(speakers)
+        speakers[key] = {"label": name, "speaking_seconds": 0.0}
+    turns[int(index)]["speaker"] = key
+
+    _recount(data)
+    _fold_same_names(data)
+    _rewrite(path, data, lang)
+    return snapshot(path.parent, entry_id, lang)
+
+
+def _free_key(speakers: dict) -> str:
+    for n in range(1, 200):
+        key = f"S{n}"
+        if key not in speakers:
+            return key
+    return "S999"
+
+
+def _recount(data: dict) -> None:
+    """Пересчитывает, кто сколько говорил, и убирает опустевшие голоса."""
+    spoken: dict[str, float] = {}
+    for turn in data.get("turns") or []:
+        key = str(turn.get("speaker") or "")
+        if not key:
+            continue
+        spoken[key] = spoken.get(key, 0.0) + max(
+            0.0, float(turn.get("end") or 0) - float(turn.get("start") or 0))
+    speakers = data.get("speakers") or {}
+    for key in list(speakers):
+        if key in spoken:
+            speakers[key]["speaking_seconds"] = round(spoken[key], 1)
+        else:
+            speakers.pop(key)
+
+
+def _fold_same_names(data: dict) -> None:
+    """Сводит голоса с одинаковой подписью в один."""
+    speakers = data.get("speakers") or {}
+    first: dict[str, str] = {}
+    moved: dict[str, str] = {}
+    for key in list(speakers):
+        label = str(speakers[key].get("label") or key)
+        if label in first:
+            moved[key] = first[label]
+            speakers.pop(key)
+        else:
+            first[label] = key
+    if not moved:
+        return
+    for turn in data.get("turns") or []:
+        key = str(turn.get("speaker") or "")
+        if key in moved:
+            turn["speaker"] = moved[key]
+    _recount(data)
+
+
+def _rewrite(path: Path, data: dict, lang: str = "") -> None:
+    """Переписывает файлы записи после правки разметки."""
+    speakers = data.get("speakers") or {}
+    labels = {key: str(value.get("label") or key) for key, value in speakers.items()}
+    turns = _turns_of(data)
+    meta = data.get("meta") or {}
+    stem = path.name[: -len(RESULT_SUFFIX)]
+    directory = path.parent
+    (directory / f"{stem}.transcript.md").write_text(
+        render.transcript_markdown(turns, meta, labels, lang), "utf-8")
+    (directory / f"{stem}.transcript.txt").write_text(
+        render.plain_transcript(turns, labels, lang), "utf-8")
+    subtitles = directory / f"{stem}.subtitles.srt"
+    if subtitles.exists():
+        subtitles.write_text(render.srt(turns, labels, lang=lang), "utf-8")
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+    _cache.pop(str(path), None)
+    _text_cache.pop(str(directory / f"{stem}.transcript.txt"), None)
 
 
 def retitle(where, entry_id: str, title: str, lang: str = "") -> dict:

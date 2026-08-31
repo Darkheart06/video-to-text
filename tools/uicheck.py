@@ -350,6 +350,15 @@ window.pywebview = {api: {
     return {ok: true, pinned: !!on}; },
   library_retitle: async (id, title) => { window.__renamed = {id: id, title: title};
     return {ok: true, id: id, title: title}; },
+  reassign_turn: async (id, index, name) => {
+    window.__reassigned = {id: id, index: index, name: name};
+    const was = typeof state !== 'undefined' && state.jobs.get(id);
+    if (!was) return null;
+    const job = Object.assign({}, was);
+    job.speakers = Object.assign({}, job.speakers, {S9: {label: name, seconds: 12}});
+    job.turns = (job.turns || []).map(
+      (t, i) => i === index ? Object.assign({}, t, {speaker: "S9"}) : t);
+    return job; },
   trash: async () => ({days: 30, items: [
     {id: "1756000000-abc", title: "Созвон 24.08 10-15", when: "2026-08-28 12:40",
      days_left: 30, files: 6}]}),
@@ -1016,6 +1025,25 @@ def main() -> int:
               render();
             }""", media_port)
             page.wait_for_timeout(250)
+
+            # Реплику можно отдать другому человеку: разделение по голосам
+            # ошибается точечно, а правится это только здесь.
+            page.evaluate("state.tabs.set('demo1234','transcript'); render();")
+            page.wait_for_timeout(250)
+            if not page.locator(".turn .s[data-whosaid]").count():
+                errors.append(f"{scheme}: имя спикера в транскрипте не кликается")
+            page.click(".turn .s[data-whosaid]")
+            page.wait_for_timeout(300)
+            if not page.locator(".ask .ask-row").count():
+                errors.append(f"{scheme}: не открылся выбор спикера")
+            page.fill("#ask-input", "Ирина Волкова")
+            page.click('.ask [data-pick="new"]')
+            page.wait_for_timeout(400)
+            got = page.evaluate("window.__reassigned || null")
+            if not got or got.get("name") != "Ирина Волкова" or got.get("index") != 0:
+                errors.append(f"{scheme}: реплика не переназначается: {got}")
+            if "Ирина Волкова" not in (page.text_content(".pane") or ""):
+                errors.append(f"{scheme}: новый спикер не показан в транскрипте")
 
             # --- полки: закрепление, папки, переименование ---
             page.evaluate("state.rec=null; render();")

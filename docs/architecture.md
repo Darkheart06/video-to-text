@@ -411,6 +411,37 @@ opens the picker. The window opens immediately on what is already known and
 fills in when the snapshots arrive. On macOS 13, which has no such API, the
 tiles show an icon instead and the choice still works.
 
+## Speaker marking: the human outranks the machine
+
+A name put on a line during a call is not a caption, it is a fact: a person said
+who is speaking. That fact used to survive only by luck. The transcript is
+assembled from voice-cluster keys, and a name from a mark reached the file only
+if it won its cluster outright — more than half the recognised time. If it did
+not, it was discarded along with `line.speaker`, which is to say along with the
+very marking it was made for.
+
+The order is reversed now (`record._honour_tags`): the human is asked first. A
+marked name takes the cluster where that person spoke most, if the cluster is
+still automatically labelled; otherwise it gets a key of its own and the marked
+lines move to it. An automatic caption (“Speaker 2”) is no obstacle to a human;
+another person's confirmed name is.
+
+A second bug lived in the same place: `_enrolled()` read `self.session` instead
+of the session being processed. Since processing moved into a queue that yields
+to a new recording, that meant taking the marks from a different call, or none.
+
+**Correcting after the fact.** Splitting errs in small ways: two or three lines
+drift to a neighbour. That could only be fixed a whole voice at a time. Now the
+speaker name in the transcript is clickable and the line can be given to someone
+else (`library.reassign`) — the recording's files are rewritten, speaking time
+recounted, emptied voices removed. This is not about reading: **voice prints are
+learned from exactly this marking**, and learning someone else's audio under your
+name is worse than not learning at all.
+
+Voices with the same label are folded into one (`_fold_same_names`). Otherwise
+the person appeared twice in the card and their print was learned twice from
+half the lines each.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three
