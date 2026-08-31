@@ -287,7 +287,7 @@ window.__agenda = [
    url: "https://telemost.yandex.ru/x"},
   {id: "own:a1", title: "Созвон с заказчиком", start: window.__now + 90000,
    end: window.__now + 91800, calendar: "", source: "own", call: true, allday: false,
-   people: [], clash: [], day: "Завтра"}
+   people: [], clash: [], day: "Завтра", remind: [60, 0]}
 ];
 window.__folders = ["Клиенты"];
 window.__shelf = {};
@@ -362,6 +362,13 @@ window.pywebview = {api: {
   agenda_remove: async id => { window.__agenda = window.__agenda.filter(x => x.id !== id);
                                return {ok: true}; },
   agenda_push: async id => { window.__pushed = id; return {ok: true, calendar: "Работа"}; },
+  agenda_remind: async (id, minutes) => {
+    const list = String(minutes || "").split(/[,;\\s]+/)
+      .map(Number).filter(n => Number.isFinite(n) && n >= 0).sort((a, b) => b - a);
+    window.__reminded = {id: id, minutes: minutes};
+    window.__agenda = window.__agenda.map(
+      x => x.id === id ? Object.assign({}, x, {remind: list}) : x);
+    return {ok: true, items: list}; },
   agenda_busy: async start => ({items: window.__agenda.filter(
       x => x.start < start + 1800 && start < x.end)}),
   notify_test: async (where, values) => { window.__tested = {where: where, values: values};
@@ -566,6 +573,7 @@ def main() -> int:
         "preset": "meeting", "custom_rules": "", "custom_template": "",
         "record_split_speakers": True, "speaker_merge_similarity": 0.78,
         "min_speaker_seconds": 2.0, "min_speaker_share": 0.01,
+        "agenda_enabled": True, "agenda_reminders": "30, 0", "agenda_calls_only": True,
     }
     # Плеер должен получить настоящий звук: без него проверка «метка
     # перематывает запись» ничего не проверяет. Поднимаем тот же локальный
@@ -959,6 +967,20 @@ def main() -> int:
             # из формы, не требуя сначала сохранить настройки.
             page.click('.settab[data-settab="more"]')
             page.wait_for_timeout(200)
+            # Интервалы напоминаний — кнопками, несколько сразу плюс своё число.
+            chips = page.locator('.chips-pick[data-remind="remind-general"] .rchip')
+            if chips.count() < 5:
+                errors.append(f"{scheme}: интервалы напоминаний не кнопками")
+            page.locator('.chips-pick[data-remind="remind-general"]')\
+                .scroll_into_view_if_needed()
+            page.click('.chips-pick[data-remind="remind-general"] .rchip[data-min="60"]')
+            page.wait_for_timeout(200)
+            page.fill('.chips-pick[data-remind="remind-general"] .own-min', "7")
+            page.click('.chips-pick[data-remind="remind-general"] [data-addmin]')
+            page.wait_for_timeout(200)
+            picked = page.evaluate("document.querySelector('#remind-general').value")
+            if picked != "60, 30, 7, 0":
+                errors.append(f"{scheme}: интервалы напоминаний собираются не так: {picked}")
             page.locator("#tg-token").scroll_into_view_if_needed()
             page.fill("#tg-token", "123:ABC")
             page.locator("#btn-tg-chat").scroll_into_view_if_needed()
@@ -1015,6 +1037,9 @@ def main() -> int:
             page.wait_for_timeout(150)
             if page.evaluate("formValues().record_notes_minutes") != "7":
                 errors.append(f"{scheme}: значение со скрытой вкладки теряется")
+            # Интервалы живут в кнопках, а сохраняются обычным полем настроек.
+            if page.evaluate("formValues().agenda_reminders") != "60, 30, 7, 0":
+                errors.append(f"{scheme}: выбранные интервалы не уходят в настройки")
 
             # --- плеер и метки ---
             page.click("#btn-close")          # выходим из настроек
@@ -1186,6 +1211,32 @@ def main() -> int:
                 errors.append(f"{scheme}: созвон не добавляется: {added}")
             if not (added or {}).get("toCalendar"):
                 errors.append(f"{scheme}: событие не уходит в системный календарь")
+
+            # Свои интервалы напоминаний у отдельного созвона: набор виден в
+            # строке события, а окошко позволяет его поменять.
+            if "Напоминания: 1 ч" not in (page.text_content("#agenda-body") or ""):
+                errors.append(f"{scheme}: свои интервалы созвона не показаны в списке")
+            page.click('[data-agremind="own:a1"]')
+            page.wait_for_timeout(300)
+            if page.locator(".ask #remind-one").count() != 1:
+                errors.append(f"{scheme}: не открылось окно интервалов напоминаний")
+            page.click('.ask .chips-pick .rchip[data-min="15"]')
+            page.wait_for_timeout(200)
+            picked = page.evaluate("document.querySelector('.ask #remind-one').value")
+            if "15" not in (picked or ""):
+                errors.append(f"{scheme}: свой интервал не выбирается: {picked}")
+            page.fill(".ask .own-min", "45")
+            page.click(".ask [data-addmin]")
+            page.wait_for_timeout(200)
+            picked = page.evaluate("document.querySelector('.ask #remind-one').value")
+            if "45" not in (picked or ""):
+                errors.append(f"{scheme}: своё число минут не добавляется: {picked}")
+            page.click('.ask [data-agrem="ok"]')
+            page.wait_for_timeout(400)
+            saved = page.evaluate("window.__reminded || null")
+            if not saved or "45" not in str(saved.get("minutes", "")):
+                errors.append(f"{scheme}: интервалы созвона не сохраняются: {saved}")
+
             page.click("#btn-agenda-close")
             page.wait_for_timeout(200)
 

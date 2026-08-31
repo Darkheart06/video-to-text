@@ -1147,14 +1147,52 @@ def main() -> int:
     free = agenda_module.free_at(base + 5 * hour, 30)
     failures += not check("свободное время свободно", not free)
 
+    # Интервалы напоминаний: несколько сразу, свои значения, мусор мимо.
+    failures += not check("интервалы разбираются",
+                          agenda_module.parse_reminders("60, 15, 0") == [60, 15, 0],
+                          str(agenda_module.parse_reminders("60, 15, 0")))
+    failures += not check("свои минуты принимаются",
+                          agenda_module.parse_reminders("90 5 15") == [90, 15, 5])
+    failures += not check("мусор и повторы выброшены",
+                          agenda_module.parse_reminders("30, вчера, 30, -5, 99999") == [30])
+
     # Напоминание срабатывает один раз: повторно — молчит.
     soon = agenda_module.add("Скоро созвон", time.time() + 600, 30)
-    first = agenda_module.due(minutes=30, calls_only=False)
-    again = agenda_module.due(minutes=30, calls_only=False)
+    first = agenda_module.due("30, 0", calls_only=False)
+    again = agenda_module.due("30, 0", calls_only=False)
     failures += not check("напоминание за полчаса срабатывает",
                           any(x["id"] == soon["id"] for x in first), str(len(first)))
     failures += not check("второй раз о том же не напоминает",
                           not any(x["id"] == soon["id"] for x in again))
+
+    # Несколько интервалов у одного созвона: каждый срабатывает отдельно, и
+    # при этом за один заход человек получает одно напоминание, а не очередь.
+    many = agenda_module.add("Созвон с интервалами", time.time() + 1200, 30)
+    hits = agenda_module.due("60, 30, 15, 0", calls_only=False)
+    mine = [x for x in hits if x["id"] == many["id"]]
+    failures += not check("на несколько просроченных отметок одно напоминание",
+                          len(mine) == 1 and mine[0]["minutes"] == 30,
+                          str([x["minutes"] for x in mine]))
+
+    # Свои интервалы у события сильнее общих, а пустой набор возвращает к общим.
+    own = agenda_module.add("Со своим напоминанием", time.time() + 1200, 30)
+    agenda_module.set_reminders(own["id"], "15")
+    failures += not check("свои интервалы у созвона сохраняются",
+                          agenda_module.reminders_for(own["id"], "30, 0") == [15])
+    quiet = [x for x in agenda_module.due("60, 30", calls_only=False)
+             if x["id"] == own["id"]]
+    failures += not check("общие интервалы своим не мешают", not quiet, str(quiet))
+    agenda_module.set_reminders(own["id"], "")
+    failures += not check("пустой набор возвращает к общим",
+                          agenda_module.reminders_for(own["id"], "30, 0") == [30, 0])
+
+    # Созвон, который начался давно, не будит напоминанием на открытии.
+    late = agenda_module.add("Давно начался", time.time() - 3600, 30)
+    failures += not check("о прошедшем не напоминают",
+                          not any(x["id"] == late["id"]
+                                  for x in agenda_module.due("30, 0", calls_only=False)))
+    for stale in (many, own, late):
+        agenda_module.remove(stale["id"])
 
     failures += not check("своё событие убирается", agenda_module.remove(item["id"]))
 

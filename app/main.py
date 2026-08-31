@@ -88,7 +88,7 @@ class Api:
             if not self.settings.get("agenda_enabled", True):
                 continue
             try:
-                soon = agenda.due(int(self.settings.get("agenda_remind_minutes", 30)),
+                soon = agenda.due(self.settings.get("agenda_reminders", "30, 0"),
                                   bool(self.settings.get("agenda_calls_only", True)))
             except Exception:
                 continue
@@ -154,6 +154,13 @@ class Api:
     def agenda_remove(self, item_id: str) -> dict:
         try:
             return {"ok": agenda.remove(str(item_id or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def agenda_remind(self, item_id: str, minutes: str = "") -> dict:
+        """Свои интервалы напоминаний у одного созвона. Пусто — вернуться к общим."""
+        try:
+            return {"ok": True, "items": agenda.set_reminders(str(item_id or ""), minutes)}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 

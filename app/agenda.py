@@ -131,11 +131,12 @@ def load() -> dict:
     try:
         data = json.loads(STORE.read_text("utf-8"))
     except Exception:
-        return {"items": [], "fired": {}}
+        return {"items": [], "fired": {}, "remind": {}}
     if not isinstance(data, dict):
-        return {"items": [], "fired": {}}
+        return {"items": [], "fired": {}, "remind": {}}
     data.setdefault("items", [])
     data.setdefault("fired", {})
+    data.setdefault("remind", {})
     return data
 
 
@@ -172,6 +173,7 @@ def remove(item_id: str) -> bool:
     before = len(data["items"])
     data["items"] = [x for x in data["items"] if x.get("id") != item_id]
     data["fired"].pop(item_id, None)
+    data.get("remind", {}).pop(item_id, None)
     save(data)
     return len(data["items"]) != before
 
@@ -207,9 +209,11 @@ def agenda(days: int = HORIZON, fresh: bool = False) -> dict:
     edge = time.time() + days * 86400
     rows = [r for r in rows if float(r.get("start") or 0) <= edge]
     rows.sort(key=lambda r: float(r.get("start") or 0))
+    own = load().get("remind", {})
     for row in rows:
         row["call"] = is_call(row)
         row["day"] = _day_name(float(row["start"]))
+        row["remind"] = list(own.get(row["id"]) or [])
     mark_overlaps(rows)
     return {"items": rows, **status()}
 
@@ -265,30 +269,90 @@ def free_at(start: float, minutes: int = 30) -> list[dict]:
 
 # --- напоминания -------------------------------------------------------------
 
-def due(minutes: int = 30, calls_only: bool = True) -> list[dict]:
-    """О чём пора напомнить: за N минут до начала и в момент начала.
+# Что предлагаем в готовом виде. Свои значения человек дописывает сам, но
+# список из этих закрывает почти всё: сутки — чтобы успеть подготовиться,
+# ноль — «началось».
+COMMON = (1440, 120, 60, 30, 15, 5, 0)
 
-    Каждое напоминание отправляется один раз: отметки о сработавших лежат
-    рядом с событиями и чистятся вместе с прошедшими.
+
+def parse_reminders(value) -> list[int]:
+    """Разбирает «60, 15, 0» в список минут. Мусор молча выбрасывается."""
+    if isinstance(value, (list, tuple)):
+        parts = [str(x) for x in value]
+    else:
+        parts = re.split(r"[,;\s]+", str(value or ""))
+    out: list[int] = []
+    for part in parts:
+        part = part.strip()
+        if not part.lstrip("-").isdigit():
+            continue
+        minutes = int(part)
+        if 0 <= minutes <= 20160 and minutes not in out:   # не дальше двух недель
+            out.append(minutes)
+    return sorted(out, reverse=True)
+
+
+def reminders_for(item_id: str, default) -> list[int]:
+    """Свои интервалы у события сильнее общих."""
+    own = load().get("remind", {}).get(item_id)
+    if own:
+        return parse_reminders(own)
+    return parse_reminders(default)
+
+
+def set_reminders(item_id: str, minutes) -> list[int]:
+    """Задаёт интервалы конкретному созвону. Пусто — вернуться к общим."""
+    data = load()
+    remind = data.setdefault("remind", {})
+    values = parse_reminders(minutes)
+    if values:
+        remind[item_id] = values
+    else:
+        remind.pop(item_id, None)
+    # Отметки о сработавших сбрасываем: человек поменял правила, значит
+    # напомнить по новым нужно даже о том, о чём уже напоминали.
+    data.get("fired", {}).pop(item_id, None)
+    save(data)
+    return values
+
+
+STALE = 300      # позже пяти минут после начала напоминать уже незачем
+
+
+def due(default="30, 0", calls_only: bool = True) -> list[dict]:
+    """О чём пора напомнить.
+
+    У каждого события свой набор интервалов: общий из настроек или личный.
+    Каждый интервал срабатывает один раз — отметка хранится по паре «событие
+    + интервал», поэтому «за час» и «за пять минут» не мешают друг другу.
+
+    Если приложение было закрыто и разом наступило несколько отметок, человек
+    получает одно напоминание — по ближайшей к текущему моменту; остальные
+    просроченные гасим молча, иначе на открытии прилетит очередь одинаковых.
     """
     now = time.time()
     data = load()
     fired = data.get("fired", {})
+    rows = agenda().get("items", [])
     out = []
-    for row in agenda().get("items", []):
+    for row in rows:
         if row.get("allday") or (calls_only and not row.get("call")):
             continue
         left = float(row["start"]) - now
-        marks = fired.get(row["id"]) or []
-        # «Скоро» и «началось» — два разных повода, и отмечаются они порознь.
-        if 0 < left <= minutes * 60 and "soon" not in marks:
-            out.append({**row, "when": "soon", "minutes": max(1, int(left // 60))})
-            fired[row["id"]] = marks + ["soon"]
-        elif -120 <= left <= 0 and "now" not in marks:
-            out.append({**row, "when": "now", "minutes": 0})
-            fired[row["id"]] = (fired.get(row["id"]) or []) + ["now"]
-    # Прошедшее забываем: иначе отметки копятся годами.
-    alive = {r["id"] for r in agenda().get("items", [])}
+        marks = list(fired.get(row["id"]) or [])
+        wanted = reminders_for(row["id"], default)
+        pending = [m for m in wanted if str(m) not in marks]
+        ready = [m for m in pending if left <= m * 60]
+        if not ready:
+            continue
+        marks.extend(str(m) for m in ready)
+        fired[row["id"]] = marks
+        if left < -STALE:                       # созвон давно начался — молчим
+            continue
+        minutes = min(ready)
+        out.append({**row, "when": "now" if minutes == 0 else "soon",
+                    "minutes": minutes})
+    alive = {r["id"] for r in rows}
     data["fired"] = {k: v for k, v in fired.items() if k in alive}
     save(data)
     return out

@@ -354,6 +354,36 @@ minute is not.
 Markers are also saved as `<recording>.chapters.vtt`, which players, YouTube and
 editing software understand.
 
+### A schedule of calls, and reminders
+
+Meetings arrive in different calendars — work Gmail, personal Yandex, someone
+else's Outlook — and while agreeing on a time mid-call nobody remembers them
+all. The calendar icon in the header opens **one list** with **overlaps marked**:
+the question a schedule has to answer is not “what is on today” but “will this
+clash”. The next call also shows without opening the list — one line in the
+working area, with a *Record* button.
+
+Events come from the **system Calendar on macOS**: Gmail, Outlook and Yandex
+already sync there, so one system permission replaces three integrations and
+nothing leaves the machine to read a calendar. Calls can be added from the app
+too — into the real calendar if you want, so everyone else sees them; while you
+type the time, the dialog says what is already booked then.
+
+**You decide when to be reminded.** The intervals are buttons: a day, two hours,
+an hour, 30, 15, 5 minutes, at the start — as many at once as you like, with any
+other number of minutes typed in beside them. A single “half an hour ahead” does
+not fit every call: someone else's standup needs five minutes, a call with a
+client needs a day to prepare for. Any call in the schedule can have its own
+set — the bell on its row overrides the general one, the chosen intervals are
+printed in the row, and clearing them puts the call back on the general set.
+
+Each interval fires once and independently of the others. If the app was closed
+and several marks came due at once, one reminder arrives — the one nearest to
+now — not a queue of near-identical ones. Reminders show in the window, and
+optionally as a macOS banner and a message in Telegram or MAX; the messengers are
+off by default, and only the time, the title and — as separate checkboxes — the
+attendees and the summary ever go out.
+
 ### Documents attached to a recording
 
 A call is almost never self-contained: people discuss an estimate, a brief, an

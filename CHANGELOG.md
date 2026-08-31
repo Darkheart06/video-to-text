@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.8.1] — 2026-08-31
+
+### Added
+
+- **Several reminder intervals instead of one.** “Half an hour ahead” does not
+  fit every call: someone else's standup needs five minutes, a call with a
+  client needs a day to prepare for. The intervals are picked as buttons — a day,
+  two hours, an hour, 30, 15, 5 minutes, at the start — as many at once as you
+  like, and any other number of minutes can be typed in beside them.
+- **Own intervals for a single call.** The bell on a row in the schedule
+  overrides the general set for that call only; the chosen intervals are printed
+  in the row so they are visible without opening anything. Clearing them puts
+  the call back on the general set, and an empty set means no reminders for it.
+
+### Changed
+
+- Each interval fires once, independently of the others, so “an hour ahead” and
+  “five minutes ahead” no longer cancel each other out. If the app was closed
+  and several marks came due at once, one reminder arrives — the one nearest to
+  now — instead of a queue of near-identical messages. A call that started more
+  than five minutes ago stays quiet.
+
 ## [1.8.0] — 2026-08-31
 
 ### Added

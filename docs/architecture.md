@@ -471,6 +471,20 @@ parcel”. The marker is a video link (Meet, Zoom, Teams, Telemost, Kontur Talk,
 Jitsi and the rest) or two attendees and not an all-day event. Reminders default
 to calls only.
 
+**There are several reminder intervals, and any call can have its own**
+(`agenda.parse_reminders`, `reminders_for`, `set_reminders`). A single “half an
+hour ahead” does not cover the cases: someone else's standup needs five minutes,
+a call with a client needs a day to prepare for. Settings pick the intervals as
+buttons and take a custom number of minutes in the same place; any event in the
+schedule can override the set, and an empty set puts it back on the general one.
+
+Fired marks are stored per “event + interval” pair, so “an hour ahead” and “five
+minutes ahead” do not interfere and each arrives exactly once. If the app was
+closed and several marks came due at once, the person gets one reminder — the
+one nearest to now — and the rest are retired silently: a queue of near-identical
+messages on startup is worse than no message. A call that started more than five
+minutes ago does not remind at all.
+
 **A next call agreed in conversation** is found in the summary
 (`agenda.suggest`) by the same date parsing that dates the tasks: “созвонимся
 завтра в 15:30” becomes a concrete time, and the card offers to add it, saying
