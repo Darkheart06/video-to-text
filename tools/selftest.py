@@ -1365,6 +1365,80 @@ def main() -> int:
                           str(snapshot["queue"]))
 
 
+    print("\n26. Запись экрана включается посреди созвона")
+    # Экран показывают не весь разговор: десять минут из часа. Проверяем, что
+    # куски записываются по одному, помнят своё время и что главным видео
+    # становится только картинка, шедшая от начала и до конца.
+    class FakeHelper:
+        def __init__(self):
+            self.said: list[str] = []
+            self.stdin = self
+
+        def poll(self):
+            return None
+
+        def write(self, raw):
+            self.said.append(raw.decode("utf-8").strip())
+
+        def flush(self):
+            pass
+
+    live = record.Stenographer(settings)
+    helper = FakeHelper()
+    live._process = helper
+    talk = record.Session(id="v", started_at=time.time() - 600,
+                          directory=Path("/tmp/selftest-video"), title="Показ экрана")
+    talk.directory.mkdir(parents=True, exist_ok=True)
+    live.session = talk
+
+    live.set_video("screen")
+    failures += not check("картинка включается на ходу",
+                          talk.video_now == "screen" and len(talk.video_parts) == 1
+                          and helper.said[-1].startswith("video-on - "),
+                          str(helper.said))
+    failures += not check("кусок помнит, с какой секунды начался",
+                          talk.video_parts[0]["from"] > 500,
+                          str(talk.video_parts[0]["from"]))
+    live.set_video("")
+    failures += not check("картинка выключается, звук не трогаем",
+                          talk.video_now == "" and helper.said[-1] == "video-off"
+                          and talk.video_parts[0]["to"] is not None)
+    live.set_video("com.apple.Safari")
+    failures += not check("второй кусок пишется в свой файл",
+                          len(talk.video_parts) == 2
+                          and talk.video_parts[1]["path"].endswith("screen-2.mp4")
+                          and "com.apple.Safari" in helper.said[-1],
+                          str(helper.said[-1]))
+
+    # На встрече в комнате картинки нет вовсе: там пишется один микрофон.
+    room = record.Session(id="r", started_at=time.time(), mode="room",
+                          directory=Path("/tmp/selftest-video"), title="Встреча")
+    live.session = room
+    try:
+        live.set_video("screen")
+        failures += not check("на встрече в комнате экран не пишется", False)
+    except record.RecordError:
+        failures += not check("на встрече в комнате экран не пишется", True)
+
+    # Что становится главным видео, а что — отдельным файлом.
+    whole = record.Session(id="w", started_at=time.time(),
+                           directory=Path("/tmp/selftest-video"), title="Целиком")
+    whole.video_parts = [{"path": "/tmp/x.mp4", "from": 0.0, "to": 900.0, "till_end": True,
+                          "source": "screen"}]
+    part = record.Session(id="p", started_at=time.time(),
+                          directory=Path("/tmp/selftest-video"), title="Кусками")
+    part.video_parts = [{"path": "/tmp/y.mp4", "from": 320.0, "to": 900.0, "till_end": True,
+                         "source": "screen"}]
+
+    def kind_of(session):
+        rows = session.video_parts
+        return (len(rows) == 1 and rows[0]["from"] <= 3 and bool(rows[0].get("till_end")))
+
+    failures += not check("картинка на весь созвон — это главное видео", kind_of(whole))
+    failures += not check("включённая посреди созвона — отдельный файл",
+                          not kind_of(part))
+    shutil.rmtree("/tmp/selftest-video", ignore_errors=True)
+
     asr.transcribe = real
     server.shutdown()
     print(f"\n{'ВСЁ ХОРОШО' if not failures else f'ПРОБЛЕМ: {failures}'}\n")

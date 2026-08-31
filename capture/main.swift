@@ -127,11 +127,20 @@ final class VideoWriter {
     private var broken = false
     private var closing = false
     private var last = CMTime.zero
+    /// С какой секунды записи начался этот кусок: включённая посреди созвона
+    /// картинка обязана начинаться со своего нуля, иначе в начале файла
+    /// окажется полчаса пустоты.
+    private let base: Double
     private(set) var frames: Int64 = 0
     private(set) var dropped: Int64 = 0
+    let width: Int
+    let height: Int
 
-    init(path: String, width: Int, height: Int) throws {
+    init(path: String, width: Int, height: Int, base: Double = 0) throws {
         self.path = path
+        self.base = base
+        self.width = width
+        self.height = height
         try? FileManager.default.removeItem(atPath: path)
         writer = try AVAssetWriter(outputURL: URL(fileURLWithPath: path), fileType: .mp4)
         let settings: [String: Any] = [
@@ -180,7 +189,7 @@ final class VideoWriter {
         // пачками, и два подряд легко попадают в одну шестисотую секунды —
         // а повторная метка времени роняет всю запись целиком: дальше
         // AVAssetWriter уходит в .failed и файл остаётся без индекса.
-        var stamp = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+        var stamp = CMTime(seconds: max(0, seconds - base), preferredTimescale: 600)
         if frames > 0 && stamp <= last {
             stamp = CMTimeAdd(last, CMTime(value: 1, timescale: 600))
         }
@@ -253,13 +262,17 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
     private let micWriter: TrackWriter
     private var videoWriter: VideoWriter?
     private let videoPath: String?
-    private let appBundleID: String?
+    private var appBundleID: String?
     private let maxWidth: Int
     private let fps: Int
     private var stream: SCStream?
+    private var display: SCDisplay?
     private var started = Date()
     private var sysSeen = false
     private var micSeen = false
+    /// Идёт ли сейчас запись картинки. Её включают и выключают посреди
+    /// созвона: экран показывают не весь разговор, а десять минут из часа.
+    private(set) var videoOn = false
 
     init(directory: String, video: String? = nil, app: String? = nil,
          width: Int = 1600, fps: Int = 8) throws {
@@ -272,15 +285,12 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         super.init()
     }
 
-    func start() async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(false,
-                                                                          onScreenWindowsOnly: false)
-        guard let display = content.displays.first else {
-            throw Failure("не найден экран для захвата")
-        }
-
+    /// Настройки потока. Картинка либо настоящая, либо заглушка 2×2: без
+    /// видео ScreenCaptureKit не работает вовсе, а платить за него полным
+    /// экраном, когда пишут только звук, незачем.
+    private func makeConfig(video: Bool, display: SCDisplay) -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
-        if videoPath != nil {
+        if video {
             // Пишем картинку: ширину ограничиваем, кадров берём мало — экран
             // меняется редко, а размер файла растёт быстро.
             let scale = min(1.0, Double(maxWidth) / Double(display.width))
@@ -290,11 +300,7 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
             config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
             config.showsCursor = true
             config.queueDepth = 6
-            videoWriter = try VideoWriter(path: videoPath!,
-                                          width: config.width, height: config.height)
         } else {
-            // Видео нам не нужно, но ScreenCaptureKit без него не работает —
-            // поэтому берём картинку минимального размера и почти без кадров.
             config.width = 2
             config.height = 2
             config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
@@ -307,23 +313,46 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         if #available(macOS 15.0, *) {
             config.captureMicrophone = true
         }
+        return config
+    }
 
-        // Весь экран или окна одного приложения. Звук при этом остаётся
-        // системным целиком: собеседников слышно, даже когда показывают
-        // только одно окно.
-        var filter = SCContentFilter(display: display, excludingWindows: [])
-        if let appBundleID,
-           let app = content.applications.first(where: { $0.bundleIdentifier == appBundleID }) {
-            filter = SCContentFilter(display: display, including: [app], exceptingWindows: [])
+    /// Весь экран или окна одного приложения. Звук при этом остаётся
+    /// системным целиком: собеседников слышно, даже когда показывают
+    /// только одно окно.
+    private func makeFilter(content: SCShareableContent, display: SCDisplay,
+                            app: String?) -> SCContentFilter {
+        if let app, !app.isEmpty,
+           let match = content.applications.first(where: { $0.bundleIdentifier == app }) {
+            return SCContentFilter(display: display, including: [match], exceptingWindows: [])
         }
+        return SCContentFilter(display: display, excludingWindows: [])
+    }
+
+    func start() async throws {
+        let content = try await SCShareableContent.excludingDesktopWindows(false,
+                                                                          onScreenWindowsOnly: false)
+        guard let display = content.displays.first else {
+            throw Failure("не найден экран для захвата")
+        }
+        self.display = display
+
+        let wantsVideo = videoPath != nil
+        let config = makeConfig(video: wantsVideo, display: display)
+        if let videoPath {
+            videoWriter = try VideoWriter(path: videoPath,
+                                          width: config.width, height: config.height)
+            videoOn = true
+        }
+        let filter = makeFilter(content: content, display: display, app: appBundleID)
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         let queue = DispatchQueue(label: "v2t.capture", qos: .userInitiated)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
-        if videoPath != nil {
-            try stream.addStreamOutput(self, type: .screen,
-                                       sampleHandlerQueue: DispatchQueue(label: "v2t.video",
-                                                                         qos: .userInitiated))
-        }
+        // Дорожку кадров подключаем всегда, даже когда картинку не пишем:
+        // включить её посреди созвона иначе было бы нечем, а пустые кадры
+        // 2×2 раз в секунду ничего не стоят.
+        try stream.addStreamOutput(self, type: .screen,
+                                   sampleHandlerQueue: DispatchQueue(label: "v2t.video",
+                                                                     qos: .userInitiated))
         if #available(macOS 15.0, *) {
             try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
         }
@@ -331,6 +360,54 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         self.stream = stream
         self.started = Date()
         note("started")
+    }
+
+    /// Включает запись картинки посреди созвона. Файл свой на каждый кусок:
+    /// экран показывают не весь разговор, и склеивать дырявую дорожку с
+    /// непрерывным звуком — верный способ развалить метки.
+    @available(macOS 14.0, *)
+    func startVideo(path: String, app: String?) async -> String {
+        guard let stream else { return "запись не идёт" }
+        if videoWriter != nil { return "" }
+        let content: SCShareableContent
+        do {
+            content = try await SCShareableContent.excludingDesktopWindows(
+                false, onScreenWindowsOnly: false)
+        } catch { return "не получить список окон: \(error)" }
+        guard let display = content.displays.first else { return "не найден экран" }
+        self.display = display
+        let config = makeConfig(video: true, display: display)
+        do {
+            let writer = try VideoWriter(path: path, width: config.width,
+                                         height: config.height,
+                                         base: Date().timeIntervalSince(started))
+            try await stream.updateContentFilter(makeFilter(content: content,
+                                                            display: display, app: app))
+            try await stream.updateConfiguration(config)
+            appBundleID = app
+            videoWriter = writer
+            videoOn = true
+            note("video on \(path)")
+            return ""
+        } catch {
+            note("видео не включилось: \(error)")
+            return "\(error)"
+        }
+    }
+
+    /// Выключает картинку и закрывает её файл. Звук при этом не прерывается:
+    /// поток тот же, меняется только его настройка.
+    func stopVideo() async -> String {
+        guard let writer = videoWriter else { return "" }
+        videoWriter = nil
+        videoOn = false
+        let ok = await writer.finish()
+        note("video off frames=\(writer.frames) skipped=\(writer.dropped) ok=\(ok)")
+        if #available(macOS 14.0, *), let stream, let display {
+            do { try await stream.updateConfiguration(makeConfig(video: false, display: display)) }
+            catch { note("поток не вернулся к звуку: \(error)") }
+        }
+        return ok ? "" : "видео не сохранилось"
     }
 
     func stop() async {
@@ -341,6 +418,8 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         if let videoWriter {
             let ok = await videoWriter.finish()
             note("video frames=\(videoWriter.frames) skipped=\(videoWriter.dropped) ok=\(ok)")
+            self.videoWriter = nil
+            videoOn = false
         }
         if let stream { try? await stream.stopCapture() }
         sysWriter.close()
@@ -356,9 +435,16 @@ final class Capture: NSObject, SCStreamOutput, SCStreamDelegate {
         if type == .screen {
             // Кадры без изменений ScreenCaptureKit присылает пустыми — такие
             // писать незачем, они только раздувают файл.
-            if let videoWriter, isComplete(sampleBuffer) {
-                videoWriter.append(sampleBuffer, at: elapsed)
+            guard let videoWriter, isComplete(sampleBuffer) else { return }
+            // Картинку включают посреди созвона, и первые мгновения после
+            // переключения ещё летят кадры прежнего размера — заглушка 2×2.
+            // Такой кадр в файл другого размера класть нельзя.
+            if let image = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                let width = CVPixelBufferGetWidth(image)
+                let height = CVPixelBufferGetHeight(image)
+                if width != videoWriter.width || height != videoWriter.height { return }
             }
+            videoWriter.append(sampleBuffer, at: elapsed)
             return
         }
         if type == .audio {
@@ -828,6 +914,47 @@ case "record":
     Task {
         do { try await capture.start() }
         catch { note("не начать захват: \(error)"); exit(3) }
+    }
+
+    // Команды с обычного ввода: картинку включают и выключают посреди созвона,
+    // а перезапускать помощника ради этого нельзя — вместе с ним оборвётся
+    // звук, которого второй раз уже не будет.
+    //   video-on <bundle-id или -> <путь к mp4>
+    //   video-off
+    // Ответ уходит в тот же поток сообщений: «video-ok» или «video-fail …».
+    DispatchQueue.global().async {
+        while let line = readLine(strippingNewline: true) {
+            let text = line.trimmingCharacters(in: .whitespaces)
+            if text.isEmpty { continue }
+            if text == "video-off" {
+                Task {
+                    let why = await capture.stopVideo()
+                    note(why.isEmpty ? "video-ok" : "video-fail \(why)")
+                }
+                continue
+            }
+            if text.hasPrefix("video-on ") {
+                // Путь может быть с пробелами, а bundle-id — нет: поэтому
+                // сначала имя приложения, а остаток строки целиком путь.
+                let rest = String(text.dropFirst("video-on ".count))
+                guard let space = rest.firstIndex(of: " ") else {
+                    note("video-fail нет пути"); continue
+                }
+                let app = String(rest[rest.startIndex..<space])
+                let path = String(rest[rest.index(after: space)...])
+                    .trimmingCharacters(in: .whitespaces)
+                guard #available(macOS 14.0, *) else {
+                    note("video-fail нужна macOS 14 или новее"); continue
+                }
+                Task {
+                    let why = await capture.startVideo(path: path,
+                                                       app: app == "-" ? nil : app)
+                    note(why.isEmpty ? "video-ok" : "video-fail \(why)")
+                }
+                continue
+            }
+            note("неизвестная команда: \(text)")
+        }
     }
 
     DispatchQueue.global().async {

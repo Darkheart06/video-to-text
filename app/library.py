@@ -323,6 +323,16 @@ def _tabs(summary: dict, sections: dict, lang: str = "") -> list[tuple[str, str]
 
 def files_of(directory: Path, stem: str) -> dict[str, str]:
     out: dict[str, str] = {}
+    # Куски записи экрана: картинку включают и выключают посреди созвона, и
+    # сколько их будет, заранее неизвестно. Ищем перебором, а не маской:
+    # название приходит от модели и может содержать что угодно, включая
+    # скобки, которые маска поняла бы по-своему.
+    head = f"{stem}.screen-"
+    extra = sorted(item for item in directory.iterdir()
+                   if item.name.startswith(head) and item.suffix == ".mp4")
+    for number, part in enumerate(extra, 1):
+        if media.playable_mp4(part):
+            out[f"screen{number}"] = str(part)
     for suffix, key in SUFFIXES:
         candidate = directory / f"{stem}{suffix}"
         if not candidate.exists():

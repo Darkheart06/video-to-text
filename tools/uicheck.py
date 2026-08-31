@@ -12,6 +12,48 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "app" / "ui" / "index.html"
+
+
+def _fake_shot(kind: str) -> str:
+    """Снимок окна для заглушки выбора источника.
+
+    Однопиксельная заглушка проверку проходила, но на картинке для README
+    плитки выходили пустыми серыми прямоугольниками — по такому снимку не
+    понять, что выбирают по виду окна, а не по названию.
+    """
+    import base64
+
+    def lines(x, y, widths, colour="#c9d2dd", step=13):
+        return "".join(
+            f'<rect x="{x}" y="{y + i * step}" width="{w}" height="6" rx="3" '
+            f'fill="{colour}"/>' for i, w in enumerate(widths))
+
+    if kind == "screen":
+        body = (
+            '<rect width="320" height="200" fill="#3f4d63"/>'
+            '<rect x="18" y="16" width="180" height="120" rx="8" fill="#ffffff"/>'
+            '<rect x="18" y="16" width="180" height="18" rx="8" fill="#e8edf3"/>'
+            '<circle cx="30" cy="25" r="3.5" fill="#f0817a"/>'
+            '<circle cx="41" cy="25" r="3.5" fill="#f2c66b"/>'
+            '<circle cx="52" cy="25" r="3.5" fill="#89ce8f"/>'
+            + lines(30, 46, [150, 132, 96])
+            + '<rect x="30" y="92" width="72" height="26" rx="6" fill="#2f6fdd"/>'
+            '<rect x="214" y="44" width="88" height="112" rx="8" fill="#ffffff"/>'
+            + lines(226, 60, [64, 52, 64, 40], step=15)
+            + '<rect x="96" y="170" width="128" height="16" rx="8" fill="#5a6a83"/>')
+    else:
+        body = (
+            '<rect width="320" height="200" fill="#eef2f7"/>'
+            '<rect x="10" y="10" width="300" height="180" rx="10" fill="#ffffff"/>'
+            '<rect x="10" y="10" width="300" height="30" rx="10" fill="#f3f6fa"/>'
+            '<rect x="24" y="19" width="90" height="12" rx="6" fill="#dbe3ec"/>'
+            '<rect x="124" y="19" width="150" height="12" rx="6" fill="#e8edf3"/>'
+            '<rect x="26" y="56" width="140" height="14" rx="7" fill="#2f6fdd"/>'
+            + lines(26, 84, [252, 232, 264, 180])
+            + '<rect x="26" y="146" width="120" height="26" rx="6" fill="#e8edf3"/>')
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" '
+           f'viewBox="0 0 320 200">{body}</svg>')
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 sys.path.insert(0, str(ROOT))
 
 SUMMARY_SECTIONS = {
@@ -274,21 +316,35 @@ EN_PEOPLE = {
     ],
 }
 
+# Расписание: два события из системного календаря, одно своё, и одно
+# накладывается на другое. Время задано сдвигом от «сейчас» — окно считает
+# «через сколько», и жёсткая дата сделала бы снимок для README устаревшим.
+AGENDA = [
+    {"id": "sys:1", "title": "Планёрка по релизу", "start": 1500, "end": 3300,
+     "calendar": "Работа", "account": "Gmail", "source": "system", "call": True,
+     "allday": False, "people": ["Ирина", "Дмитрий"], "clash": ["sys:2"],
+     "day": "Сегодня", "url": "https://meet.google.com/abc"},
+    {"id": "sys:2", "title": "Разговор с подрядчиком", "start": 2400, "end": 4200,
+     "calendar": "Личное", "account": "Яндекс", "source": "system", "call": True,
+     "allday": False, "people": ["Пётр"], "clash": ["sys:1"], "day": "Сегодня",
+     "url": "https://telemost.yandex.ru/x"},
+    {"id": "own:a1", "title": "Созвон с заказчиком", "start": 90000, "end": 91800,
+     "calendar": "", "source": "own", "call": True, "allday": False,
+     "people": [], "clash": [], "day": "Завтра", "remind": [60, 0]},
+]
+
+EN_AGENDA = [
+    dict(AGENDA[0], title="Release planning", calendar="Work",
+         people=["Irina", "Dmitry"], day="Today"),
+    dict(AGENDA[1], title="Call with the contractor", calendar="Personal",
+         people=["Pyotr"], day="Today"),
+    dict(AGENDA[2], title="Call with the client", day="Tomorrow"),
+]
+
 BRIDGE = """
 window.__now = Math.floor(Date.now() / 1000);
-window.__agenda = [
-  {id: "sys:1", title: "Планёрка по релизу", start: window.__now + 1500,
-   end: window.__now + 3300, calendar: "Работа", account: "Gmail", source: "system",
-   call: true, allday: false, people: ["Ирина", "Дмитрий"], clash: ["sys:2"],
-   day: "Сегодня", url: "https://meet.google.com/abc"},
-  {id: "sys:2", title: "Разговор с подрядчиком", start: window.__now + 2400,
-   end: window.__now + 4200, calendar: "Личное", account: "Яндекс", source: "system",
-   call: true, allday: false, people: ["Пётр"], clash: ["sys:1"], day: "Сегодня",
-   url: "https://telemost.yandex.ru/x"},
-  {id: "own:a1", title: "Созвон с заказчиком", start: window.__now + 90000,
-   end: window.__now + 91800, calendar: "", source: "own", call: true, allday: false,
-   people: [], clash: [], day: "Завтра", remind: [60, 0]}
-];
+window.__agenda = (%(agenda)s).map(x => Object.assign({}, x,
+  {start: window.__now + x.start, end: window.__now + x.end}));
 window.__folders = ["Клиенты"];
 window.__shelf = {};
 window.pywebview = {api: {
@@ -316,6 +372,12 @@ window.pywebview = {api: {
     return {ok: true, session: Object.assign({}, %(rec)s, {mode: mode})};
   },
   rec_stop: async () => (%(rec)s),
+  // Запись экрана переключается прямо во время созвона: помощник отвечает
+  // новым снимком сессии, окно перерисовывает кнопку по нему.
+  rec_video: async source => {
+    window.__recVideo = source;
+    return {ok: true, session: Object.assign({}, %(rec)s, {video_now: source})};
+  },
   rec_cancel: async () => true,
   rec_people: async names => {
     window.__people = names;
@@ -344,10 +406,8 @@ window.pywebview = {api: {
   // Полки живут в памяти заглушки: список перечитывается после каждой правки,
   // как и в настоящем приложении.
   screen_sources: async () => ({items: [
-    {id: "screen", name: "", kind: "screen",
-     shot: "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="},
-    {id: "com.apple.Safari", name: "Safari", kind: "app",
-     shot: "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="},
+    {id: "screen", name: "", kind: "screen", shot: "%(shotScreen)s"},
+    {id: "com.apple.Safari", name: "Safari", kind: "app", shot: "%(shotApp)s"},
     {id: "com.tinyspeck.slackmacgap", name: "Slack", kind: "app", shot: ""}]}),
   // Расписание: два события из системного календаря, одно своё, и одно
   // накладывается на другое — ради этого пересечения всё и затевалось.
@@ -486,7 +546,9 @@ def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path
                        "rec": json.dumps(EN_REC), "presets": json.dumps(catalogue),
                        "lib": json.dumps(EN_LIB), "estimate": json.dumps(EN_ESTIMATE_JOB),
                        "sections": json.dumps(EN_SECTIONS),
-                       "people": json.dumps(EN_PEOPLE)}
+                       "people": json.dumps(EN_PEOPLE),
+                       "shotScreen": _fake_shot("screen"), "shotApp": _fake_shot("app"),
+                       "agenda": json.dumps(EN_AGENDA)}
 
     for scheme in ("light", "dark"):
         page = browser.new_page(viewport={"width": 1180, "height": 820},
@@ -543,6 +605,25 @@ def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path
         docs_shot(page, scheme, "light", "estimate.png")
 
         page.evaluate("state.jobs.delete('demo9999'); render();")
+
+        # Расписание и настройки — те же экраны, что в русском проходе: снимки
+        # для README.md должны показывать окно по-английски, а не переведённое
+        # наполовину.
+        page.evaluate("loadAgenda(true)")
+        page.wait_for_timeout(300)
+        page.evaluate("openAgenda()")
+        page.wait_for_timeout(500)
+        if page.locator("#agenda-body .ev").count() != 3:
+            errors.append(f"en/{scheme}: расписание по-английски не собралось")
+        docs_shot(page, scheme, "light", "agenda.png")
+        page.evaluate("closeAgenda()")
+        page.wait_for_timeout(200)
+        page.click("#btn-settings")
+        page.wait_for_timeout(400)
+        docs_shot(page, scheme, "light", "settings.png")
+        page.evaluate("closeSettings()")
+        page.wait_for_timeout(200)
+
         page.click('[data-lib="lib1"]')
         page.wait_for_timeout(300)
         docs_shot(page, scheme, "dark", "archive-dark.png")
@@ -619,7 +700,9 @@ def main() -> int:
                        "rec": json.dumps(REC), "presets": json.dumps(catalogue),
                        "lib": json.dumps(LIB), "estimate": json.dumps(ESTIMATE_JOB),
                        "sections": json.dumps(SUMMARY_SECTIONS),
-                       "people": json.dumps(PEOPLE)}
+                       "people": json.dumps(PEOPLE),
+                       "shotScreen": _fake_shot("screen"), "shotApp": _fake_shot("app"),
+                       "agenda": json.dumps(AGENDA)}
 
     errors: list[str] = []
     with sync_playwright() as pw:
@@ -685,6 +768,62 @@ def main() -> int:
             if not page.locator(".rec-dot").count():
                 errors.append(f"{scheme}: нет индикатора идущей записи")
             docs_shot(page, scheme, "light", "main.ru.png")
+
+            # Текст реплики стоит по левому краю: класс `.x` он делил с
+            # кнопками-крестиками, и правило для них центрировало расшифровку.
+            box = page.evaluate("""() => {
+              const cell = document.querySelector('.rec-line .tx');
+              if (!cell) return null;
+              const style = getComputedStyle(cell);
+              return {justify: style.justifyContent, display: style.display};
+            }""")
+            if not box or box.get("justify") == "center":
+                errors.append(f"{scheme}: реплики в записи выровнены по центру: {box}")
+
+            # --- запись экрана посреди созвона ---
+            # Экран показывают не весь разговор: включать и выключать картинку
+            # нужно тогда же, когда её показывают, а не до начала записи.
+            if not page.locator("#rec .screen-pick").count():
+                errors.append(f"{scheme}: во время записи нечем включить экран")
+            page.click("#rec #screen-pick")
+            page.wait_for_timeout(500)
+            page.click('.ask .tile[data-src="com.apple.Safari"]')
+            page.wait_for_timeout(400)
+            if page.evaluate("window.__recVideo || ''") != "com.apple.Safari":
+                errors.append(f"{scheme}: экран во время записи не переключается")
+            if page.evaluate("window.__savedSettings && window.__savedSettings"
+                             ".record_video_source || ''") == "com.apple.Safari":
+                errors.append(f"{scheme}: переключение на ходу лезет в настройки")
+            if not page.locator("#rec .screen-pick.on").count():
+                errors.append(f"{scheme}: включённая запись экрана не подсвечена")
+            if "Safari" not in (page.text_content("#rec .screen-pick") or ""):
+                errors.append(f"{scheme}: на кнопке не видно, что пишется с экрана")
+            docs_shot(page, scheme, "light", "screen-live.ru.png")
+            page.click("#rec #screen-pick")
+            page.wait_for_timeout(500)
+            page.click('.ask .tile[data-src=""]')
+            page.wait_for_timeout(400)
+            if page.evaluate("window.__recVideo") != "":
+                errors.append(f"{scheme}: запись экрана не выключается на ходу")
+
+            # --- новый созвон начинается, пока разбирается прошлый ---
+            # Движок это умел с самого начала, а нажать было негде: окно
+            # показывало одну крутилку без единой кнопки.
+            page.evaluate("""() => {
+              const busy = Object.assign({}, state.rec,
+                {state: 'finishing', message: 'Собираю запись'});
+              setRec(busy); renderRec();
+            }""")
+            page.wait_for_timeout(250)
+            if not page.locator('#rec [data-rec="start"]').count():
+                errors.append(f"{scheme}: во время разбора новую запись не начать")
+            if not page.locator("#rec .spin").count():
+                errors.append(f"{scheme}: не видно, что прошлая запись разбирается")
+            if page.locator("#rec .rec-card.live").count():
+                errors.append(f"{scheme}: разбираемая запись выглядит как идущая")
+            page.evaluate("setRec(Object.assign({}, state.rec, {state: 'recording'}));"
+                          " renderRec();")
+            page.wait_for_timeout(200)
 
             # --- голоса, узнанные по ходу ---
             if not page.locator('[data-voice="V1"]').count():
@@ -914,6 +1053,7 @@ def main() -> int:
             page.click("#btn-settings")
             page.wait_for_timeout(300)
             page.screenshot(path=str(out_dir / f"4-settings-{scheme}.png"))
+            docs_shot(page, scheme, "light", "settings.ru.png")
 
             # Настройки разложены по вкладкам: сначала проверяем, что они есть
             # и переключаются, потом ходим по ним.
@@ -981,6 +1121,7 @@ def main() -> int:
             picked = page.evaluate("document.querySelector('#remind-general').value")
             if picked != "60, 30, 7, 0":
                 errors.append(f"{scheme}: интервалы напоминаний собираются не так: {picked}")
+            docs_shot(page, scheme, "light", "reminders.ru.png")
             page.locator("#tg-token").scroll_into_view_if_needed()
             page.fill("#tg-token", "123:ABC")
             page.locator("#btn-tg-chat").scroll_into_view_if_needed()
@@ -1064,6 +1205,7 @@ def main() -> int:
             if abs(at - 96) > 2:
                 errors.append(f"{scheme}: метка не перематывает запись: {at}")
             page.screenshot(path=str(out_dir / f"17-marks-{scheme}.png"))
+            docs_shot(page, scheme, "light", "marks.ru.png")
             # Метка на шкале делает то же самое.
             page.evaluate("document.getElementById('media-demo1234').currentTime = 0")
             page.click('.player .strip .pin[data-at="152"]')
@@ -1182,6 +1324,14 @@ def main() -> int:
             page.wait_for_timeout(400)
             if page.locator("#soon").is_hidden():
                 errors.append(f"{scheme}: ближайший созвон не показан в рабочей области")
+            # Пустая плашка не висит: display у класса сильнее браузерного
+            # hidden, и без отдельного правила синяя полоса стояла всегда.
+            page.evaluate("state.agenda={items:[],granted:true}; renderSoon();")
+            page.wait_for_timeout(200)
+            if page.locator("#soon").is_visible():
+                errors.append(f"{scheme}: пустая плашка ближайшего созвона видна")
+            page.evaluate("loadAgenda(true)")
+            page.wait_for_timeout(400)
             page.click("#btn-agenda")
             page.wait_for_timeout(400)
             rows = page.locator("#agenda-body .ev").count()
@@ -1265,6 +1415,7 @@ def main() -> int:
                 errors.append(f"{scheme}: в окне выбора экрана {tiles} плиток, ожидалось 4")
             if not page.locator('.ask .tile .pic img').count():
                 errors.append(f"{scheme}: у плиток нет снимков экрана")
+            docs_shot(page, scheme, "light", "screen-pick.ru.png")
             page.click('.ask .tile[data-src="com.apple.Safari"]')
             page.wait_for_timeout(300)
             saved = page.evaluate("window.__savedSettings || null")

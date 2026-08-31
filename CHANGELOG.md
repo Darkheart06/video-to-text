@@ -4,6 +4,43 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.9.0] — 2026-08-31
+
+### Added
+
+- **The screen can be switched on and off mid-call.** A share starts ten minutes
+  into an hour: the same source button now sits in the header of a running
+  recording, so the picture can be turned on when the sharing starts and off when
+  it ends, instead of recording an hour of an empty desktop or nothing at all.
+  The audio is never interrupted — the capture helper is not restarted, it
+  reconfigures the stream it already has.
+- A picture switched on mid-call is saved as its own file,
+  `<recording>.screen-N.mp4`, with its own slice of the sound. A recording
+  becomes the main video only when it ran from the start of the call to its end:
+  only then are picture and sound counted from the same point and the markers
+  lead where they promise.
+- **Screenshots of every main screen** in both READMEs — the schedule, the
+  settings window, the reminder intervals, the source picker, the player with its
+  markers — taken by the interface check itself, so they cannot fall behind the
+  code the way they did up to 1.0.0.
+
+### Fixed
+
+- **A new call could not be recorded while the previous one was being processed.**
+  The engine had always allowed it — processing pauses and resumes by itself —
+  but the window showed a spinner with no buttons, so there was nothing to press.
+  The start card is now there whenever nothing is being recorded, with the
+  processing card below it.
+- **An empty blue banner sat at the top of the working area.** The next-call
+  strip has to hide when there is no next call; its `display` beat the browser's
+  own `hidden`, so it stayed visible and empty.
+- **Transcript lines were centred.** The text cell shared a class name with the
+  small close buttons, and their centring rule applied to every line of every
+  transcript.
+- Markers on the strip are now placed by the player's own duration once it is
+  known, instead of the duration measured during processing — the strip sits
+  right under the player and has to live on its clock.
+
 ## [1.8.1] — 2026-08-31
 
 ### Added

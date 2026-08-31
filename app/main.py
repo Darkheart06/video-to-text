@@ -211,6 +211,13 @@ class Api:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def rec_video(self, source: str = "") -> dict:
+        """Включить или выключить запись экрана прямо во время созвона."""
+        try:
+            return {"ok": True, "session": self.steno.set_video(str(source or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def rec_people(self, names: list) -> dict | None:
         return self.steno.set_people([str(x) for x in (names or [])])
 

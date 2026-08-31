@@ -324,6 +324,29 @@ The capture is deliberately modest: 8 fps at 1600 px wide. This is a screen
 share, not a film; an hour costs hundreds of megabytes instead of tens of
 gigabytes, and 60 fps buys nothing in a recording of a call.
 
+**The picture goes on and off mid-call** — a screen is shared for ten minutes of
+an hour, and recording video of an empty desktop for the rest is pointless. The
+helper is not restarted for it: that would cut the audio, and there is no second
+take of a call. Instead it listens for commands on standard input
+(`video-on <app> <file>`, `video-off`) and reconfigures the stream it already
+has, via `updateConfiguration`/`updateContentFilter`: a real frame size while
+recording, a 2×2 stub while not. The `.screen` output is always attached, even
+when no picture is expected — there would be no way to add an output to a
+running stream.
+
+Reconfiguration is not instant, and the first frames after it still arrive at
+the old size. Such a frame cannot go into a file of a different size, so the
+frame's dimensions are checked against the writer's before it is appended.
+
+**A segment switched on mid-call becomes a separate file.** A recording only
+becomes the main video when it ran from the start of the call to its end
+(`till_end`): only then are picture and sound counted from the same point and
+the markers lead where they promise. Everything else is
+`<recording>.screen-N.mp4` with its own slice of the audio (`_add_sound(...,
+since=)` trims the track from the same second). Attaching a picture that is
+missing for fifty minutes out of sixty to an hour-long recording means markers
+that point at the wrong place, and the person would be the last to find out.
+
 **Frame timestamps must increase strictly — and this is not a detail.**
 ScreenCaptureKit delivers frames in bursts, and two of them easily land inside
 the same 1/600 of a second. A repeated timestamp does not cost a frame, it costs

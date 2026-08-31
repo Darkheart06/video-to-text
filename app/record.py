@@ -154,6 +154,11 @@ class Session:
     stalled: str = ""        # какая дорожка встала: «mic», «sys» или никакая
     marks: list = field(default_factory=list)   # метки на записи для плеера
     next_call: dict | None = None   # договорённость о следующем созвоне из саммари
+    # Куски записи экрана: картинку включают и выключают посреди созвона —
+    # показывают десять минут из часа. Каждый кусок помнит, с какой секунды
+    # разговора он начался: по этому времени к нему подрезается звук.
+    video_parts: list = field(default_factory=list)
+    video_now: str = ""      # что пишется с экрана прямо сейчас, если пишется
 
     @property
     def duration(self) -> float:
@@ -185,6 +190,11 @@ class Session:
             "line_count": len(self.lines),
             "marks": list(self.marks),
             "next_call": self.next_call,
+            # Что пишется с экрана прямо сейчас: окно показывает это на кнопке,
+            # чтобы включённую запись экрана было видно, не открывая ничего.
+            "video_now": self.video_now,
+            "video_parts": [{"from": part["from"], "to": part["to"],
+                             "source": part["source"]} for part in self.video_parts],
         }
 
 
@@ -427,7 +437,7 @@ def _free_speaker_key(names: dict[str, str]) -> str:
     return "S999"
 
 
-def _add_sound(video: Path, audio: Path, target: Path) -> bool:
+def _add_sound(video: Path, audio: Path, target: Path, since: float = 0.0) -> bool:
     """Приращивает к записи экрана звук созвона.
 
     Помощник пишет картинку и звук порознь: картинку — в mp4, звук — в дорожки
@@ -435,13 +445,18 @@ def _add_sound(video: Path, audio: Path, target: Path) -> bool:
     сведённая дорожка (та же, что слушал Whisper, — значит и метки, и звук
     считаны от одной точки) и кладётся в тот же файл. Картинка при этом не
     пережимается: копируется как есть, кодируется только звук.
+
+    `since` — с какой секунды разговора начался этот кусок картинки: у
+    включённой посреди созвона записи экрана свой ноль, и звук к ней подрезается
+    с той же секунды, иначе губы разойдутся со словами на весь пропущенный час.
     """
     ffmpeg = media.tool("ffmpeg")
     if not ffmpeg or not audio.exists():
         return False
+    cut = ["-ss", f"{max(0.0, since):.2f}"] if since > 0.05 else []
     try:
         done = subprocess.run(
-            [ffmpeg, "-y", "-loglevel", "error", "-i", str(video), "-i", str(audio),
+            [ffmpeg, "-y", "-loglevel", "error", "-i", str(video), *cut, "-i", str(audio),
              "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
              "-b:a", "96k", "-movflags", "+faststart", "-shortest", str(target)],
             capture_output=True, text=True, timeout=900)
@@ -624,11 +639,16 @@ class Stenographer:
             # На встрече в комнате её нет: там пишется один микрофон.
             source = str(self.settings.get("record_video_source", "")) if not room else ""
             if source:
-                command += ["--video", str(directory / "screen.mp4")]
+                first = directory / "screen-1.mp4"
+                command += ["--video", str(first)]
                 if source != "screen":
                     command += ["--app", source]
+                self.session.video_parts.append(
+                    {"path": str(first), "from": 0.0, "to": None, "source": source})
+                self.session.video_now = source
             self._process = subprocess.Popen(
-                command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                command, stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             )
             self._helper_said = []
             self._reader = threading.Thread(target=self._listen_helper,
@@ -643,12 +663,102 @@ class Stenographer:
         with self._lock:
             if not self.session or self.session.state != "recording":
                 return self.session.snapshot() if self.session else None
+            # Кусок записи экрана, который шёл до самой остановки, закрываем
+            # здесь: по этой отметке потом видно, что картинка была всю запись,
+            # а значит её можно отдать главным видео с метками.
+            for part in reversed(self.session.video_parts):
+                if part["to"] is None:
+                    part["to"] = round(time.time() - self.session.started_at, 1)
+                    part["till_end"] = True
+                    break
+            self.session.video_now = ""
             self.session.state = "finishing"
             self._say(i18n.t("rec.finishing"))
             self._stop.set()
         if self._worker:
             self._worker.join(timeout=900)
         return self.session.snapshot() if self.session else None
+
+    def set_video(self, source: str) -> dict:
+        """Включает и выключает запись экрана посреди созвона.
+
+        Экран показывают не весь разговор: десять минут из часа. Поэтому
+        картинку можно включить и выключить, не трогая звук — помощник тот же,
+        меняется только его настройка. Пустой источник значит «выключить».
+        """
+        with self._lock:
+            session = self.session
+            if not session or session.state != "recording":
+                raise RecordError(i18n.t("rec.videoNotRecording"))
+            if session.mode == "room":
+                raise RecordError(i18n.t("rec.videoRoom"))
+            now = round(time.time() - session.started_at, 1)
+            if session.video_now:
+                self._tell_helper("video-off")
+                session.video_now = ""
+                for part in reversed(session.video_parts):
+                    if part["to"] is None:
+                        part["to"] = now
+                        break
+            if source:
+                path = session.directory / f"screen-{len(session.video_parts) + 1}.mp4"
+                app = source if source != "screen" else "-"
+                self._tell_helper(f"video-on {app} {path}")
+                session.video_parts.append(
+                    {"path": str(path), "from": now, "to": None, "source": source})
+                session.video_now = source
+            snapshot = self.snapshot_of(session)
+        self._emit()
+        return snapshot
+
+    def _save_video(self, session: Session, out_dir: Path, stem: str,
+                    audio_path: Path) -> None:
+        """Раскладывает записанную картинку по файлам рядом со звуком.
+
+        Картинку включают и выключают посреди созвона, поэтому кусков может
+        быть несколько. Главным видео запись становится только тогда, когда
+        она шла от начала и до конца разговора: у такой картинка и звук идут
+        от одной точки, и метки в плеере ведут туда, куда обещают. Всё
+        остальное — отдельные файлы «экран N», каждый со своим куском звука:
+        честнее отдать десять минут показа отдельно, чем подписать часовую
+        запись картинкой, которой в ней нет.
+        """
+        parts = [part for part in session.video_parts
+                 if Path(part["path"]).exists()]
+        for part in parts:
+            if not media.playable_mp4(Path(part["path"])):
+                # Битый файл не отдаём: человеку он бесполезен, а в списке
+                # файлов выглядит как обещание, которое не выполняется.
+                log(f"видео не годится, файл удалён: {part['path']}")
+                Path(part["path"]).unlink(missing_ok=True)
+        parts = [part for part in parts if Path(part["path"]).exists()]
+        if not parts:
+            return
+        whole = (len(parts) == 1 and parts[0]["from"] <= 3
+                 and bool(parts[0].get("till_end")))
+        for number, part in enumerate(parts, 1):
+            source = Path(part["path"])
+            target = out_dir / (f"{stem}.mp4" if whole else f"{stem}.screen-{number}.mp4")
+            try:
+                if not _add_sound(source, audio_path, target, since=part["from"]):
+                    source.replace(target)
+                session.files["video" if whole else f"screen{number}"] = str(target)
+            except OSError as exc:
+                log(f"видео не переехало: {exc!r}")
+
+    def _tell_helper(self, line: str) -> None:
+        """Команда помощнику захвата. Ошибку показываем человеку: молчаливо
+        не включившаяся запись экрана — это созвон, снятый в пустоту."""
+        proc = self._process
+        if not proc or proc.poll() is not None or not proc.stdin:
+            raise RecordError(i18n.t("rec.videoNoHelper"))
+        try:
+            proc.stdin.write((line + "\n").encode("utf-8"))
+            proc.stdin.flush()
+        except OSError as exc:
+            log(f"помощник не принял команду {line!r}: {exc!r}")
+            raise RecordError(i18n.t("rec.videoNoHelper")) from exc
+        log(f"помощнику: {line}")
 
     def cancel(self) -> None:
         """Прервать и всё выбросить — на случай «записал не то»."""
@@ -1594,24 +1704,7 @@ class Stenographer:
             log(f"следующий созвон не разобрать: {exc!r}")
 
         session.files["audio"] = str(audio_path)
-        video = session.directory / "screen.mp4"
-        if video.exists():
-            if media.playable_mp4(video):
-                # Запись экрана переезжает к остальным файлам записи: рабочая
-                # папка сессии сейчас будет удалена. Заодно к картинке
-                # прирастает звук — сама по себе она немая.
-                target = out_dir / f"{stem}.mp4"
-                try:
-                    if not _add_sound(video, audio_path, target):
-                        video.replace(target)
-                    session.files["video"] = str(target)
-                except OSError:
-                    pass
-            else:
-                # Битый файл не отдаём: человеку он бесполезен, а в списке
-                # файлов выглядит как обещание, которое не выполняется.
-                log(f"видео не годится, файл удалён: {video}")
-                video.unlink(missing_ok=True)
+        self._save_video(session, out_dir, stem, audio_path)
         session.state = "done"
         session.message = i18n.t("state.done")
         try:

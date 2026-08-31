@@ -76,6 +76,8 @@
   button{font:inherit; color:inherit; cursor:pointer; border:none; background:none}
   /* Кнопка со значком центрирует его сама: раньше на этом месте стоял
      текстовый крестик и всё держалось на межстрочном интервале. */
+  /* Только кнопки со значком: у текста реплики класс свой (.tx) — общий
+     с крестиками он центрировал всю расшифровку по середине колонки. */
   .kill, .x, .close, .tri, .ico{display:inline-flex; align-items:center; justify-content:center}
   .icn{display:block; flex:0 0 auto}
   .credit{font-size:11px; color:var(--muted); line-height:1.4}
@@ -317,7 +319,7 @@
      text-overflow:ellipsis; text-align:left; white-space:nowrap; padding:0;
      border-bottom:1px dashed transparent}
   .turn .s:hover{border-bottom-color:var(--accent)}
-  .turn .x{font-size:14.5px}
+  .turn .tx{font-size:14.5px}
 
   .speakers{display:flex; flex-wrap:wrap; gap:8px; padding:12px 20px; border-top:1px solid var(--line); background:var(--panel-2)}
   .speakers .lbl{font-size:13px; color:var(--muted); align-self:center; margin-right:2px}
@@ -460,6 +462,9 @@
   .soon .dot{width:8px; height:8px; border-radius:50%; background:var(--accent);
      animation:pulse 1.7s ease-in-out infinite; flex:0 0 auto}
   .soon .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  /* display у класса сильнее, чем display:none у атрибута hidden из
+     стиля браузера: без этой строки пустая плашка висит всё время. */
+  .soon[hidden], .nextcall[hidden]{display:none}
   .ev{display:flex; gap:12px; align-items:flex-start; padding:10px;
      border-radius:11px; border:1px solid transparent}
   .ev:hover{background:var(--panel-2)}
@@ -556,6 +561,10 @@
      border:1px solid var(--line); border-radius:10px; max-width:250px}
   .screen-pick:hover{border-color:var(--accent); color:var(--text)}
   .screen-pick .what{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  /* Экран пишется прямо сейчас: во время созвона это должно быть видно,
+     не открывая ничего. */
+  .screen-pick.on{color:var(--accent); border-color:var(--accent);
+     background:var(--accent-soft)}
   /* Плитки источников: картинка сверху, подпись снизу — как в Зуме. */
   .ask-box.wide{width:min(680px, 92vw)}
   .tiles{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
@@ -842,6 +851,10 @@ const STR = {
     'rec.screenOff': 'Нет, только звук',
     'rec.screenAll': 'Весь экран',
     'rec.screenSaved': 'Экран: {what}',
+    'rec.screenNowLabel': 'Что писать с экрана сейчас',
+    'rec.screenNow': 'Пишу с экрана: {what}',
+    'rec.screenStopped': 'Запись экрана выключена',
+    'rec.screenFailed': 'Не получилось переключить запись экрана',
     'player.heading': 'Запись и метки',
     'player.hint': 'Метки стоят там, где прозвучало то, что попало в документ. Клик — и запись играет с этого места.',
     'player.noMarks': 'Меток нет: в этой записи не нашлось решений и задач, привязанных к репликам.',
@@ -1245,6 +1258,10 @@ const STR = {
     'rec.screenOff': 'No, audio only',
     'rec.screenAll': 'The whole screen',
     'rec.screenSaved': 'Screen: {what}',
+    'rec.screenNowLabel': 'What to record from the screen now',
+    'rec.screenNow': 'Recording the screen: {what}',
+    'rec.screenStopped': 'Screen recording is off',
+    'rec.screenFailed': 'Could not switch the screen recording',
     'player.heading': 'The recording and its markers',
     'player.hint': 'Markers sit where the things that made it into the document were actually said. Click one and the recording plays from there.',
     'player.noMarks': 'No markers: nothing in this recording tied a decision or a task to a line.',
@@ -1780,15 +1797,22 @@ function mediaURL(path){
 
 /* Что писать с экрана: ничего, весь экран или одно приложение. Список
    запущенного приходит от помощника захвата вместе с остальным окружением. */
-function screenPicker(){
-  const now=(state.settings||{}).record_video_source||'';
-  const label = now===''
-    ? T('rec.screenOff')
-    : (now==='screen' ? T('rec.screenAll')
-       : (((state.env||{}).apps||[]).find(a=>a.id===now)||{}).name || now);
-  return `<button class="screen-pick" id="screen-pick" title="${T('rec.screenLabel')}">
+function sourceName(id){
+  if(!id) return T('rec.screenOff');
+  if(id==='screen') return T('rec.screenAll');
+  return (((state.env||{}).apps||[]).find(a=>a.id===id)||{}).name || id;
+}
+
+/* Во время созвона кнопка показывает не выбранное в настройках, а то, что
+   пишется прямо сейчас: экран показывают посреди разговора, и включать запись
+   картинки приходится тогда же. */
+function screenPicker(live){
+  const now = live ? ((state.rec||{}).video_now||'')
+                   : ((state.settings||{}).record_video_source||'');
+  return `<button class="screen-pick ${live&&now?'on':''}" id="screen-pick"
+      title="${T('rec.screenLabel')}">
     ${icon(now==='screen'?'monitor':(now?'window':'monitor'), 15)}
-    <span class="what">${esc(label)}</span>
+    <span class="what">${esc(sourceName(now))}</span>
     ${icon('chevron', 14)}
   </button>`;
 }
@@ -1796,11 +1820,12 @@ function screenPicker(){
 /* Что писать с экрана — окном с плитками, как в Зуме и Телемосте. Выпадающий
    список здесь не работал: открытых окон у одного приложения бывает несколько,
    и по названию не понять, то ли это, что нужно. Картинка отвечает сразу. */
-async function askScreen(){
+async function askScreen(live){
   const box=document.createElement('div');
   box.className='ask';
   const draw=(items, loading)=>{
-    const now=(state.settings||{}).record_video_source||'';
+    const now = live ? ((state.rec||{}).video_now||'')
+                     : ((state.settings||{}).record_video_source||'');
     const tile=(id, name, kind, shot, on)=>`
       <button class="tile ${on?'on':''}" data-src="${esc(id)}">
         <span class="pic">${shot
@@ -1809,7 +1834,7 @@ async function askScreen(){
         <span class="nm">${esc(name)}</span>
       </button>`;
     box.innerHTML=`<div class="ask-box wide">
-      <h4>${T('rec.screenLabel')}</h4>
+      <h4>${live ? T('rec.screenNowLabel') : T('rec.screenLabel')}</h4>
       <div class="tiles">
         ${tile('', T('rec.screenOff'), 'off', '', now==='')}
         ${items.map(it=>tile(it.id,
@@ -1831,10 +1856,20 @@ async function askScreen(){
     if(!t) return;
     const value=t.dataset.src;
     box.remove();
+    const what=sourceName(value);
+    if(live){
+      // Идёт запись: помощник переключает картинку на ходу, звук при этом не
+      // прерывается. Настройку не трогаем — она про следующий созвон.
+      const r=await api().rec_video(value);
+      if(r && r.ok){
+        if(r.session) setRec(r.session);
+        renderRec();
+        toast(value ? T('rec.screenNow',{what}) : T('rec.screenStopped'));
+      } else toast((r&&r.error)||T('rec.screenFailed'));
+      return;
+    }
     state.settings=await api().save_settings({record_video_source:value});
     render();
-    const what=value===''?T('rec.screenOff'):(value==='screen'?T('rec.screenAll')
-      :(((state.env||{}).apps||[]).find(a=>a.id===value)||{}).name||value);
     toast(T('rec.screenSaved',{what}));
   };
   document.body.appendChild(box);
@@ -1879,14 +1914,32 @@ function playerHTML(j){
   </div>`;
 }
 
-/* Бегунок на шкале меток идёт за плеером — так видно, где мы сейчас. */
+/* Бегунок на шкале меток идёт за плеером — так видно, где мы сейчас.
+
+   Длительность берём у самого плеера, как только он её узнал: шкала стоит
+   прямо под ним и обязана жить по его времени. Замеренная при разборе
+   длительность — только запасной вариант на случай, когда играть нечем: она
+   считается по исходному файлу и после сборки видео со звуком может с ним
+   разойтись, а тогда метки уезжают все разом. */
 function wirePlayer(j){
   const media=document.getElementById('media-'+j.id);
   const now=document.getElementById('now-'+j.id);
   if(!media) return;
-  const total=Math.max(1, Number((j.meta||{}).duration||0));
+  const strip=document.querySelector('.strip[data-seekbar="'+j.id+'"]');
+  const span=()=>Math.max(1, Number(strip && strip.dataset.total)
+                            || Number((j.meta||{}).duration||0));
+  const place=()=>{
+    const real=Number(media.duration);
+    if(!strip || !Number.isFinite(real) || real <= 1) return;
+    strip.dataset.total=real;
+    strip.querySelectorAll('.pin').forEach(pin=>{
+      pin.style.left=Math.min(99.6, 100*Number(pin.dataset.at)/real).toFixed(2)+'%';
+    });
+  };
+  media.onloadedmetadata=place;
+  if(media.readyState > 0) place();
   media.ontimeupdate=()=>{
-    if(now) now.style.left=Math.min(100, 100*media.currentTime/total).toFixed(2)+'%';
+    if(now) now.style.left=Math.min(100, 100*media.currentTime/span()).toFixed(2)+'%';
   };
 }
 
@@ -2126,7 +2179,7 @@ function paneHTML(j,key){
         <button class="s" data-whosaid="${j.id}" data-turn="${i}"
           title="${T('job.reassignTitle')}">${esc(labels[t.speaker]
             || (t.speaker==='unknown'?T('job.unknownSpeaker'):t.speaker))}</button>
-        <span class="x">${esc(t.text)}</span></div>`).join('');
+        <span class="tx">${esc(t.text)}</span></div>`).join('');
   }
   const text=((j.summary_sections||{})[key]||'').trim();
   return text ? md(text) : `<div class="pane empty">${T('edit.sectionEmpty')}</div>`;
@@ -3561,7 +3614,9 @@ document.addEventListener('click', async ev=>{
 /* Кнопка выбора экрана живёт в карточке, которая перерисовывается по таймеру,
    — поэтому слушаем клик на документе, а не на самом элементе. */
 document.addEventListener('click', ev=>{
-  if(ev.target.closest('#screen-pick')) askScreen();
+  if(ev.target.closest('#screen-pick')){
+    askScreen(!!(state.rec && state.rec.state==='recording'));
+  }
 });
 
 document.addEventListener('keydown', async ev=>{
@@ -3693,7 +3748,13 @@ function renderRec(){
       <button class="btn sm primary" data-rec="start">${T('rec.startCall')}</button></span></div>`;
   }
 
-  if(!r || r.state==='done'){
+  /* Карточка «начать запись» показывается всегда, когда прямо сейчас ничего
+     не пишется. Разбор прошлой записи этому не мешает: он уступает дорогу и
+     продолжается сам. Раньше во время разбора здесь была одна крутилка, и
+     созвон, начавшийся сразу за предыдущим, записать было нечем — движок это
+     умел, а нажать было негде. */
+  const recording = r && r.state === 'recording';
+  if(!recording){
     const blocked = p.helper===false || p.screen===false;
     if(state.recError){
       html+=`<div class="banner" style="background:var(--panel);border-color:var(--err)">
@@ -3721,18 +3782,23 @@ function renderRec(){
       </div>`;
     if(r && r.state==='done' && r.line_count) html+=recResult(r);
     html+=`</div>`;
-    html+=queueHTML(r);
-    el.innerHTML=html; return;
+    if(!r || r.state==='done'){
+      html+=queueHTML(r);
+      el.innerHTML=html; return;
+    }
+    // Дальше — карточка записи, которая ещё разбирается: она остаётся на
+    // виду, чтобы человек видел, что прошлый созвон не потерялся.
   }
 
   const live = r.state==='recording';
-  html+=`<div class="rec-card live"><div class="rec-head">
+  html+=`<div class="rec-card ${live?'live':''}"><div class="rec-head">
       ${live?'<span class="rec-dot"></span>':'<div class="spin"></div>'}
       <div style="min-width:0">
         <div class="rec-title">${esc(r.title)}</div>
         <div class="rec-sub">${esc(r.message||'')}</div>
       </div>
       <div class="rec-actions">
+        ${live && r.mode!=='room' ? screenPicker(true) : ''}
         <span class="rec-timer" id="rec-timer">${recTime()}</span>
         ${live?`<button class="btn sm ghost" data-rec="cancel">${T('rec.cancel')}</button>
                 <button class="btn primary" data-rec="stop">${T('rec.stop')}</button>`:''}
@@ -3751,7 +3817,7 @@ function renderRec(){
           data-pick="${l.index}" title="${T('rec.pickLineTitle')}">
         <span class="t">${hhmmss(l.start)}</span>
         <span class="w">${esc(l.label)}</span>
-        <span class="x">${esc(l.text)}</span></div>` + (picking ? pickbarHTML(r,l) : '');
+        <span class="tx">${esc(l.text)}</span></div>` + (picking ? pickbarHTML(r,l) : '');
     }).join('');
   }
   html+=`<div class="rec-down" id="rec-down" hidden>${T('rec.toLatest')}</div>`;

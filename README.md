@@ -340,6 +340,17 @@ permission and no virtual driver. It is written at 8 fps and 1600 px wide: this
 is a screen share, not a film, so an hour costs hundreds of megabytes rather
 than tens of gigabytes.
 
+**The screen goes on and off mid-call.** The same button sits in the header of a
+running recording: the share starts, you turn it on; it ends, you turn it off,
+and an hour of talking does not become an hour of video of an empty desktop. The
+audio is never interrupted — it is the same capture helper, only reconfigured.
+
+A picture switched on mid-call is saved as a **separate file**,
+`<recording>.screen-1.mp4`, with its own slice of the audio. It becomes the main
+video only when it ran from the start of the call to the end: only then are the
+picture and the sound counted from the same point, and the markers in the player
+lead where they promise.
+
 The finished recording plays inside the card, with **markers** above the player
 where the things that made it into the document were said: a decision, a task, a
 risk, a note taken during the call. Click a marker and the recording plays from
@@ -355,6 +366,8 @@ Markers are also saved as `<recording>.chapters.vtt`, which players, YouTube and
 editing software understand.
 
 ### A schedule of calls, and reminders
+
+![The schedule: events from several calendars in one list, overlaps marked](docs/screenshots/agenda.png)
 
 Meetings arrive in different calendars — work Gmail, personal Yandex, someone
 else's Outlook — and while agreeing on a time mid-call nobody remembers them
@@ -485,7 +498,11 @@ For `meeting.mp4`, in `~/Documents/Transcripts` (or «Расшифровка з�
 
 ## Configuration
 
-The **Settings** button, or `config.json` next to the project.
+![The settings window: four tabs, the first with language, theme and the output folder](docs/screenshots/settings.png)
+
+The **Settings** button, or `config.json` next to the project. Settings sit in
+four tabs — **main**, **processing**, **voices** and **more** — so that an
+everyday change means looking at four fields instead of forty.
 
 - **Language** — the window language and, separately, the language of summaries,
   folders and file names. `auto` follows the system.
