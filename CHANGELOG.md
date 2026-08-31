@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.10.2] — 2026-08-31
+
+### Fixed
+
+- **“Me” was repeating the other person's words.** When the call is heard
+  through speakers rather than headphones, the other side comes back into the
+  microphone and every sentence lands on both tracks. The echo remover compared
+  whole turns, and Whisper had split the two tracks differently — three
+  sentences fused into one turn on the system track and arrived as three on the
+  microphone — so a long turn against a short one never reached the similarity
+  threshold and the duplicates went straight into the transcript. Turns are now
+  compared sentence by sentence, and a mixed turn loses only the repeated part.
+  Short sentences additionally require a real overlap in time: two people do say
+  “yes, of course” at the same moment.
+- The echo pass now also runs once over the whole recording while assembling it.
+  During the call it works chunk by chunk, so a pair split across a chunk
+  boundary used to survive.
+- The first test for any of this. There was none, which is why a bug this
+  visible lived through eight releases.
+
 ## [1.10.1] — 2026-08-31
 
 ### Fixed

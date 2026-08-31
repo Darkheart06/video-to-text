@@ -84,9 +84,28 @@ from the terminal while ScreenCaptureKit immediately failed with −3801. So the
 is no pre-flight check: the app tries for real and translates the refusal into a
 sentence a human can act on.
 
-**Echo between tracks.** macOS mixes the microphone into the system stream, so
-every sentence appeared twice. Duplicates are dropped by time overlap, text
-similarity and relative loudness — the louder track wins.
+**Echo between tracks.** macOS mixes the microphone into the system stream, and
+the other person's voice comes back into the microphone from the speakers — so
+every sentence appears twice. Duplicates are dropped by time overlap, text
+similarity and relative loudness: the louder track wins, because it is the
+source.
+
+**The comparison has to be per sentence, not per turn.** The first version
+compared whole turns and missed almost all the echo on a real call: Whisper split
+the two tracks differently — three sentences fused into one turn on the system
+track and arrived as three on the microphone. A long turn against a short one
+scores low, the threshold never fired, and the transcript had “me” repeating the
+other person's words. Turns are now cut into sentences (time inside a turn is
+distributed by text length — there are no exact sentence boundaries, and for a
+comparison this is enough), and a mixed turn loses only the repeated part.
+
+Short sentences are their own case: two people really do say “yes, of course” at
+the same moment. For those, text similarity is not enough — a real overlap in
+time is required, not mere adjacency.
+
+The pass runs twice: on every chunk during the call and once more over the whole
+recording while assembling it, since a pair split across a chunk boundary would
+otherwise survive.
 
 ## What voice clustering actually does
 

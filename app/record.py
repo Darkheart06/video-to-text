@@ -508,6 +508,40 @@ def _has_speech(audio: np.ndarray, floor: float = 0.006) -> bool:
     return float(np.sqrt(np.mean(audio ** 2))) > floor
 
 
+_SENTENCE = re.compile(r"(?<=[.!?…])\s+")
+
+
+@dataclass
+class _Piece:
+    """Кусок реплики — одна фраза. Дорожки режутся Whisper по-разному, и
+    сравнивать их целыми репликами нельзя."""
+    line: Line
+    text: str
+    start: float
+    end: float
+
+
+def _pieces(line: Line) -> list[_Piece]:
+    """Реплика → фразы с прикидочным временем.
+
+    Точных границ фраз внутри реплики нет, поэтому отрезок делится
+    пропорционально длине текста. Для сравнения дорожек этого хватает:
+    решает совпадение слов, а время лишь отсекает заведомо разные места.
+    """
+    parts = [part.strip() for part in _SENTENCE.split(line.text.strip()) if part.strip()]
+    if not parts:
+        return []
+    span = max(0.01, line.end - line.start)
+    total = sum(len(part) for part in parts) or 1
+    out: list[_Piece] = []
+    at = line.start
+    for part in parts:
+        share = span * len(part) / total
+        out.append(_Piece(line, part, at, at + share))
+        at += share
+    return out
+
+
 def drop_echo(lines: list[Line], mic: np.ndarray, spk: np.ndarray,
               base: float, threshold: float = 0.6) -> list[Line]:
     """Убирает одну и ту же фразу, попавшую в обе дорожки.
@@ -515,20 +549,39 @@ def drop_echo(lines: list[Line], mic: np.ndarray, spk: np.ndarray,
     Так бывает всегда: свой голос macOS подмешивает в системный звук, а речь
     собеседника из динамиков возвращается в микрофон. Оставляем ту дорожку,
     где голос громче — она и есть настоящий источник, вторая лишь эхо.
+
+    Сравниваем не репликами, а фразами. На настоящей записи созвона (человек
+    слушал через динамики) Whisper разложил один и тот же кусок разговора
+    по-разному: в системной дорожке три предложения слиплись в одну реплику,
+    а в микрофонной пришли тремя. Похожесть реплики целиком у таких пар низкая,
+    и эхо проходило насквозь — расшифровка выходила с двойниками, где «Я»
+    повторял слова собеседника. По фразам пара находится, а от реплики-смеси
+    отрезается только повторённое, остальное остаётся на месте.
     """
     mine = [line for line in lines if line.who == "me"]
     theirs = [line for line in lines if line.who == "them"]
     if not mine or not theirs:
         return lines
 
+    mine_parts = [p for line in mine for p in _pieces(line)]
+    their_parts = [p for line in theirs for p in _pieces(line)]
     drop: set[int] = set()
-    for a in mine:
-        for b in theirs:
+    for a in mine_parts:
+        for b in their_parts:
             if id(a) in drop or id(b) in drop:
                 continue
-            # Одна фраза не может звучать в разное время
-            if min(a.end, b.end) - max(a.start, b.start) <= 0 and \
-                    abs(a.start - b.start) > 2.0:
+            overlap = min(a.end, b.end) - max(a.start, b.start)
+            # Одна фраза не может звучать в разное время. Куски внутри реплики
+            # размечены прикидочно, поэтому рядом стоящим даём запас.
+            if overlap <= 0 and abs(a.start - b.start) > 2.0:
+                continue
+            words = min(len(normalize(a.text).split()), len(normalize(b.text).split()))
+            if words < 2:
+                continue
+            # Короткое «да, конечно» два человека легко говорят и правда разом,
+            # поэтому для коротких фраз мало похожести — нужно и совпадение по
+            # времени, а не просто соседство.
+            if words < 4 and overlap <= 0:
                 continue
             if similar(a.text, b.text) < threshold:
                 continue
@@ -537,7 +590,27 @@ def drop_echo(lines: list[Line], mic: np.ndarray, spk: np.ndarray,
             loud_spk = _loudness(spk, start, end, base)
             drop.add(id(b) if loud_mic >= loud_spk else id(a))
 
-    return [line for line in lines if id(line) not in drop]
+    if not drop:
+        return lines
+
+    kept: dict[int, list[_Piece]] = {}
+    for part in mine_parts + their_parts:
+        kept.setdefault(id(part.line), []).append(part)
+
+    out: list[Line] = []
+    for line in lines:
+        parts = kept.get(id(line))
+        if parts is None:                      # чужая дорожка — не трогаем
+            out.append(line)
+            continue
+        alive = [p for p in parts if id(p) not in drop]
+        if not alive:
+            continue
+        if len(alive) != len(parts):
+            line.text = " ".join(p.text for p in alive)
+            line.start, line.end = alive[0].start, alive[-1].end
+        out.append(line)
+    return out
 
 
 # --- сам стенографист --------------------------------------------------------
@@ -1601,6 +1674,15 @@ class Stenographer:
         _write_wav(audio_path, mixed)
 
         room = session.mode == "room"
+        # Ещё один проход по эху, теперь по всей записи целиком. По ходу
+        # разговора дорожки чистятся кусками, и пара «сказал — вернулось из
+        # динамиков», разъехавшаяся по границе куска, остаётся незамеченной.
+        # Здесь границ уже нет.
+        if not room and self.settings.get("record_dedupe", True):
+            before = len(session.lines)
+            session.lines = drop_echo(session.lines, mic, spk, 0.0)
+            if len(session.lines) != before:
+                log(f"эхо на границах кусков: убрано реплик {before - len(session.lines)}")
         self._hold(session)
         keys, names = (self.split_room(mixed, session) if room
                        else self.split_others(spk, session))
