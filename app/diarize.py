@@ -18,13 +18,47 @@ SEG_URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
     "speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
 )
-EMB_URL = (
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
-    "speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx"
-)
+# Модели голосовых отпечатков. По ним приложение делает две вещи: сводит
+# кластеры одного человека (`refine`) и узнаёт знакомые голоса. Чем точнее
+# отпечаток, тем меньше и «Спикеров 6» из одного человека, и чужих имён.
+# Все ссылки — из открытых выпусков sherpa-onnx: качаются без токенов и
+# принятия лицензий, иначе приложение нельзя было бы просто отдать коллеге.
+EMB_BASE = ("https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+            "speaker-recongition-models/")
+EMB_MODELS: dict[str, tuple[str, str]] = {
+    # ключ: (имя файла в выпуске, имя файла на диске)
+    "campp": ("wespeaker_en_voxceleb_CAM%2B%2B.onnx",
+              "wespeaker_en_voxceleb_CAMPP.onnx"),
+    "resnet293": ("wespeaker_en_voxceleb_resnet293_LM.onnx",
+                  "wespeaker_en_voxceleb_resnet293_LM.onnx"),
+    "resnet152": ("wespeaker_en_voxceleb_resnet152_LM.onnx",
+                  "wespeaker_en_voxceleb_resnet152_LM.onnx"),
+    "eres2netv2": ("3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx",
+                   "3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx"),
+    "titanet": ("nemo_en_titanet_large.onnx", "nemo_en_titanet_large.onnx"),
+}
+DEFAULT_EMB = "campp"
 
 SEG_PATH = MODELS_DIR / "sherpa-onnx-pyannote-segmentation-3-0" / "model.onnx"
-EMB_PATH = MODELS_DIR / "wespeaker_en_voxceleb_CAMPP.onnx"
+
+
+def emb_url(key: str) -> str:
+    return EMB_BASE + EMB_MODELS.get(key, EMB_MODELS[DEFAULT_EMB])[0]
+
+
+def emb_path(key: str = DEFAULT_EMB) -> Path:
+    return MODELS_DIR / EMB_MODELS.get(key, EMB_MODELS[DEFAULT_EMB])[1]
+
+
+def emb_choice(settings: Settings | None = None) -> str:
+    """Какая модель отпечатков выбрана. Незнакомое имя — молча к обычной:
+    настройка не повод остаться без разделения по голосам вовсе."""
+    key = str((settings or {}).get("voice_model", "") or DEFAULT_EMB)
+    return key if key in EMB_MODELS else DEFAULT_EMB
+
+
+EMB_URL = emb_url(DEFAULT_EMB)
+EMB_PATH = emb_path(DEFAULT_EMB)
 
 Progress = Callable[[float, str], None]
 
@@ -40,11 +74,11 @@ class SpeakerSpan:
     speaker: int
 
 
-def models_ready() -> bool:
-    return SEG_PATH.exists() and EMB_PATH.exists()
+def models_ready(key: str = DEFAULT_EMB) -> bool:
+    return SEG_PATH.exists() and emb_path(key).exists()
 
 
-def download_models(progress: Progress | None = None) -> None:
+def download_models(progress: Progress | None = None, key: str = DEFAULT_EMB) -> None:
     """Скачивает модели диаризации (~35 МБ) в папку models/."""
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -66,9 +100,10 @@ def download_models(progress: Progress | None = None) -> None:
         if not SEG_PATH.exists():
             raise DiarizationError(i18n.t("err.seg_archive"))
 
-    if not EMB_PATH.exists():
+    target = emb_path(key)
+    if not target.exists():
         report(0.3, i18n.t("diar.download_emb"))
-        _download(EMB_URL, EMB_PATH,
+        _download(emb_url(key), target,
                   lambda f: report(0.3 + f * 0.7, i18n.t("diar.download_emb")))
 
     report(1.0, i18n.t("diar.models_ready"))
@@ -99,8 +134,9 @@ def diarize(wav_path, settings: Settings, progress: Progress | None = None) -> l
     except ImportError as exc:  # pragma: no cover
         raise DiarizationError(i18n.t("err.sherpa")) from exc
 
-    if not models_ready():
-        download_models(progress)
+    key = emb_choice(settings)
+    if not models_ready(key):
+        download_models(progress, key)
 
     threads = int(settings["num_threads"])
     config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
@@ -112,7 +148,7 @@ def diarize(wav_path, settings: Settings, progress: Progress | None = None) -> l
             provider="cpu",
         ),
         embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
-            model=str(EMB_PATH), num_threads=threads, provider="cpu"
+            model=str(emb_path(key)), num_threads=threads, provider="cpu"
         ),
         clustering=sherpa_onnx.FastClusteringConfig(
             num_clusters=int(settings["num_speakers"]) or -1,
@@ -159,12 +195,12 @@ def diarize(wav_path, settings: Settings, progress: Progress | None = None) -> l
 
 # --- сведение одного человека, разбитого на несколько голосов ---------------
 
-def embedder(threads: int):
+def embedder(threads: int, key: str = DEFAULT_EMB):
     import sherpa_onnx
 
     return sherpa_onnx.SpeakerEmbeddingExtractor(
         sherpa_onnx.SpeakerEmbeddingExtractorConfig(
-            model=str(EMB_PATH), num_threads=threads, provider="cpu"
+            model=str(emb_path(key)), num_threads=threads, provider="cpu"
         )
     )
 

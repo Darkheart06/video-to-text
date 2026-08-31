@@ -1439,6 +1439,94 @@ def main() -> int:
                           not kind_of(part))
     shutil.rmtree("/tmp/selftest-video", ignore_errors=True)
 
+    print("\n27. Замер качества на своих записях")
+    # Инструмент, которым выбирается модель: если он врёт, выбор будет
+    # неверным и уверенным. Проверяем счёт ошибок на заведомо известных
+    # случаях, чтение эталона и то, что отпечатки помнят свою модель.
+    from app import metrics
+
+    ref_turns = [("Ирина", "Давайте начнём с релиза"),
+                 ("Дмитрий", "Успеваем всё кроме онбординга")]
+    perfect = metrics.score(ref_turns, [("S1", "Давайте начнем с релиза"),
+                                        ("S2", "Успеваем все кроме онбординга")])
+    failures += not check("точный разбор — ноль ошибок",
+                          perfect.wer == 0 and perfect.wder == 0,
+                          perfect.line())
+    failures += not check("ё и регистр ошибками не считаются", perfect.wrong == 0)
+
+    one_voice = metrics.score(ref_turns,
+                              [("S1", "Давайте начнём с релиза Успеваем всё кроме онбординга")])
+    failures += not check("двое, слитые в одного, видны в WDER",
+                          one_voice.wer == 0 and 0.4 < one_voice.wder < 0.6,
+                          one_voice.line())
+
+    swapped = metrics.score(ref_turns, [("S2", "Давайте начнём с релиза"),
+                                        ("S1", "Успеваем всё кроме онбординга")])
+    failures += not check("имена голосов свои — важен состав, а не подпись",
+                          swapped.wder == 0, swapped.line())
+
+    split = metrics.score(ref_turns, [("S1", "Давайте начнём"), ("S3", "с релиза"),
+                                      ("S2", "Успеваем всё кроме онбординга")])
+    failures += not check("один человек, разбитый надвое, штрафуется",
+                          0 < split.wder < 0.5, split.line())
+
+    words = metrics.score(ref_turns, [("S1", "Давайте начнём с выпуска"),
+                                      ("S2", "Успеваем всё кроме онбординга")])
+    failures += not check("замена слова считается ошибкой распознавания",
+                          words.wrong == 1 and words.wder == 0, words.line())
+
+    # Эталон читается из файла, который человек правит руками.
+    bench_dir = Path("/tmp/selftest-bench")
+    shutil.rmtree(bench_dir, ignore_errors=True)
+    bench_dir.mkdir(parents=True, exist_ok=True)
+    (bench_dir / "созвон.ref.txt").write_text(
+        "# заметка на полях, читаться не должна\n"
+        "\n"
+        "[00:12] Ирина: Давайте начнём с релиза\n"
+        "[01:04] Дмитрий: Успеваем всё кроме онбординга\n"
+        "мусорная строка без имени\n",
+        "utf-8")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import bench as bench_tool
+
+    read = bench_tool.read_ref(bench_dir / "созвон.ref.txt")
+    failures += not check("эталон читается, лишние строки отброшены",
+                          read == ref_turns, str(read))
+    (bench_dir / "созвон.result.json").write_text(json.dumps({
+        "speakers": {"S1": {"label": "Ирина"}, "S2": {"label": "Дмитрий"}},
+        "turns": [{"start": 12.0, "speaker": "S1", "text": "Давайте начнём с релиза"},
+                  {"start": 64.0, "speaker": "S2", "text": "Успеваем всё кроме онбординга"}],
+    }, ensure_ascii=False), "utf-8")
+    made = bench_tool.make_ref(bench_dir / "созвон.wav")
+    failures += not check("заготовка эталона делается из разбора",
+                          bench_tool.read_ref(made) == ref_turns,
+                          str(bench_tool.read_ref(made)))
+    shutil.rmtree(bench_dir, ignore_errors=True)
+
+    # Отпечатки помнят, чем сняты: после смены модели память считается пустой,
+    # иначе приложение подписывало бы реплики чужими именами.
+    real_store = voices.STORE
+    voices.STORE = Path("/tmp/selftest-voices.json")
+    voices.STORE.unlink(missing_ok=True)
+    voices.remember("Ирина", [_vector(1)], model="campp")
+    failures += not check("голос запоминается со своей моделью",
+                          "Ирина" in voices.load("campp") and voices.print_model() == "campp")
+    failures += not check("после смены модели память пуста",
+                          not voices.load("eres2netv2"))
+    voices.remember("Ирина", [_vector(2)], model="eres2netv2")
+    failures += not check("новая модель заводит память заново",
+                          voices.print_model() == "eres2netv2"
+                          and len(voices.load("eres2netv2").get("Ирина", [])) == 1)
+    voices.STORE.unlink(missing_ok=True)
+    voices.STORE = real_store
+
+    # Список моделей голосов — не выдумка: ссылки собираются из одного места.
+    for key in diarize.EMB_MODELS:
+        failures += not check(f"ссылка на модель голосов {key}",
+                              diarize.emb_url(key).startswith("https://github.com/"))
+    failures += not check("незнакомая модель голосов не роняет разбор",
+                          diarize.emb_choice({"voice_model": "нет такой"}) == "campp")
+
     asr.transcribe = real
     server.shutdown()
     print(f"\n{'ВСЁ ХОРОШО' if not failures else f'ПРОБЛЕМ: {failures}'}\n")

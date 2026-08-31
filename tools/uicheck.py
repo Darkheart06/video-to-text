@@ -655,6 +655,7 @@ def main() -> int:
         "record_split_speakers": True, "speaker_merge_similarity": 0.78,
         "min_speaker_seconds": 2.0, "min_speaker_share": 0.01,
         "agenda_enabled": True, "agenda_reminders": "30, 0", "agenda_calls_only": True,
+        "voice_model": "campp", "whisper_model_id": "",
     }
     # Плеер должен получить настоящий звук: без него проверка «метка
     # перематывает запись» ничего не проверяет. Поднимаем тот же локальный
@@ -683,7 +684,9 @@ def main() -> int:
         "openai_models": [], "openai_error": "нет соединения",
         "llama_cpp": False, "gguf_path_ok": False, "gguf_size_gb": 0,
         "platform": "Darwin arm64",
-        "whisper_models": ["large-v3-turbo", "large-v3", "medium", "small", "base"],
+        "whisper_models": ["large-v3-turbo", "large-v3", "medium", "small",
+                           "base", "custom"],
+        "voice_models": ["campp", "resnet293", "eres2netv2", "titanet"],
         "output_dir": "/Users/sergey/output",
     }
     from app import i18n
@@ -1088,6 +1091,21 @@ def main() -> int:
             if page.locator(".llm-block").count() != 3:
                 errors.append(f"{scheme}: в режиме «авто» видны не все способы")
 
+            # Своя модель распознавания: поле прячется, пока её не выбрали, —
+            # иначе в настройках стоит пустая строка непонятно для чего.
+            if page.locator("#own-model").is_visible():
+                errors.append(f"{scheme}: поле своей модели видно без выбора «custom»")
+            page.select_option("#whisper-model", "custom")
+            page.wait_for_timeout(200)
+            if not page.locator("#own-model").is_visible():
+                errors.append(f"{scheme}: поле своей модели не показалось")
+            page.fill("[data-k=whisper_model_id]", "antony66/whisper-large-v3-russian")
+            if page.evaluate("formValues().whisper_model_id") != \
+                    "antony66/whisper-large-v3-russian":
+                errors.append(f"{scheme}: своя модель не уходит в настройки")
+            page.select_option("#whisper-model", "large-v3-turbo")
+            page.wait_for_timeout(200)
+
             # --- свои правила ---
             page.locator("#preset-select").scroll_into_view_if_needed()
             if page.locator("#custom-block").is_visible():
@@ -1166,6 +1184,11 @@ def main() -> int:
                 errors.append(f"{scheme}: «как в системе» не снимает выбор")
 
             page.click('.settab[data-settab="who"]')
+            page.wait_for_timeout(200)
+            if not page.locator("[data-k=voice_model]").count():
+                errors.append(f"{scheme}: нет выбора модели голосов")
+            if "запомненные голоса" not in (page.text_content("#settings-body") or ""):
+                errors.append(f"{scheme}: не сказано, что смена модели обнулит голоса")
             page.wait_for_timeout(200)
             if "Различать собеседников по голосам" not in (page.text_content("#settings-body") or ""):
                 errors.append(f"{scheme}: нет настройки разделения собеседников")

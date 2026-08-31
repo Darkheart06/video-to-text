@@ -496,6 +496,33 @@ For `meeting.mp4`, in `~/Documents/Transcripts` (or «Расшифровка з�
 | `meeting.subtitles.srt` | subtitles |
 | `meeting.result.json` | everything together — also what the archive reads |
 
+### Which model is better on *your* recordings
+
+Public model comparisons answer “what is best on average across the internet”.
+The useful question is different — what is best on *these* calls, with these
+microphones and these people: the spread between recordings is larger than the
+spread between models. So the app measures on your own material.
+
+```
+python tools/bench.py --new "~/Documents/Расшифровка записей/Созвон 2026-08-27 11-10.wav"
+# correct the names and the words by hand in the .ref.txt that appears
+python tools/bench.py
+```
+
+It prints two numbers per variant: **WER**, the share of word errors, and
+**WDER**, the share of correctly recognised words signed with the wrong person.
+The second is what people actually notice in a transcript: the text is right and
+the line is attributed to the neighbour. Ten to fifteen corrected minutes are
+enough — a short verified excerpt is worth more than an unverified hour.
+
+Two parts vary. The **recognition model** — from `large-v3-turbo` (fast, the
+default) through `large-v3` to your own checkpoint fine-tuned on your language:
+the model list has a “custom” entry with a field for a repository name. The
+**voice model** — it both separates voices and recognises known ones; there are
+four options and all of them download without tokens or registrations. Changing
+the voice model clears the remembered voices: prints taken by different models
+are not comparable and have to be learned again.
+
 ## Configuration
 
 ![The settings window: four tabs, the first with language, theme and the output folder](docs/screenshots/settings.png)

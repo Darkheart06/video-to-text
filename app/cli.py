@@ -33,7 +33,8 @@ def _voices(args, settings) -> int:
             parser_hint = "укажите файл ЗАПИСЬ.result.json из папки с результатами"
             print(f"✗ {parser_hint}")
             return 1
-        result = voices.learn(path, int(settings["num_threads"]))
+        result = voices.learn(path, int(settings["num_threads"]),
+                              model=diarize.emb_choice(settings))
         if not result.get("ok"):
             print({"no-audio": "✗ Звук записи не найден — запоминать не на чем",
                    "no-names": "✗ Сначала проставьте настоящие имена спикеров",

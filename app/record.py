@@ -1189,7 +1189,8 @@ class Stenographer:
     def _known(self) -> dict:
         """Запомненные голоса — читаем один раз на запись, не на реплику."""
         if self._voice_library is None:
-            self._voice_library = voices.load() if self.settings.get(
+            self._voice_library = voices.load(
+                diarize.emb_choice(self.settings)) if self.settings.get(
                 "known_voices", True) else {}
         return self._voice_library
 

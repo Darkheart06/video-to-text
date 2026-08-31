@@ -213,14 +213,16 @@ class Runner:
             # Знакомые голоса: кого запомнили командой «Запомнить голоса»,
             # того подписываем именем сразу — и в транскрипте, и в саммари.
             names: dict[str, str] = {}
-            known = voices.load() if spans and s.get("known_voices", True) else {}
+            voice_model = diarize.emb_choice(s)
+            known = (voices.load(voice_model)
+                     if spans and s.get("known_voices", True) else {})
             if known:
                 # Звук и модель голосов поднимаем только когда есть с кем
                 # сравнивать: пустая память не должна стоить ни секунды.
                 try:
                     for spk, name in voices.identify(
-                            media.read_wav(wav), spans,
-                            int(s["num_threads"]), people=known).items():
+                            media.read_wav(wav), spans, int(s["num_threads"]),
+                            people=known, model=voice_model).items():
                         key = f"S{spk + 1}"
                         if key in job.speakers:
                             job.speakers[key]["label"] = name

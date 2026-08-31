@@ -288,7 +288,8 @@ class Api:
             "sherpa": has("sherpa_onnx"),
             "diar_models": diarize.models_ready(),
             "platform": f"{platform.system()} {platform.machine()}",
-            "whisper_models": list(WHISPER_MODELS),
+            "whisper_models": [*WHISPER_MODELS, "custom"],
+            "voice_models": list(diarize.EMB_MODELS),
             "output_dir": str(self.settings.output_path),
             # Порт локального сервера: окно проигрывает звук и видео записи
             # через него — из file:// WebKit медиа с диска не отдаёт.
@@ -484,7 +485,8 @@ class Api:
             result = (snapshot or {}).get("files", {}).get("result")
             if not result:
                 return {"ok": False, "error": i18n.t("app.no_recording")}
-            return voices.learn(result, int(self.settings["num_threads"]))
+            return voices.learn(result, int(self.settings["num_threads"]),
+                                model=diarize.emb_choice(self.settings))
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 

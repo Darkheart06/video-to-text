@@ -122,6 +122,43 @@ similar remaining pair dropping from 0.97 to 0.58.
 Refinement is skipped when the user states the speaker count explicitly — then
 the count is theirs to decide.
 
+### The voice-print model is swappable — and “install the best one” is not a plan
+
+Voice prints are the shared joint of two things: clusters of one person are
+merged by them, and known voices are recognised by them. So the accuracy of the
+print is the most direct lever on “this line is signed with the wrong name”. The
+model is chosen by the `voice_model` setting, and every option downloads from
+the open sherpa-onnx releases — no tokens, no licence acceptance
+(`app/diarize.py`, `EMB_MODELS`).
+
+A measurement on sherpa's own four-speaker sample (57 seconds, four people)
+shows why “install whatever tops the tables” is a poor plan:
+
+| model | dims | similarity between *different* people | time |
+|---|---|---|---|
+| CAM++ (current) | 512 | 0.02–**0.83** | 13 s |
+| ERes2NetV2 | 192 | 0.13–**0.62** | 44 s |
+| TitaNet-large | 192 | 0.10–**0.63** | 18 s |
+| WeSpeaker ResNet293 | 256 | 0.72–**0.94** | 88 s |
+
+ResNet293 leads the public speaker-verification tables (0.53% EER against
+0.71% for CAM++) and does not work here at all: different people score 0.72–0.94
+against each other, and the split collapses the whole conversation into one
+voice at any threshold. The likely cause is the input features — sherpa-onnx
+feeds it something other than what it was trained on. Either way, the best model
+on paper was the worst one here, and only running it could show that.
+
+The second thing the table shows: **the clustering threshold is per model.** 0.6
+was tuned for CAM++; ERes2NetV2 and TitaNet find the same four voices at 0.8.
+Swapping the model without moving the threshold changes two things at once and
+tells you nothing about either.
+
+So CAM++ stays the default and the choice is handed to a measurement on your own
+recordings (`tools/bench.py`). Changing the model clears the voice memory: prints
+taken by different models live in different spaces, and comparing them is like
+comparing height with weight. `voices.json` records which model took the prints,
+and on a mismatch the memory is silently treated as empty.
+
 ### Where the threshold comes from
 
 “Similar enough” was a number in the settings, and a number cannot cover it. How

@@ -30,6 +30,11 @@ OUTPUT_DIR = output_dir_for("ru")
 # Модели Whisper: короткое имя -> (репозиторий mlx, имя для faster-whisper)
 WHISPER_MODELS = {
     "large-v3-turbo": ("mlx-community/whisper-large-v3-turbo", "large-v3-turbo"),
+    # «custom» — своя модель: имя репозитория или путь к папке из
+    # whisper_model_id. Дообученные на русском чекпойнты Whisper на публичных
+    # наборах обгоняют базовую модель заметно сильнее, чем large-v3 обгоняет
+    # turbo, но в готовом списке их держать нельзя: у MLX и faster-whisper
+    # форматы разные, и что подойдёт этой машине, знает только человек.
     "large-v3": ("mlx-community/whisper-large-v3-mlx", "large-v3"),
     "medium": ("mlx-community/whisper-medium-mlx", "medium"),
     "small": ("mlx-community/whisper-small-mlx", "small"),
@@ -51,12 +56,21 @@ DEFAULTS = {
     # Распознавание речи
     "asr_backend": "auto",           # auto | mlx | faster
     "whisper_model": "large-v3-turbo",
+    # Своя модель распознавания, когда whisper_model = "custom": для MLX это
+    # репозиторий в формате MLX (или папка), для faster-whisper — папка
+    # CTranslate2. Пусто — работает обычный список.
+    "whisper_model_id": "",
     "language": "auto",              # auto | ru | en | ...
     "compute_type": "int8",          # только для faster-whisper
     "chunk_seconds": 600,            # длина куска для mlx-бэкенда (прогресс + память)
 
     # Диаризация (разделение по спикерам)
     "diarization_enabled": True,
+    # Модель голосовых отпечатков: ею и разделяются голоса, и узнаются
+    # знакомые. «campp» быстрая, «resnet293» точнее и заметно медленнее.
+    # Отпечатки, снятые одной моделью, для другой бессмысленны, поэтому смена
+    # модели обнуляет память голосов (см. app/voices.py).
+    "voice_model": "campp",
     "num_speakers": 0,               # 0 = определить автоматически
     "cluster_threshold": 0.6,        # меньше -> больше спикеров
     "min_duration_on": 0.3,
@@ -263,6 +277,9 @@ class Settings(dict):
         return found
 
     def whisper_repo(self, backend: str) -> str:
+        own = str(self.get("whisper_model_id") or "").strip()
+        if self["whisper_model"] == "custom" and own:
+            return own
         mlx_repo, fw_name = WHISPER_MODELS.get(
             self["whisper_model"], WHISPER_MODELS["large-v3-turbo"]
         )

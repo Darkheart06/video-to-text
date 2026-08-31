@@ -4,6 +4,44 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.10.0] — 2026-08-31
+
+### Added
+
+- **A way to find out which models are actually better — on your own
+  recordings.** `tools/bench.py` builds a reference from an already processed
+  recording (you correct it by hand), then runs the variants and prints two
+  numbers per variant: **WER**, the share of word errors, and **WDER**, the share
+  of correctly recognised words signed with the wrong person. The second one is
+  what people actually notice in a transcript. Public benchmarks cannot answer
+  this: the spread between recordings is larger than the spread between models.
+- **The voice-print model is now a setting** (`voice_model`), with four options
+  that download without any token: CAM++ (the default), ERes2NetV2,
+  TitaNet-large, WeSpeaker ResNet293/152. Prints are the shared joint of two
+  things — merging one person's clusters and recognising known voices — so this
+  is the most direct lever on “this line is signed with the wrong name”.
+- **Your own recognition model.** Picking `custom` in the model list opens a
+  field for a repository name or a folder — for trying a Whisper checkpoint
+  fine-tuned on your language, which on public tests beats the base model by
+  more than large-v3 beats turbo.
+
+### Changed
+
+- Voice prints now record which model took them. Changing the model clears the
+  memory instead of comparing numbers from different spaces — prints from
+  different models are as comparable as height with weight.
+
+### Notes
+
+- Measured while adding this: WeSpeaker ResNet293, which leads the public
+  speaker-verification tables, does not work here at all — different people
+  score 0.72–0.94 against each other and the whole conversation collapses into
+  one voice. ERes2NetV2 and TitaNet separate people better than the current
+  CAM++ on that sample (0.62 and 0.63 against 0.83) but cost 3× and 1.4× the
+  time, and each model needs its own clustering threshold. The default is
+  unchanged for exactly that reason: the choice belongs to a measurement on real
+  recordings, not to a table.
+
 ## [1.9.0] — 2026-08-31
 
 ### Added

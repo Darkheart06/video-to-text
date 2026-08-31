@@ -44,13 +44,22 @@ PER_PERSON = 12
 MIN_PIECE = 1.5
 
 
-def load() -> dict[str, list[np.ndarray]]:
-    """Все запомненные голоса: имя -> список отпечатков."""
+def load(model: str = "") -> dict[str, list[np.ndarray]]:
+    """Все запомненные голоса: имя -> список отпечатков.
+
+    Отпечаток имеет смысл только рядом со своей моделью: числа, снятые разными
+    моделями, живут в разных пространствах, и сравнивать их — то же самое, что
+    сравнивать рост с весом. Поэтому в файле записано, чем сняты отпечатки, и
+    при смене модели память молча считается пустой: лучше заново запомнить
+    голоса, чем подписывать реплики чужими именами.
+    """
     if not STORE.exists():
         return {}
     try:
         data = json.loads(STORE.read_text("utf-8"))
     except Exception:
+        return {}
+    if model and str(data.get("model") or diarize.DEFAULT_EMB) != model:
         return {}
     out: dict[str, list[np.ndarray]] = {}
     for name, vectors in (data.get("people") or {}).items():
@@ -60,9 +69,21 @@ def load() -> dict[str, list[np.ndarray]]:
     return out
 
 
-def save(people: dict[str, list[np.ndarray]]) -> None:
+def print_model() -> str:
+    """Какой моделью сняты сохранённые отпечатки."""
+    if not STORE.exists():
+        return ""
+    try:
+        data = json.loads(STORE.read_text("utf-8"))
+    except Exception:
+        return ""
+    return str(data.get("model") or diarize.DEFAULT_EMB)
+
+
+def save(people: dict[str, list[np.ndarray]], model: str = "") -> None:
     STORE.write_text(json.dumps(
-        {"version": 1,
+        {"version": 2,
+         "model": model or diarize.DEFAULT_EMB,
          "people": {name: [v.tolist() for v in vectors[-PER_PERSON:]]
                     for name, vectors in people.items() if vectors}},
         ensure_ascii=False), "utf-8")
@@ -79,7 +100,7 @@ def forget(name: str) -> bool:
     if name not in people:
         return False
     people.pop(name)
-    save(people)
+    save(people, print_model())
     return True
 
 
@@ -102,30 +123,37 @@ def match(print_: np.ndarray, floor: float = 0.65,
     return name, best
 
 
-def remember(name: str, prints: list[np.ndarray]) -> int:
-    """Добавляет отпечатки человеку. Возвращает, сколько всего стало."""
-    people = load()
+def remember(name: str, prints: list[np.ndarray], model: str = "") -> int:
+    """Добавляет отпечатки человеку. Возвращает, сколько всего стало.
+
+    Если модель отпечатков сменилась, старая память не дополняется, а
+    заменяется: смешивать в одном файле числа из разных пространств нельзя,
+    а сравнивать их бессмысленно.
+    """
+    model = model or diarize.DEFAULT_EMB
+    people = load(model)
     kept = people.setdefault(name, [])
     kept.extend(prints)
     del kept[:-PER_PERSON]
-    save(people)
+    save(people, model)
     return len(kept)
 
 
 def identify(audio, spans, threads: int = 4,
-             people: dict | None = None) -> dict[int, str]:
+             people: dict | None = None, model: str = "") -> dict[int, str]:
     """Узнаёт запомненных людей среди разобранных голосов записи.
 
     Возвращает номер голоса -> имя. Одно имя достаётся одному голосу: если
     двое похожи на Леонида, Леонид тут ровно один — тот, кто похож сильнее.
     """
-    people = load() if people is None else people
+    model = model or diarize.DEFAULT_EMB
+    people = load(model) if people is None else people
     if not people or not spans:
         return {}
     grouped: dict[int, list] = {}
     for span in spans:
         grouped.setdefault(span.speaker, []).append(span)
-    extractor = diarize.embedder(threads)
+    extractor = diarize.embedder(threads, model)
     guesses = []
     for speaker, pieces in grouped.items():
         vector = diarize.voice_print(extractor, audio, pieces, seconds=30.0)
@@ -147,7 +175,7 @@ def identify(audio, spans, threads: int = 4,
 # --- обучение по готовой записи ---------------------------------------------
 
 def learn(result_path: str | Path, threads: int = 4,
-          skip: tuple[str, ...] = ()) -> dict:
+          skip: tuple[str, ...] = (), model: str = "") -> dict:
     """Запоминает голоса из разобранной записи — по команде человека.
 
     Берём только тех, кому уже дано настоящее имя: «Спикер 2» и «Собеседник 1»
@@ -193,7 +221,8 @@ def learn(result_path: str | Path, threads: int = 4,
         audio_path = temporary
 
     audio = media.read_wav(audio_path)
-    extractor = diarize.embedder(threads)
+    model = model or diarize.DEFAULT_EMB
+    extractor = diarize.embedder(threads, model)
     learned: dict[str, int] = {}
     for name, pieces in spans.items():
         prints = []
@@ -207,7 +236,7 @@ def learn(result_path: str | Path, threads: int = 4,
             if vector is not None:
                 prints.append(vector)
         if prints:
-            learned[name] = remember(name, prints)
+            learned[name] = remember(name, prints, model)
     if temporary is not None:
         shutil.rmtree(temporary.parent, ignore_errors=True)
     if not learned:
