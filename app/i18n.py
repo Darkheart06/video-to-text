@@ -111,6 +111,25 @@ MESSAGES: dict[str, dict[str, str]] = {
     "diar.download_emb": {"ru": "Скачивание модели голосовых отпечатков",
                           "en": "Downloading the voice-print model"},
     "diar.models_ready": {"ru": "Модели готовы", "en": "Models ready"},
+    # Своя модель распознавания: скачивание, конвертация и то, чего не хватает.
+    "models.installing": {"ru": "Ставлю конвертер",
+                          "en": "Installing the converter"},
+    "models.installed": {"ru": "Конвертер готов", "en": "The converter is ready"},
+    "models.downloading": {"ru": "Скачиваю {name}", "en": "Downloading {name}"},
+    "models.downloaded": {"ru": "Скачано: {name}", "en": "Downloaded: {name}"},
+    "models.converting": {"ru": "Перегоняю в формат faster-whisper",
+                          "en": "Converting to the faster-whisper format"},
+    "models.converted": {"ru": "Модель готова", "en": "The model is ready"},
+    "models.noConverter": {
+        "ru": "Не найден ct2-transformers-converter — переустановите приложение.",
+        "en": "ct2-transformers-converter is missing — reinstall the app.",
+    },
+    "models.noName": {"ru": "Не сказано, какую модель брать",
+                      "en": "No model was named"},
+    "models.unknown": {
+        "ru": "Не похоже на модель распознавания: {name}",
+        "en": "This does not look like a recognition model: {name}",
+    },
 
     "summary.making": {"ru": "{who} готовит {what}", "en": "{who} is writing {what}"},
     "summary.part": {"ru": "Разбор части {n} из {total}",

@@ -18,3 +18,11 @@ faster-whisper>=1.1
 # Чтобы открывать файл .gguf напрямую, нужна ещё одна (её ставит install.sh
 # по запросу, потому что она собирается из исходников несколько минут):
 #     CMAKE_ARGS="-DGGML_METAL=on" .venv/bin/pip install llama-cpp-python
+
+# Своя модель распознавания. Дообученные модели выкладывают чекпойнтом
+# transformers, а движки приложения такой не открывают: MLX работает со своим
+# форматом, faster-whisper — с CTranslate2. Конвертер (ct2-transformers-converter)
+# приходит вместе с faster-whisper, но читает чекпойнт через transformers и
+# torch. Вдвоём они весят около 3 ГБ, поэтому в обязательные не включены:
+# приложение предложит поставить их кнопкой в настройках, когда понадобится.
+#     .venv/bin/pip install transformers torch

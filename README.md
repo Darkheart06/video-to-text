@@ -58,6 +58,41 @@ speaker-separation models, helps you set up a language model and builds
 `Расшифровка.app` — the bundle keeps its Russian name for now, the window inside
 is English.
 
+### What it is made of
+
+`install.sh` puts the libraries into a `.venv` — nothing has to be installed by
+hand. The list is here so it is visible what lands on the machine, and how big it
+is.
+
+**Required** (`requirements.txt`, about 300 MB together):
+
+| Library | What for |
+|---|---|
+| `numpy` | audio as an array of numbers |
+| `pywebview` | the native macOS window (pulls in pyobjc) |
+| `sherpa-onnx` | speaker separation, offline, no tokens |
+| `mlx-whisper` | recognition on Apple Silicon (there only) |
+| `faster-whisper` | recognition everywhere else, with real progress |
+
+**Models** are downloaded on first use, once each:
+
+| Model | Size | When |
+|---|---|---|
+| Whisper large-v3-turbo | ~1.6 GB | on the first transcription |
+| pyannote-segmentation-3.0 | ~6 MB | on the first speaker separation |
+| Voice prints (CAM++) | ~29 MB | same |
+
+**Optional**, installed separately and only if needed:
+
+| What | Size | What for |
+|---|---|---|
+| Ollama or a server with an OpenAI API | depends on the model | summaries, briefs, tasks |
+| `llama-cpp-python` | ~50 MB | opening a `.gguf` file directly; builds from source over a few minutes, `install.sh` asks first |
+| `transformers` + `torch` | ~3 GB | converting someone else's recognition model into a usable format. The app offers to install them with a button when they are needed — not before |
+
+**What leaves the machine**: model downloads, and reminders to Telegram or MAX if
+you turn them on. All processing happens locally.
+
 ### Giving it to someone without a terminal
 
 ```bash
@@ -536,18 +571,21 @@ entry shows its format and size, because the formats are not interchangeable:
 transformers checkpoint — the usual way fine-tuned models are published — opens
 in neither.
 
-To download and prepare one:
+**All of it happens with a button, right in the settings.** Type a repository
+name that is not on the machine and the app offers to download it. Pick a model
+in the transformers format and it offers to convert it — and if `transformers`
+and `torch` are missing for that, it offers to install them first (about 3 GB,
+once) and shows how it is going. A converted model is opened by the
+**faster-whisper** engine, so pick that engine in the settings next to it.
+
+The same from a terminal, if that is more comfortable:
 
 ```
 ./getmodel.sh antony66/whisper-large-v3-russian
+./getmodel.sh --list
 ```
 
-A ready MLX or CTranslate2 model is simply downloaded; a transformers checkpoint
-is converted to CTranslate2 into `models/`, where it appears in the list. The
-conversion needs `transformers` and `torch`, which are not part of the app
-(nearly three gigabytes together) — the script prints the command if they are
-missing. A converted model is opened by the **faster-whisper** engine, so pick
-that engine in the settings next to it.
+Both run the same code (`app/models.py`), so they cannot drift apart.
 
 A custom model can also be a step backwards: check it with `./bench.sh` rather
 than by eye.

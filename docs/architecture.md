@@ -178,6 +178,31 @@ taken by different models live in different spaces, and comparing them is like
 comparing height with weight. `voices.json` records which model took the prints,
 and on a mismatch the memory is silently treated as empty.
 
+### A custom recognition model: three formats and one button
+
+Fine-tuned models are published as transformers checkpoints, and neither engine
+opens those: MLX works with its own format, faster-whisper with CTranslate2. So
+every entry in the model list carries its format (`app/models.py`) — showing a
+model the chosen engine cannot open would be promising something that will not
+happen.
+
+**The converter is deliberately not a dependency.** `ct2-transformers-converter`
+comes with faster-whisper, but it reads a checkpoint through `transformers` and
+`torch` — about three gigabytes together. Putting those in `requirements.txt`
+would triple the install for something most people never do. So the app checks
+what is missing and offers to install it with a button — and checks *before*
+downloading the model, not after three gigabytes have arrived.
+
+**Nothing is converted to the MLX format.** The `mlx-whisper` package ships no
+official converter (checked against the package contents), and writing one means
+working out the weight layout, which cannot be verified without Apple Silicon. An
+MLX model is either available ready-made from mlx-community, or faster-whisper
+is the answer.
+
+The window and the command line run the same code (`app/models.py`): if they
+diverged, their behaviour would too, and there is no way to explain to a person
+why a button and a script disagree.
+
 ### Where the threshold comes from
 
 “Similar enough” was a number in the settings, and a number cannot cover it. How

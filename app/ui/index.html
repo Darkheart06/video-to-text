@@ -565,6 +565,12 @@
      не открывая ничего. */
   .screen-pick.on{color:var(--accent); border-color:var(--accent);
      background:var(--accent-soft)}
+  /* Чего не хватает для своей модели и кнопка, которая это добывает. */
+  .modelget{display:flex; align-items:flex-start; gap:10px; margin:0 0 8px;
+     padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+     background:var(--panel-2)}
+  .modelget .hint{flex:1; margin:0}
+  .modelget .btn{flex:0 0 auto}
   /* Плитки источников: картинка сверху, подпись снизу — как в Зуме. */
   .ask-box.wide{width:min(680px, 92vw)}
   .tiles{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
@@ -1012,6 +1018,16 @@ const STR = {
     'settings.ownModelHint': 'Список собран из того, что уже скачано: кэш Hugging Face и папка models/ рядом с приложением. MLX открывает только формат MLX, faster-whisper — только CTranslate2; обычный чекпойнт transformers нужно сначала перегнать: ./getmodel.sh <имя репозитория>. Дообученные на русском модели бывают точнее базовой — проверяйте замером: ./bench.sh.',
     'settings.noneFound': 'Скачанных моделей не нашлось. Добавить: ./getmodel.sh <имя репозитория> — она появится в этом списке.',
     'settings.typeItIn': 'Вписать вручную…',
+    'settings.needConverter': 'Эта модель в формате transformers — её нужно перегнать. Для этого не хватает {what}: около 3 ГБ, ставится один раз.',
+    'settings.installConverter': 'Скачать и поставить',
+    'settings.needConvert': 'Эта модель в формате transformers — ни MLX, ни faster-whisper её не откроют. Перегнать в CTranslate2?',
+    'settings.convertIt': 'Перегнать',
+    'settings.notHere': 'Модели «{name}» на этой машине нет.',
+    'settings.getIt': 'Скачать',
+    'settings.working': 'Работаю…',
+    'settings.ready': 'Модель готова',
+    'settings.convertedTo': 'Перегнано: {name}. Выберите движок faster-whisper.',
+    'settings.getFailed': 'Не получилось',
     'settings.kind.mlx': 'MLX',
     'settings.kind.ct2': 'CTranslate2',
     'settings.kind.torch': 'transformers, нужна конвертация',
@@ -1430,6 +1446,16 @@ const STR = {
     'settings.ownModelHint': 'The list is built from what is already downloaded: the Hugging Face cache and the models/ folder next to the app. MLX opens only the MLX format, faster-whisper only CTranslate2; a plain transformers checkpoint has to be converted first: ./getmodel.sh <repository>. Models fine-tuned on one language can beat the base one — check it with ./bench.sh.',
     'settings.noneFound': 'No downloaded models found. Add one with ./getmodel.sh <repository> and it will appear in this list.',
     'settings.typeItIn': 'Type it in…',
+    'settings.needConverter': 'This model is in the transformers format and has to be converted. That needs {what}: about 3 GB, installed once.',
+    'settings.installConverter': 'Download and install',
+    'settings.needConvert': 'This model is in the transformers format — neither MLX nor faster-whisper can open it. Convert it to CTranslate2?',
+    'settings.convertIt': 'Convert',
+    'settings.notHere': '“{name}” is not on this machine.',
+    'settings.getIt': 'Download',
+    'settings.working': 'Working…',
+    'settings.ready': 'The model is ready',
+    'settings.convertedTo': 'Converted: {name}. Pick the faster-whisper engine.',
+    'settings.getFailed': 'It did not work',
     'settings.kind.mlx': 'MLX',
     'settings.kind.ct2': 'CTranslate2',
     'settings.kind.torch': 'transformers, needs converting',
@@ -2696,13 +2722,7 @@ function settingsHTML(){
       <div class="hint">${T('settings.whisperModelHint')}</div>
     </div>
     <div class="field" id="own-model" ${s.whisper_model==='custom'?'':'hidden'}>
-      <label>${T('settings.ownModel')}</label>
-      ${foundModelsHTML(s, e)}
-      <input type="text" data-k="whisper_model_id" id="own-model-id" spellcheck="false"
-        value="${esc(s.whisper_model_id||'')}" placeholder="antony66/whisper-large-v3-russian"
-        ${(e.models_found||[]).length && (e.models_found||[]).some(m=>m.id===s.whisper_model_id)
-          ? 'hidden' : ''}>
-      <div class="hint">${T('settings.ownModelHint')}</div>
+      ${ownModelHTML(s, e)}
     </div>
     <div class="field"><label>${T('settings.engine')}</label>
       <select data-k="asr_backend">${opt(['auto','mlx','faster'],s.asr_backend)}</select>
@@ -2919,17 +2939,125 @@ function modelSize(bytes){
 
 function foundModelsHTML(s, e){
   const items = e.models_found || [];
-  if(!items.length){
-    return `<div class="hint" style="margin:0 0 8px">${T('settings.noneFound')}</div>`;
-  }
   const now = s.whisper_model_id || '';
   const known = items.some(m => m.id === now);
-  return `<select id="own-model-pick" style="margin-bottom:8px">
+  const list = items.length ? `<select id="own-model-pick" style="margin-bottom:8px">
     ${items.map(m => `<option value="${esc(m.id)}" ${m.id===now?'selected':''}>
       ${esc(m.name)} — ${T('settings.kind.'+m.kind)}, ${modelSize(m.size)}
     </option>`).join('')}
     <option value="" ${known?'':'selected'}>${T('settings.typeItIn')}</option>
-  </select>`;
+  </select>` : `<div class="hint" style="margin:0 0 8px">${T('settings.noneFound')}</div>`;
+  return list + modelGetHTML(s, e);
+}
+
+function ownModelHTML(s, e){
+  const items = e.models_found || [];
+  const now = s.whisper_model_id || '';
+  return `<label>${T('settings.ownModel')}</label>
+    ${foundModelsHTML(s, e)}
+    <input type="text" data-k="whisper_model_id" id="own-model-id" spellcheck="false"
+      value="${esc(now)}" placeholder="antony66/whisper-large-v3-russian"
+      ${!state.ownManual && items.some(m => m.id === now) ? 'hidden' : ''}>
+    <div class="hint">${T('settings.ownModelHint')}</div>`;
+}
+
+/* Поле перерисовывается само: после скачивания список другой, а настройки
+   целиком трогать нельзя — человек уже что-то поменял в других полях. */
+function redrawOwnModel(){
+  const box = $('#own-model');
+  if(!box) return;
+  const field = $('#own-model-id');
+  const s = Object.assign({}, state.settings,
+                          {whisper_model_id: field ? field.value : ''});
+  box.innerHTML = ownModelHTML(s, state.env || {});
+  wireOwnModel();
+}
+
+function wireOwnModel(){
+  const pick = $('#own-model-pick');
+  if(!pick) return;
+  pick.onchange = () => {
+    const box = $('#own-model-id');
+    if(!box) return;
+    if(pick.value){
+      // Выбрали из списка: поле прячем, а блок «чего не хватает» пересобираем
+      // — у разных моделей разное следующее действие.
+      state.ownManual = false;
+      box.value = pick.value;
+      redrawOwnModel();
+      return;
+    }
+    // «Вписать вручную»: поле открываем и оставляем в покое, пока пишут.
+    state.ownManual = true;
+    box.hidden = false;
+    box.focus();
+  };
+}
+
+/* Чего не хватает и что с этим делать — кнопкой, а не инструкцией в переписке.
+   Состояний три, и в каждом кнопка делает ровно одно понятное действие. */
+function modelGetHTML(s, e){
+  const items = e.models_found || [];
+  const need = e.models_need || [];
+  const now = s.whisper_model_id || '';
+  const picked = items.find(m => m.id === now) || null;
+
+  if(picked && picked.kind === 'torch'){
+    return need.length
+      ? `<div class="modelget">
+           <div class="hint">${T('settings.needConverter',{what: need.join(' + ')})}</div>
+           <button class="btn sm primary" id="btn-model-converter">${T('settings.installConverter')}</button>
+         </div>`
+      : `<div class="modelget">
+           <div class="hint">${T('settings.needConvert')}</div>
+           <button class="btn sm primary" id="btn-model-get" data-repo="${esc(now)}">${T('settings.convertIt')}</button>
+         </div>`;
+  }
+  if(!picked && now){
+    return `<div class="modelget">
+        <div class="hint">${T('settings.notHere',{name: now})}</div>
+        <button class="btn sm primary" id="btn-model-get" data-repo="${esc(now)}">${T('settings.getIt')}</button>
+      </div>`;
+  }
+  return '';
+}
+
+/* Скачивание и конвертация идут минутами, поэтому окно всё это время
+   показывает, что происходит, а кнопка не даёт нажать себя дважды. */
+async function runModelJob(button, call){
+  const box = button.closest('.modelget');
+  const note = box ? box.querySelector('.hint') : null;
+  const was = button.textContent;
+  button.disabled = true;
+  button.textContent = T('settings.working');
+  state.modelNote = note;
+  try{
+    const r = await call();
+    if(r && r.ok){
+      if(r.id){
+        const field = $('#own-model-id');
+        if(field) field.value = r.id;
+        state.settings = await api().save_settings(formValues());
+      }
+      if(r.converted) toast(T('settings.convertedTo',{name: r.id}));
+      else toast(T('settings.ready'));
+      await refreshEnv();
+      redrawOwnModel();
+    } else if(r && r.need && r.need.length){
+      // Скачали, а перегнать нечем: показываем следующий шаг, а не ошибку.
+      await refreshEnv();
+      redrawOwnModel();
+    } else {
+      toast((r && r.error) || T('settings.getFailed'));
+      button.disabled = false;
+      button.textContent = was;
+    }
+  }catch(err){
+    toast(String(err));
+    button.disabled = false;
+    button.textContent = was;
+  }
+  state.modelNote = null;
 }
 
 function syncCustomBlock(){
@@ -3297,15 +3425,7 @@ function openSettings(){
     const own=$('#own-model');
     if(own) own.hidden = model.value!=='custom';
   };
-  // Список найденного пишет прямо в поле настройки: «вписать вручную»
-  // показывает его для правки, выбранная модель — прячет.
-  const pick=$('#own-model-pick');
-  if(pick) pick.onchange=()=>{
-    const box=$('#own-model-id');
-    if(!box) return;
-    if(pick.value){ box.value=pick.value; box.hidden=true; }
-    else { box.hidden=false; box.focus(); }
-  };
+  wireOwnModel();
   const preset=$('#preset-select');
   if(preset) preset.onchange=()=>{ state.preset=preset.value; syncCustomBlock(); };
   const example=$('#btn-example');
@@ -3687,6 +3807,15 @@ document.addEventListener('click', async ev=>{
 /* Кнопка выбора экрана живёт в карточке, которая перерисовывается по таймеру,
    — поэтому слушаем клик на документе, а не на самом элементе. */
 document.addEventListener('click', ev=>{
+  const getter = ev.target.closest('#btn-model-get, #btn-model-converter');
+  if(getter){
+    ev.preventDefault();
+    const repo = getter.dataset.repo || '';
+    runModelJob(getter, () => getter.id === 'btn-model-converter'
+      ? api().model_install_converter()
+      : api().model_prepare(repo));
+    return;
+  }
   if(ev.target.closest('#screen-pick')){
     askScreen(!!(state.rec && state.rec.state==='recording'));
   }
@@ -4088,7 +4217,11 @@ window.__bridge=function(msg){
     renderRec();
   }
   if(msg.event==='call-detected'){ state.callPrompt=true; renderRec(); }
-  if(msg.event==='models') toast(msg.data.message+' — '+Math.round((msg.data.progress||0)*100)+'%');
+  if(msg.event==='models'){
+    const line = msg.data.message + ' — ' + Math.round((msg.data.progress||0)*100) + '%';
+    if(state.modelNote) state.modelNote.textContent = line;
+    else toast(line);
+  }
 };
 
 /* Состояние окружения меняется, пока окно открыто: человек запускает Ollama,

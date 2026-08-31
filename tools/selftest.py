@@ -1546,6 +1546,26 @@ def main() -> int:
                           and models_mod.usable("mlx", "mlx")
                           and models_mod.usable("ct2", "faster"))
 
+    # Чего не хватает для конвертации — приложение обязано знать заранее, а не
+    # после трёх гигабайт загрузки.
+    lack = models_mod.converter_missing()
+    failures += not check("нехватка конвертера считается списком имён",
+                          isinstance(lack, list)
+                          and all(name in models_mod.CONVERTER_NEEDS for name in lack),
+                          str(lack))
+    try:
+        models_mod.prepare("")
+        failures += not check("пустое имя модели — понятная ошибка", False)
+    except Exception as exc:
+        failures += not check("пустое имя модели — понятная ошибка",
+                              "модель" in str(exc).lower() or "model" in str(exc).lower(),
+                              str(exc))
+    # Готовый формат берётся как есть: качать и перегонять нечего.
+    ready = models_mod.prepare(str(models_mod.MODELS_DIR / "whisper-russian-ct2"))
+    failures += not check("готовый формат берётся как есть",
+                          ready.get("ok") and ready.get("kind") == "ct2"
+                          and not ready.get("converted"), str(ready))
+
     models_mod.MODELS_DIR = real_models_dir
     if was is None:
         os.environ.pop("HUGGINGFACE_HUB_CACHE", None)

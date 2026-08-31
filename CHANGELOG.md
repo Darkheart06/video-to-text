@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.12.0] — 2026-08-31
+
+### Added
+
+- **The app now checks what a custom model needs and offers to get it — with a
+  button.** Name a model that is not on the machine: it offers to download it.
+  Pick one in the transformers format: it offers to convert it, and if
+  `transformers` and `torch` are missing for that, it offers to install them
+  first (about 3 GB, once), showing progress under the button rather than
+  leaving the window silent for minutes. Previously all of this lived in a
+  terminal command printed in a chat message.
+- The check happens *before* the download, so a missing converter is not
+  discovered after three gigabytes have arrived.
+- The window and `getmodel.sh` now run the same code (`app/models.py`). Two
+  paths that can disagree are worse than one.
+
+### Changed
+
+- **Dependencies are documented** in both READMEs: what is required and how big
+  it is, which models are downloaded on first use, and what is optional and only
+  installed when needed. `requirements.txt` says why the converter is not in it.
+
 ## [1.11.0] — 2026-08-31
 
 ### Added

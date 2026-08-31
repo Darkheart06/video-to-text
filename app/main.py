@@ -304,6 +304,8 @@ class Api:
             # Модели, уже лежащие на диске: их выбирают из списка, а не
             # вписывают руками по памяти.
             "models_found": self._installed_models(),
+            # Чего не хватает, чтобы перегнать чужой формат. Пусто — всё есть.
+            "models_need": installed_models.converter_missing(),
             "output_dir": str(self.settings.output_path),
             # Порт локального сервера: окно проигрывает звук и видео записи
             # через него — из file:// WebKit медиа с диска не отдаёт.
@@ -362,6 +364,35 @@ class Api:
             return {"ok": True}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+
+    # --- своя модель распознавания ----------------------------------------
+
+    def models_list(self) -> dict:
+        """Что лежит на диске и чего не хватает, чтобы перегнать чужой формат."""
+        return {"items": self._installed_models(),
+                "need": installed_models.converter_missing()}
+
+    def model_install_converter(self) -> dict:
+        """Ставит transformers и torch — по кнопке, а не по инструкции в чате."""
+        try:
+            done = installed_models.install_converter(
+                lambda frac, msg: _push("models", {"progress": frac, "message": msg}))
+            done["items"] = self._installed_models()
+            done["need"] = installed_models.converter_missing()
+            return done
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def model_prepare(self, repo: str = "") -> dict:
+        """Скачивает модель и, если нужно, перегоняет её в рабочий формат."""
+        try:
+            done = installed_models.prepare(
+                repo, lambda frac, msg: _push("models", {"progress": frac, "message": msg}))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        done["items"] = self._installed_models()
+        done["need"] = installed_models.converter_missing()
+        return done
 
     # --- работа с файлами -------------------------------------------------
 

@@ -341,15 +341,29 @@ EN_AGENDA = [
     dict(AGENDA[2], title="Call with the client", day="Tomorrow"),
 ]
 
+# Модели «на диске» для заглушки: одна готовая и одна, которую нужно перегнать.
+FOUND_MODELS = [
+    {"id": "/Users/sergey/models/whisper-russian-ct2",
+     "name": "whisper-russian-ct2", "kind": "ct2",
+     "size": 1_600_000_000, "where": "models"},
+    {"id": "antony66/whisper-large-v3-russian",
+     "name": "antony66/whisper-large-v3-russian", "kind": "torch",
+     "size": 3_100_000_000, "where": "cache"},
+]
+
 BRIDGE = """
 window.__now = Math.floor(Date.now() / 1000);
 window.__agenda = (%(agenda)s).map(x => Object.assign({}, x,
   {start: window.__now + x.start, end: window.__now + x.end}));
+window.__models = %(models)s;
+window.__converter = false;
 window.__folders = ["Клиенты"];
 window.__shelf = {};
 window.pywebview = {api: {
   get_settings: async () => (%(settings)s),
-  environment: async () => (%(env)s),
+  environment: async () => Object.assign({}, %(env)s, {
+    models_found: window.__models,
+    models_need: window.__converter ? [] : ["transformers", "torch"]}),
   save_settings: async v => { window.__savedSettings = v;
                               return Object.assign({}, %(settings)s, v); },
   choose_files: async () => [],
@@ -374,6 +388,22 @@ window.pywebview = {api: {
   rec_stop: async () => (%(rec)s),
   // Запись экрана переключается прямо во время созвона: помощник отвечает
   // новым снимком сессии, окно перерисовывает кнопку по нему.
+  // Скачивание и конвертация своей модели: окно ведёт человека кнопками.
+  model_install_converter: async () => {
+    window.__converter = true;
+    return {ok: true, installed: ["transformers", "torch"], need: [],
+            items: window.__models};
+  },
+  model_prepare: async repo => {
+    window.__prepared = repo;
+    const found = window.__models.find(m => m.id === repo);
+    if(found && found.kind === "torch"){
+      return {ok: true, id: "/Users/sergey/models/" + found.name + "-ct2",
+              kind: "ct2", converted: true, items: window.__models, need: []};
+    }
+    return {ok: true, id: repo, kind: "mlx", converted: false,
+            items: window.__models, need: []};
+  },
   rec_video: async source => {
     window.__recVideo = source;
     return {ok: true, session: Object.assign({}, %(rec)s, {video_now: source})};
@@ -548,7 +578,8 @@ def _english_pass(browser, settings: dict, env: dict, presets_mod, out_dir: Path
                        "sections": json.dumps(EN_SECTIONS),
                        "people": json.dumps(EN_PEOPLE),
                        "shotScreen": _fake_shot("screen"), "shotApp": _fake_shot("app"),
-                       "agenda": json.dumps(EN_AGENDA)}
+                       "agenda": json.dumps(EN_AGENDA),
+                       "models": json.dumps(FOUND_MODELS)}
 
     for scheme in ("light", "dark"):
         page = browser.new_page(viewport={"width": 1180, "height": 820},
@@ -687,14 +718,8 @@ def main() -> int:
         "whisper_models": ["large-v3-turbo", "large-v3", "medium", "small",
                            "base", "custom"],
         "voice_models": ["campp", "resnet293", "eres2netv2", "titanet"],
-        "models_found": [
-            {"id": "/Users/sergey/models/whisper-russian-ct2",
-             "name": "whisper-russian-ct2", "kind": "ct2",
-             "size": 1_600_000_000, "where": "models"},
-            {"id": "antony66/whisper-large-v3-russian",
-             "name": "antony66/whisper-large-v3-russian", "kind": "torch",
-             "size": 3_100_000_000, "where": "cache"},
-        ],
+        "models_need": ["transformers", "torch"],
+        "models_found": FOUND_MODELS,
         "output_dir": "/Users/sergey/output",
     }
     from app import i18n
@@ -713,7 +738,8 @@ def main() -> int:
                        "sections": json.dumps(SUMMARY_SECTIONS),
                        "people": json.dumps(PEOPLE),
                        "shotScreen": _fake_shot("screen"), "shotApp": _fake_shot("app"),
-                       "agenda": json.dumps(AGENDA)}
+                       "agenda": json.dumps(AGENDA),
+                       "models": json.dumps(FOUND_MODELS)}
 
     errors: list[str] = []
     with sync_playwright() as pw:
@@ -1116,12 +1142,32 @@ def main() -> int:
             if "нужна конвертация" not in found:
                 errors.append(f"{scheme}: не сказано, что модель нужно перегнать")
             page.select_option("#own-model-pick", "antony66/whisper-large-v3-russian")
-            page.wait_for_timeout(200)
+            page.wait_for_timeout(300)
             if page.evaluate("formValues().whisper_model_id") != \
                     "antony66/whisper-large-v3-russian":
                 errors.append(f"{scheme}: выбор из списка не уходит в настройки")
             if page.locator("#own-model-id").is_visible():
                 errors.append(f"{scheme}: при выборе из списка поле для ручного ввода видно")
+
+            # Модель в формате transformers перегнать нечем — окно предлагает
+            # доставить конвертер, а не отсылает человека в терминал.
+            if not page.locator("#btn-model-converter").count():
+                errors.append(f"{scheme}: не предложено поставить конвертер")
+            if "3 ГБ" not in (page.text_content(".modelget") or ""):
+                errors.append(f"{scheme}: не сказано, сколько весит конвертер")
+            page.click("#btn-model-converter")
+            page.wait_for_timeout(500)
+            if not page.evaluate("window.__converter || false"):
+                errors.append(f"{scheme}: конвертер не ставится по кнопке")
+            # Конвертер поставлен — теперь предлагают перегнать саму модель.
+            if not page.locator("#btn-model-get").count():
+                errors.append(f"{scheme}: после конвертера не предложено перегнать модель")
+            page.click("#btn-model-get")
+            page.wait_for_timeout(600)
+            if page.evaluate("window.__prepared || ''") != "antony66/whisper-large-v3-russian":
+                errors.append(f"{scheme}: перегон не запускается по кнопке")
+            if "ct2" not in (page.evaluate("formValues().whisper_model_id") or ""):
+                errors.append(f"{scheme}: после перегона не подставилась готовая модель")
             # «Вписать вручную» возвращает поле.
             page.select_option("#own-model-pick", "")
             page.wait_for_timeout(200)

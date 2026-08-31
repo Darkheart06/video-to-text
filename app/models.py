@@ -22,10 +22,15 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
+from . import i18n
 from .settings import MODELS_DIR
+
+Progress = Callable[[float, str], None]
 
 # Больше этого не сканируем: кэш Hugging Face бывает на десятки папок, а искать
 # в нём нужно только модели распознавания.
@@ -152,6 +157,135 @@ def installed() -> list[dict]:
     # скорее всего ради него сюда и пришли.
     found.sort(key=lambda item: (item.where != "models", item.name.lower()))
     return [item.as_dict() for item in found[:MAX_FOUND]]
+
+
+# --- достать и подготовить -------------------------------------------------
+
+# Конвертер живёт в ctranslate2 (ставится вместе с faster-whisper), но читать
+# чекпойнт умеет только через transformers и torch. Их в приложении нет: вдвоём
+# они весят под три гигабайта, и ставить их всем ради того, чем воспользуется
+# один человек из ста, — плохая сделка. Поэтому проверяем и предлагаем.
+CONVERTER_NEEDS = ("transformers", "torch")
+
+
+def converter_missing() -> list[str]:
+    """Чего не хватает, чтобы перегнать чекпойнт. Пусто — всё на месте."""
+    lack = []
+    for name in CONVERTER_NEEDS:
+        try:
+            __import__(name)
+        except Exception:
+            lack.append(name)
+    return lack
+
+
+def _run(command: list[str], progress: Progress | None, message: str,
+         base: float = 0.0, span: float = 1.0) -> None:
+    """Долгая команда с живой строкой состояния.
+
+    Ставить пакеты и перегонять модель — минуты, и молчаливое окно на это время
+    выглядит как зависшее. Поэтому вывод читается построчно и последняя строка
+    уходит в окно как есть: она хоть и техническая, зато настоящая.
+    """
+    import subprocess
+
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+    seen = 0
+    tail: list[str] = []
+    for raw in proc.stdout or []:
+        line = raw.strip()
+        if not line:
+            continue
+        tail.append(line)
+        del tail[:-40]
+        seen += 1
+        if progress:
+            # Настоящего прогресса у этих команд нет, поэтому показываем
+            # движение: доля растёт, но до конца доходит только по завершении.
+            share = min(0.95, seen / 400)
+            progress(base + span * share, f"{message}: {line[:90]}")
+    code = proc.wait()
+    if code != 0:
+        raise RuntimeError("\n".join(tail[-8:]) or f"код возврата {code}")
+
+
+def install_converter(progress: Progress | None = None) -> dict:
+    """Ставит transformers и torch в окружение приложения."""
+    lack = converter_missing()
+    if not lack:
+        return {"ok": True, "installed": []}
+    python = sys.executable
+    if progress:
+        progress(0.02, i18n.t("models.installing"))
+    _run([python, "-m", "pip", "install", *lack], progress,
+         i18n.t("models.installing"))
+    if progress:
+        progress(1.0, i18n.t("models.installed"))
+    return {"ok": True, "installed": lack}
+
+
+def download(repo: str, progress: Progress | None = None) -> Path:
+    """Скачивает репозиторий в кэш Hugging Face."""
+    from huggingface_hub import snapshot_download
+
+    if progress:
+        progress(0.02, i18n.t("models.downloading", name=repo))
+    path = Path(snapshot_download(repo, ignore_patterns=["*.msgpack", "*.h5", "*.ot"]))
+    if progress:
+        progress(1.0, i18n.t("models.downloaded", name=repo))
+    return path
+
+
+def convert(source: Path, name: str, progress: Progress | None = None) -> Path:
+    """Перегоняет чекпойнт transformers в формат faster-whisper."""
+    import shutil
+
+    converter = shutil.which("ct2-transformers-converter") or str(
+        Path(sys.executable).with_name("ct2-transformers-converter"))
+    if not Path(converter).exists():
+        raise RuntimeError(i18n.t("models.noConverter"))
+    target = MODELS_DIR / name
+    if target.exists():
+        return target
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        # float16 — то же, чем пользуется faster-whisper по умолчанию: вдвое
+        # меньше на диске и в памяти, качество то же.
+        _run([converter, "--model", str(source), "--output_dir", str(target),
+              "--copy_files", "tokenizer.json", "preprocessor_config.json",
+              "--quantization", "float16"],
+             progress, i18n.t("models.converting"))
+    except Exception:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
+    if progress:
+        progress(1.0, i18n.t("models.converted"))
+    return target
+
+
+def prepare(repo: str, progress: Progress | None = None) -> dict:
+    """Скачать модель и, если нужно, перегнать. Возвращает, что выбрать.
+
+    Один путь для окна и для командной строки: разойдясь, они разъедутся и по
+    поведению, а объяснять человеку разницу между кнопкой и скриптом нечем.
+    """
+    repo = str(repo or "").strip()
+    if not repo:
+        raise RuntimeError(i18n.t("models.noName"))
+    here = Path(repo).expanduser()
+    source = here if here.is_dir() else download(repo, progress)
+    kind = kind_of(source)
+    if kind in ("mlx", "ct2"):
+        return {"ok": True, "id": repo if not here.is_dir() else str(here),
+                "kind": kind, "converted": False}
+    if kind != "torch":
+        raise RuntimeError(i18n.t("models.unknown", name=repo))
+    lack = converter_missing()
+    if lack:
+        return {"ok": False, "need": lack, "kind": kind}
+    target = convert(source, Path(repo).name.replace("/", "--") + "-ct2", progress)
+    return {"ok": True, "id": str(target), "kind": "ct2", "converted": True}
 
 
 def usable(kind: str, backend: str) -> bool:
