@@ -687,6 +687,14 @@ def main() -> int:
         "whisper_models": ["large-v3-turbo", "large-v3", "medium", "small",
                            "base", "custom"],
         "voice_models": ["campp", "resnet293", "eres2netv2", "titanet"],
+        "models_found": [
+            {"id": "/Users/sergey/models/whisper-russian-ct2",
+             "name": "whisper-russian-ct2", "kind": "ct2",
+             "size": 1_600_000_000, "where": "models"},
+            {"id": "antony66/whisper-large-v3-russian",
+             "name": "antony66/whisper-large-v3-russian", "kind": "torch",
+             "size": 3_100_000_000, "where": "cache"},
+        ],
         "output_dir": "/Users/sergey/output",
     }
     from app import i18n
@@ -1099,10 +1107,29 @@ def main() -> int:
             page.wait_for_timeout(200)
             if not page.locator("#own-model").is_visible():
                 errors.append(f"{scheme}: поле своей модели не показалось")
-            page.fill("[data-k=whisper_model_id]", "antony66/whisper-large-v3-russian")
+            # Скачанное выбирается списком, а не вписывается по памяти.
+            if not page.locator("#own-model-pick").count():
+                errors.append(f"{scheme}: нет списка скачанных моделей")
+            found = page.text_content("#own-model-pick") or ""
+            if "whisper-russian-ct2" not in found or "CTranslate2" not in found:
+                errors.append(f"{scheme}: в списке нет скачанной модели: {found[:80]!r}")
+            if "нужна конвертация" not in found:
+                errors.append(f"{scheme}: не сказано, что модель нужно перегнать")
+            page.select_option("#own-model-pick", "antony66/whisper-large-v3-russian")
+            page.wait_for_timeout(200)
             if page.evaluate("formValues().whisper_model_id") != \
                     "antony66/whisper-large-v3-russian":
-                errors.append(f"{scheme}: своя модель не уходит в настройки")
+                errors.append(f"{scheme}: выбор из списка не уходит в настройки")
+            if page.locator("#own-model-id").is_visible():
+                errors.append(f"{scheme}: при выборе из списка поле для ручного ввода видно")
+            # «Вписать вручную» возвращает поле.
+            page.select_option("#own-model-pick", "")
+            page.wait_for_timeout(200)
+            if not page.locator("#own-model-id").is_visible():
+                errors.append(f"{scheme}: «вписать вручную» не показывает поле")
+            page.fill("#own-model-id", "своя/модель")
+            if page.evaluate("formValues().whisper_model_id") != "своя/модель":
+                errors.append(f"{scheme}: вписанное вручную не уходит в настройки")
             page.select_option("#whisper-model", "large-v3-turbo")
             page.wait_for_timeout(200)
 

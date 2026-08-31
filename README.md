@@ -521,12 +521,36 @@ the line is attributed to the neighbour. Ten to fifteen corrected minutes are
 enough — a short verified excerpt is worth more than an unverified hour.
 
 Two parts vary. The **recognition model** — from `large-v3-turbo` (fast, the
-default) through `large-v3` to your own checkpoint fine-tuned on your language:
-the model list has a “custom” entry with a field for a repository name. The
-**voice model** — it both separates voices and recognises known ones; there are
-four options and all of them download without tokens or registrations. Changing
-the voice model clears the remembered voices: prints taken by different models
-are not comparable and have to be learned again.
+default) through `large-v3` to your own checkpoint fine-tuned on your language.
+The **voice model** — it both separates voices and recognises known ones; there
+are four options and all of them download without tokens or registrations.
+Changing the voice model clears the remembered voices: prints taken by different
+models are not comparable and have to be learned again.
+
+#### Your own recognition model
+
+The model list has a “custom” entry, and under it a list of what is already
+downloaded: the Hugging Face cache and the `models/` folder next to the app. Each
+entry shows its format and size, because the formats are not interchangeable:
+**MLX** opens only MLX models, **faster-whisper** only CTranslate2, and a plain
+transformers checkpoint — the usual way fine-tuned models are published — opens
+in neither.
+
+To download and prepare one:
+
+```
+./getmodel.sh antony66/whisper-large-v3-russian
+```
+
+A ready MLX or CTranslate2 model is simply downloaded; a transformers checkpoint
+is converted to CTranslate2 into `models/`, where it appears in the list. The
+conversion needs `transformers` and `torch`, which are not part of the app
+(nearly three gigabytes together) — the script prints the command if they are
+missing. A converted model is opened by the **faster-whisper** engine, so pick
+that engine in the settings next to it.
+
+A custom model can also be a step backwards: check it with `./bench.sh` rather
+than by eye.
 
 ## Configuration
 

@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.11.0] — 2026-08-31
+
+### Added
+
+- **Your own recognition model is now picked from a list**, not typed from
+  memory. The list is built from what is already on the machine — the Hugging
+  Face cache and the `models/` folder next to the app — and each entry shows its
+  format and size. The format matters: MLX opens only MLX models, faster-whisper
+  only CTranslate2, and a plain transformers checkpoint (how fine-tuned models
+  are usually published) opens in neither. Showing a model the engine cannot
+  open would be promising something that will not happen. Typing a name by hand
+  is still there, one option down the list.
+- **`getmodel.sh`** downloads a model and, when it is a transformers checkpoint,
+  converts it to CTranslate2 into `models/`, from where it appears in the list.
+  `./getmodel.sh --list` shows what is already there. The conversion needs
+  `transformers` and `torch`, which are deliberately not part of the app — three
+  gigabytes for something most people never do — so the script checks before the
+  download and prints the command to install them.
+
 ## [1.10.2] — 2026-08-31
 
 ### Fixed

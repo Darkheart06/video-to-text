@@ -1491,7 +1491,69 @@ def main() -> int:
     failures += not check("короткое согласие в разное время остаётся",
                           len(record.drop_echo(apart, loud, quiet, 0.0)) == 2)
 
-    print("\n28. Замер качества на своих записях")
+    print("\n28. Модели распознавания на диске")
+    # Своя модель выбирается из списка, а не вписывается по памяти. Список
+    # должен показывать только модели распознавания и честно говорить, чем
+    # каждая открывается: показать ту, которую движок не откроет, — значит
+    # пообещать то, чего не будет.
+    import os
+
+    from app import models as models_mod
+
+    fake = Path("/tmp/selftest-hub")
+    shutil.rmtree(fake, ignore_errors=True)
+    hub = fake / "hub"
+
+    def _repo(name, files, config=None):
+        snap = hub / f"models--{name.replace('/', '--')}" / "snapshots" / "aaa"
+        snap.mkdir(parents=True)
+        for item in files:
+            (snap / item).write_bytes(b"x" * 1024)
+        if config is not None:
+            (snap / "config.json").write_text(json.dumps(config), "utf-8")
+
+    _repo("mlx-community/whisper-large-v3-turbo", ["weights.npz", "config.json"])
+    _repo("antony66/whisper-large-v3-russian",
+          ["model.safetensors", "preprocessor_config.json", "tokenizer.json"])
+    _repo("Systran/faster-whisper-large-v3", ["model.bin", "vocabulary.txt"])
+    _repo("meta-llama/Llama-3", ["model.safetensors"], {"model_type": "llama"})
+
+    was = os.environ.get("HUGGINGFACE_HUB_CACHE")
+    os.environ["HUGGINGFACE_HUB_CACHE"] = str(hub)
+    real_models_dir = models_mod.MODELS_DIR
+    models_mod.MODELS_DIR = fake / "models"
+    (models_mod.MODELS_DIR / "whisper-russian-ct2").mkdir(parents=True)
+    (models_mod.MODELS_DIR / "whisper-russian-ct2" / "model.bin").write_bytes(b"x")
+    (models_mod.MODELS_DIR / "whisper-russian-ct2" / "vocabulary.json").write_bytes(b"x")
+
+    rows = models_mod.installed()
+    kinds = {row["name"]: row["kind"] for row in rows}
+    failures += not check("формат моделей определяется",
+                          kinds.get("mlx-community/whisper-large-v3-turbo") == "mlx"
+                          and kinds.get("antony66/whisper-large-v3-russian") == "torch"
+                          and kinds.get("Systran/faster-whisper-large-v3") == "ct2",
+                          str(kinds))
+    failures += not check("не-whisper в список не лезет",
+                          "meta-llama/Llama-3" not in kinds, str(list(kinds)))
+    failures += not check("положенное в models/ находится",
+                          kinds.get("whisper-russian-ct2") == "ct2")
+    failures += not check("своё идёт первым",
+                          rows and rows[0]["name"] == "whisper-russian-ct2",
+                          str([r["name"] for r in rows]))
+    failures += not check("размер посчитан", all(r["size"] > 0 for r in rows))
+    failures += not check("MLX не откроет чекпойнт transformers",
+                          not models_mod.usable("torch", "mlx")
+                          and models_mod.usable("mlx", "mlx")
+                          and models_mod.usable("ct2", "faster"))
+
+    models_mod.MODELS_DIR = real_models_dir
+    if was is None:
+        os.environ.pop("HUGGINGFACE_HUB_CACHE", None)
+    else:
+        os.environ["HUGGINGFACE_HUB_CACHE"] = was
+    shutil.rmtree(fake, ignore_errors=True)
+
+    print("\n29. Замер качества на своих записях")
     # Инструмент, которым выбирается модель: если он врёт, выбор будет
     # неверным и уверенным. Проверяем счёт ошибок на заведомо известных
     # случаях, чтение эталона и то, что отпечатки помнят свою модель.

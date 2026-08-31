@@ -1009,7 +1009,14 @@ const STR = {
     'settings.whisperModel': 'Модель Whisper',
     'settings.whisperModelHint': 'large-v3-turbo — лучший баланс скорости и качества. large-v3 точнее на плохом звуке и заметно медленнее. small/base быстрее, но с ошибками.',
     'settings.ownModel': 'Своя модель распознавания',
-    'settings.ownModelHint': 'Имя репозитория или путь к папке. Для MLX нужна модель в формате MLX, для faster-whisper — папка CTranslate2. Дообученные на русском модели бывают точнее базовой — но проверяйте замером на своих записях: ./bench.sh в папке проекта.',
+    'settings.ownModelHint': 'Список собран из того, что уже скачано: кэш Hugging Face и папка models/ рядом с приложением. MLX открывает только формат MLX, faster-whisper — только CTranslate2; обычный чекпойнт transformers нужно сначала перегнать: ./getmodel.sh <имя репозитория>. Дообученные на русском модели бывают точнее базовой — проверяйте замером: ./bench.sh.',
+    'settings.noneFound': 'Скачанных моделей не нашлось. Добавить: ./getmodel.sh <имя репозитория> — она появится в этом списке.',
+    'settings.typeItIn': 'Вписать вручную…',
+    'settings.kind.mlx': 'MLX',
+    'settings.kind.ct2': 'CTranslate2',
+    'settings.kind.torch': 'transformers, нужна конвертация',
+    'settings.gb': '{n} ГБ',
+    'settings.mb': '{n} МБ',
     'settings.voiceModel': 'Модель голосов',
     'settings.voiceModelHint': 'Ею и разделяются голоса, и узнаются знакомые. Смена модели обнуляет запомненные голоса: отпечатки, снятые разными моделями, несравнимы — придётся запомнить заново. Что лучше именно на ваших записях, показывает ./bench.sh в папке проекта.',
     'settings.engine': 'Движок',
@@ -1420,7 +1427,14 @@ const STR = {
     'settings.whisperModel': 'Whisper model',
     'settings.whisperModelHint': 'large-v3-turbo is the best balance of speed and quality. large-v3 is more accurate on poor audio and noticeably slower. small/base are faster but less accurate.',
     'settings.ownModel': 'Your own recognition model',
-    'settings.ownModelHint': 'A repository name or a folder path. MLX needs a model in MLX format, faster-whisper a CTranslate2 folder. Models fine-tuned on one language can beat the base one — but check it on your own recordings with ./bench.sh in the project folder.',
+    'settings.ownModelHint': 'The list is built from what is already downloaded: the Hugging Face cache and the models/ folder next to the app. MLX opens only the MLX format, faster-whisper only CTranslate2; a plain transformers checkpoint has to be converted first: ./getmodel.sh <repository>. Models fine-tuned on one language can beat the base one — check it with ./bench.sh.',
+    'settings.noneFound': 'No downloaded models found. Add one with ./getmodel.sh <repository> and it will appear in this list.',
+    'settings.typeItIn': 'Type it in…',
+    'settings.kind.mlx': 'MLX',
+    'settings.kind.ct2': 'CTranslate2',
+    'settings.kind.torch': 'transformers, needs converting',
+    'settings.gb': '{n} GB',
+    'settings.mb': '{n} MB',
     'settings.voiceModel': 'Voice model',
     'settings.voiceModelHint': 'It both separates voices and recognises the known ones. Changing it clears the remembered voices: prints taken by different models cannot be compared, so they have to be learned again. ./bench.sh in the project folder shows which one is better on your recordings.',
     'settings.engine': 'Engine',
@@ -2683,8 +2697,11 @@ function settingsHTML(){
     </div>
     <div class="field" id="own-model" ${s.whisper_model==='custom'?'':'hidden'}>
       <label>${T('settings.ownModel')}</label>
-      <input type="text" data-k="whisper_model_id" spellcheck="false"
-        value="${esc(s.whisper_model_id||'')}" placeholder="antony66/whisper-large-v3-russian">
+      ${foundModelsHTML(s, e)}
+      <input type="text" data-k="whisper_model_id" id="own-model-id" spellcheck="false"
+        value="${esc(s.whisper_model_id||'')}" placeholder="antony66/whisper-large-v3-russian"
+        ${(e.models_found||[]).length && (e.models_found||[]).some(m=>m.id===s.whisper_model_id)
+          ? 'hidden' : ''}>
       <div class="hint">${T('settings.ownModelHint')}</div>
     </div>
     <div class="field"><label>${T('settings.engine')}</label>
@@ -2890,6 +2907,29 @@ function formValues(){
     values[el.dataset.k] = el.type==='checkbox' ? el.checked : el.value;
   });
   return values;
+}
+
+/* Модели, уже лежащие на диске. Вписывать имя репозитория руками — значит
+   помнить его наизусть и гадать, скачано ли оно вообще. */
+function modelSize(bytes){
+  const gb = (Number(bytes)||0) / 1e9;
+  return gb >= 1 ? T('settings.gb',{n: gb.toFixed(1)})
+                 : T('settings.mb',{n: Math.max(1, Math.round((Number(bytes)||0)/1e6))});
+}
+
+function foundModelsHTML(s, e){
+  const items = e.models_found || [];
+  if(!items.length){
+    return `<div class="hint" style="margin:0 0 8px">${T('settings.noneFound')}</div>`;
+  }
+  const now = s.whisper_model_id || '';
+  const known = items.some(m => m.id === now);
+  return `<select id="own-model-pick" style="margin-bottom:8px">
+    ${items.map(m => `<option value="${esc(m.id)}" ${m.id===now?'selected':''}>
+      ${esc(m.name)} — ${T('settings.kind.'+m.kind)}, ${modelSize(m.size)}
+    </option>`).join('')}
+    <option value="" ${known?'':'selected'}>${T('settings.typeItIn')}</option>
+  </select>`;
 }
 
 function syncCustomBlock(){
@@ -3256,6 +3296,15 @@ function openSettings(){
   if(model) model.onchange=()=>{
     const own=$('#own-model');
     if(own) own.hidden = model.value!=='custom';
+  };
+  // Список найденного пишет прямо в поле настройки: «вписать вручную»
+  // показывает его для правки, выбранная модель — прячет.
+  const pick=$('#own-model-pick');
+  if(pick) pick.onchange=()=>{
+    const box=$('#own-model-id');
+    if(!box) return;
+    if(pick.value){ box.value=pick.value; box.hidden=true; }
+    else { box.hidden=false; box.focus(); }
   };
   const preset=$('#preset-select');
   if(preset) preset.onchange=()=>{ state.preset=preset.value; syncCustomBlock(); };

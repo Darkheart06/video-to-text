@@ -27,6 +27,9 @@ from . import (
     shelf,
     voices,
 )
+from . import (
+    models as installed_models,
+)
 from .pipeline import Runner
 from .settings import WHISPER_MODELS, Settings
 
@@ -273,6 +276,14 @@ class Api:
 
     # --- окружение --------------------------------------------------------
 
+    @staticmethod
+    def _installed_models() -> list:
+        """Модели на диске. Сломанный кэш — не повод не открыть настройки."""
+        try:
+            return installed_models.installed()
+        except Exception:
+            return []
+
     def environment(self) -> dict:
         import importlib.util
 
@@ -290,6 +301,9 @@ class Api:
             "platform": f"{platform.system()} {platform.machine()}",
             "whisper_models": [*WHISPER_MODELS, "custom"],
             "voice_models": list(diarize.EMB_MODELS),
+            # Модели, уже лежащие на диске: их выбирают из списка, а не
+            # вписывают руками по памяти.
+            "models_found": self._installed_models(),
             "output_dir": str(self.settings.output_path),
             # Порт локального сервера: окно проигрывает звук и видео записи
             # через него — из file:// WebKit медиа с диска не отдаёт.
