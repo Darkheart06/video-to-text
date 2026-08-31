@@ -12,6 +12,12 @@
 //                                  голоса и так идут в один микрофон
 //   v2t-capture mic-status       — «1», если микрофон кем-то занят (идёт созвон)
 //   v2t-capture check            — состояние разрешений, одной строкой JSON
+//   v2t-capture calendar-status  — доступ к календарю: есть, нет, можно ли писать
+//   v2t-capture calendar-request — спросить доступ у системы
+//   v2t-capture calendars        — список календарей, куда можно писать
+//   v2t-capture calendar <дней>  — события на ближайшие дни, списком JSON
+//   v2t-capture calendar-add <json>
+//                                — завести событие в календаре
 //
 // Звук собеседников берётся через ScreenCaptureKit — штатный способ Apple,
 // без сторонних аудиодрайверов. Свой голос идёт отдельной дорожкой: так
@@ -19,6 +25,7 @@
 
 import AVFoundation
 import CoreAudio
+import EventKit
 import Foundation
 import ImageIO
 import ScreenCaptureKit
@@ -539,6 +546,125 @@ func jpeg(_ image: CGImage, quality: Double = 0.55) -> Data? {
     return out as Data
 }
 
+// MARK: - Календарь
+
+/// Доступ к календарю и события из него.
+///
+/// Читаем системный Календарь macOS, а не API сервисов: Gmail, Outlook и Яндекс
+/// уже синхронизируются сюда — Google и Outlook штатно, Яндекс по CalDAV, — и
+/// одно системное разрешение заменяет три отдельные интеграции с ревью,
+/// токенами и постоянным сопровождением. Заодно ничего не уходит с машины.
+let store = EKEventStore()
+
+/// Спрашивать полный доступ или довольствоваться чтением — зависит от системы.
+func askCalendar(_ done: @escaping (Bool, String) -> Void) {
+    if #available(macOS 14.0, *) {
+        store.requestFullAccessToEvents { ok, error in
+            done(ok, error.map { "\($0)" } ?? "")
+        }
+    } else {
+        store.requestAccess(to: .event) { ok, error in
+            done(ok, error.map { "\($0)" } ?? "")
+        }
+    }
+}
+
+func calendarGranted() -> Bool {
+    let status = EKEventStore.authorizationStatus(for: .event)
+    if #available(macOS 14.0, *) {
+        return status == .fullAccess || status == .writeOnly
+    }
+    return status == .authorized
+}
+
+/// Можно ли заводить события: на «только чтение» кнопка «Добавить» врала бы.
+func calendarWritable() -> Bool {
+    if #available(macOS 14.0, *) {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        return status == .fullAccess || status == .writeOnly
+    }
+    return EKEventStore.authorizationStatus(for: .event) == .authorized
+}
+
+func calendarStatusJSON() -> String {
+    let status = EKEventStore.authorizationStatus(for: .event).rawValue
+    return "{\"granted\":\(calendarGranted()),\"writable\":\(calendarWritable()),"
+         + "\"status\":\(status)}"
+}
+
+func calendarsJSON() -> String {
+    let rows = store.calendars(for: .event).map { calendar -> String in
+        "{\"id\":\(quote(calendar.calendarIdentifier)),"
+        + "\"title\":\(quote(calendar.title)),"
+        + "\"account\":\(quote(calendar.source?.title ?? "")),"
+        + "\"writable\":\(calendar.allowsContentModifications)}"
+    }
+    return "[" + rows.joined(separator: ",") + "]"
+}
+
+/// События на ближайшие дни. Время — секундами эпохи: так между Swift, Python и
+/// окном не теряются ни часовой пояс, ни переход на летнее время.
+func eventsJSON(days: Int) -> String {
+    let now = Date()
+    let ahead = Calendar.current.date(byAdding: .day, value: max(1, days), to: now) ?? now
+    // Немного назад: созвон, начавшийся десять минут назад, ещё идёт, и в
+    // расписании он нужнее, чем завтрашний.
+    let since = now.addingTimeInterval(-3 * 3600)
+    let predicate = store.predicateForEvents(withStart: since, end: ahead, calendars: nil)
+    let rows = store.events(matching: predicate).map { event -> String in
+        let attendees = (event.attendees ?? []).map { person -> String in
+            quote(person.name ?? person.url.absoluteString
+                .replacingOccurrences(of: "mailto:", with: ""))
+        }
+        return "{\"id\":\(quote(event.eventIdentifier ?? "")),"
+            + "\"title\":\(quote(event.title ?? "")),"
+            + "\"start\":\(event.startDate?.timeIntervalSince1970 ?? 0),"
+            + "\"end\":\(event.endDate?.timeIntervalSince1970 ?? 0),"
+            + "\"allday\":\(event.isAllDay),"
+            + "\"calendar\":\(quote(event.calendar?.title ?? "")),"
+            + "\"account\":\(quote(event.calendar?.source?.title ?? "")),"
+            + "\"where\":\(quote(event.location ?? "")),"
+            + "\"url\":\(quote(event.url?.absoluteString ?? "")),"
+            + "\"notes\":\(quote(String((event.notes ?? "").prefix(600)))),"
+            + "\"organizer\":\(quote(event.organizer?.name ?? "")),"
+            + "\"people\":[" + attendees.joined(separator: ",") + "]}"
+    }
+    return "[" + rows.joined(separator: ",") + "]"
+}
+
+/// Заводит событие. Разбираем вход руками, без Codable: полей пять, а лишняя
+/// зависимость в помощнике ни к чему.
+func addEvent(_ payload: String) -> String {
+    guard let data = payload.data(using: .utf8),
+          let raw = try? JSONSerialization.jsonObject(with: data),
+          let dict = raw as? [String: Any] else {
+        return "{\"ok\":false,\"error\":\"не разобрать событие\"}"
+    }
+    let event = EKEvent(eventStore: store)
+    event.title = (dict["title"] as? String) ?? "Созвон"
+    event.startDate = Date(timeIntervalSince1970: (dict["start"] as? Double) ?? 0)
+    event.endDate = Date(timeIntervalSince1970: (dict["end"] as? Double) ?? 0)
+    if let note = dict["notes"] as? String, !note.isEmpty { event.notes = note }
+    if let place = dict["where"] as? String, !place.isEmpty { event.location = place }
+    if let link = dict["url"] as? String, !link.isEmpty { event.url = URL(string: link) }
+
+    let wanted = (dict["calendar"] as? String) ?? ""
+    let writable = store.calendars(for: .event).filter { $0.allowsContentModifications }
+    event.calendar = writable.first(where: { $0.calendarIdentifier == wanted || $0.title == wanted })
+        ?? store.defaultCalendarForNewEvents
+        ?? writable.first
+    guard event.calendar != nil else {
+        return "{\"ok\":false,\"error\":\"нет календаря, куда можно писать\"}"
+    }
+    do {
+        try store.save(event, span: .thisEvent, commit: true)
+        return "{\"ok\":true,\"id\":\(quote(event.eventIdentifier ?? "")),"
+             + "\"calendar\":\(quote(event.calendar.title))}"
+    } catch {
+        return "{\"ok\":false,\"error\":\(quote("\(error)"))}"
+    }
+}
+
 /// Держим источники сигналов живыми: без ссылки их приберёт сборщик
 /// и остановка по Ctrl-C перестанет работать.
 var signalSources: [DispatchSourceSignal] = []
@@ -589,6 +715,32 @@ case "list-apps":
     // Снимки берут время: без них хватает и пяти секунд, с ними — нет.
     _ = done.wait(timeout: .now() + (wantShots ? 40 : 20))
     exit(0)
+
+case "calendar-status":
+    print(calendarStatusJSON())
+
+case "calendar-request":
+    let asked = DispatchSemaphore(value: 0)
+    askCalendar { _, _ in asked.signal() }
+    _ = asked.wait(timeout: .now() + 120)
+    print(calendarStatusJSON())
+
+case "calendars":
+    guard calendarGranted() else { print("[]"); exit(0) }
+    print(calendarsJSON())
+
+case "calendar":
+    guard calendarGranted() else { print("[]"); exit(0) }
+    print(eventsJSON(days: args.count > 2 ? (Int(args[2]) ?? 14) : 14))
+
+case "calendar-add":
+    guard args.count > 2 else {
+        print("{\"ok\":false,\"error\":\"нет события\"}"); exit(0)
+    }
+    guard calendarWritable() else {
+        print("{\"ok\":false,\"error\":\"нет доступа к календарю\"}"); exit(0)
+    }
+    print(addEvent(args[2]))
 
 case "mic-status":
     print(micIsBusy() ? "1" : "0")

@@ -1100,6 +1100,87 @@ def main() -> int:
                               len(same) == 1, f"голосов с этим именем: {len(same)}")
     library.rename([out_dir], entry["id"], {fresh_key: str(keep or "S1")})
 
+    print("\n25. Расписание созвонов")
+    # Встречи прилетают в разные календари, и главный вопрос к списку — не
+    # «что сегодня», а «не наложится ли». Проверяем пересечения, распознавание
+    # созвона среди прочих событий, напоминания и разбор договорённости.
+    from app import agenda as agenda_module
+
+    real_store = agenda_module.STORE
+    agenda_module.STORE = Path("/tmp/selftest-agenda.json")
+    agenda_module.STORE.unlink(missing_ok=True)
+    agenda_module._seen.clear()
+
+    hour = 3600
+    base = time.time() + 2 * hour
+    rows = [
+        {"id": "a", "start": base, "end": base + hour, "allday": False},
+        {"id": "b", "start": base + 1800, "end": base + 2 * hour, "allday": False},
+        {"id": "c", "start": base + 3 * hour, "end": base + 4 * hour, "allday": False},
+        {"id": "d", "start": base, "end": base + 8 * hour, "allday": True},
+    ]
+    agenda_module.mark_overlaps(rows)
+    failures += not check("пересечение по времени найдено",
+                          rows[0]["clash"] == ["b"] and rows[1]["clash"] == ["a"],
+                          str([r["clash"] for r in rows]))
+    failures += not check("непересекающееся не помечено", rows[2]["clash"] == [])
+    failures += not check("событие на весь день не считается пересечением",
+                          rows[3]["clash"] == [])
+
+    call = {"allday": False, "url": "https://telemost.yandex.ru/j/123",
+            "title": "Обсуждение", "people": []}
+    lunch = {"allday": False, "url": "", "title": "Обед", "people": []}
+    birthday = {"allday": True, "url": "", "title": "День рождения", "people": ["a", "b"]}
+    meeting = {"allday": False, "url": "", "title": "Планёрка", "people": ["a", "b"]}
+    failures += not check("ссылка на видеосвязь — это созвон", agenda_module.is_call(call))
+    failures += not check("обед созвоном не считается", not agenda_module.is_call(lunch))
+    failures += not check("событие на весь день — не созвон",
+                          not agenda_module.is_call(birthday))
+    failures += not check("двое участников — уже созвон", agenda_module.is_call(meeting))
+
+    item = agenda_module.add("Созвон с подрядчиком", base, 45)
+    failures += not check("свой созвон заводится",
+                          any(x["id"] == item["id"] for x in agenda_module.own_events()))
+    busy = agenda_module.free_at(base + 600, 30)
+    failures += not check("занятость на время видна",
+                          any(x["id"] == item["id"] for x in busy), str(len(busy)))
+    free = agenda_module.free_at(base + 5 * hour, 30)
+    failures += not check("свободное время свободно", not free)
+
+    # Напоминание срабатывает один раз: повторно — молчит.
+    soon = agenda_module.add("Скоро созвон", time.time() + 600, 30)
+    first = agenda_module.due(minutes=30, calls_only=False)
+    again = agenda_module.due(minutes=30, calls_only=False)
+    failures += not check("напоминание за полчаса срабатывает",
+                          any(x["id"] == soon["id"] for x in first), str(len(first)))
+    failures += not check("второй раз о том же не напоминает",
+                          not any(x["id"] == soon["id"] for x in again))
+
+    failures += not check("своё событие убирается", agenda_module.remove(item["id"]))
+
+    # Договорённость о следующем созвоне из саммари.
+    # Дату записи берём сегодняшнюю: «завтра» от прошлогодней записи — это
+    # прошлое, и предлагать его правильно отказываются.
+    stamp = time.strftime("%Y-%m-%d %H-%M")
+    summary = {"sections": {"decisions":
+               "- Созвонимся завтра в 15:30, обсудим смету.\n- Онбординг режем."}}
+    hint = agenda_module.suggest(summary, stamp, "ru")
+    failures += not check("следующий созвон разобран из саммари",
+                          bool(hint) and hint["when"].endswith("15:30"),
+                          str(hint and hint["when"]))
+    vague = {"sections": {"decisions": "- Созвонимся на следующей неделе."}}
+    failures += not check("без времени встреча не предлагается",
+                          agenda_module.suggest(vague, stamp, "ru") is None)
+    nothing = {"sections": {"decisions": "- Смету утверждаем в 15:00."}}
+    failures += not check("не всякое время — это созвон",
+                          agenda_module.suggest(nothing, stamp, "ru") is None)
+    past = {"sections": {"decisions": "- Созвонимся завтра в 15:30."}}
+    failures += not check("договорённость из прошлого не предлагается",
+                          agenda_module.suggest(past, "2020-01-02 10-00", "ru") is None)
+
+    agenda_module.STORE.unlink(missing_ok=True)
+    agenda_module.STORE = real_store
+
     print("\n19. Документы к записи")
     # Половина задач на созвоне ссылается на документ, который живёт отдельно.
     # Проверяем весь путь: приложить → достать текст → отдать модели → убрать.

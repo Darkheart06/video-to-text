@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from . import agenda as agenda_module
 from . import (
     asr,
     attach,
@@ -59,6 +60,7 @@ class Job:
     turns: list = field(default_factory=list)
     speakers: dict = field(default_factory=dict)
     marks: list = field(default_factory=list)
+    next_call: dict | None = None   # договорённость о следующем созвоне
     warnings: list[str] = field(default_factory=list)
     _cancel: threading.Event = field(default_factory=threading.Event, repr=False)
 
@@ -72,6 +74,7 @@ class Job:
             "summary_tabs": self.summary_tabs, "preset": self.preset,
             "transcript_md": self.transcript_md,
             "speakers": self.speakers, "marks": self.marks,
+            "next_call": self.next_call,
             "warnings": self.warnings,
             "turns": [
                 {"start": t.start, "end": t.end, "speaker": t.speaker_key, "text": t.text}
@@ -267,6 +270,15 @@ class Runner:
                          progress=base + span * 0.2)
             stem = render.safe_stem(Path(job.source).stem)
             job.marks = marks_module.build(turns, job.summary_sections, [], s.doc_lang)
+            try:
+                hint = agenda_module.suggest(
+                    {"sections": job.summary_sections},
+                    str(job.meta.get("recorded_at") or ""), s.doc_lang)
+                if hint:
+                    job.next_call = hint
+                    job.meta["next_call"] = hint
+            except Exception:
+                pass
             job.files = render.write_all(
                 s.output_path, stem, transcript, turns, spans, summary, meta,
                 names=names, lang=s.doc_lang, marks=job.marks
@@ -356,6 +368,15 @@ class Runner:
                                         duration=float(meta.get("duration") or 0),
                                         backend="", model=str(meta.get("models") or ""))
             job.marks = marks_module.build(turns, job.summary_sections, [], s.doc_lang)
+            try:
+                hint = agenda_module.suggest(
+                    {"sections": job.summary_sections},
+                    str(job.meta.get("recorded_at") or ""), s.doc_lang)
+                if hint:
+                    job.next_call = hint
+                    job.meta["next_call"] = hint
+            except Exception:
+                pass
             job.files = render.write_all(path.parent, stem, transcript, turns, [],
                                          summary, meta, names=names, lang=s.doc_lang,
                                          marks=job.marks)

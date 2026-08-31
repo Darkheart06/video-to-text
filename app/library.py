@@ -278,6 +278,9 @@ def snapshot(where, entry_id: str, lang: str = "") -> dict | None:
         "transcript_md": "",
         "speakers": speakers,
         "marks": data.get("marks") or [],
+        # Договорённость о следующем созвоне, найденная при разборе: карточка
+        # предлагает завести её в расписание.
+        "next_call": (data.get("meta") or {}).get("next_call") or None,
         "warnings": [],
         "archived": True,
         "turns": turns,

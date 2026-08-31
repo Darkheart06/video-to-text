@@ -4,6 +4,44 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.8.0] — 2026-08-31
+
+### Added
+
+- **A schedule that holds every call in one place.** Meetings arrive in
+  different calendars — work Gmail, personal Yandex, someone else's Outlook —
+  and while agreeing on a time mid-call nobody remembers them all. They are one
+  list now, **with overlaps marked**, which is the point of the whole thing: the
+  question a schedule has to answer is not “what is on today” but “will this
+  clash”. The calendar icon in the header opens it; the next call also shows as
+  one line in the working area, with a *Record* button.
+- **Events come from the system Calendar, not from the services' APIs.** Gmail,
+  Outlook and Yandex already sync there — Google and Outlook natively, Yandex
+  over CalDAV — so one system permission replaces three integrations with
+  reviews, tokens and permanent upkeep. Nothing leaves the machine to fetch them.
+  Google's calendar scope alone would have meant domain verification, a privacy
+  policy, a demo video and a 3–5 day review, and without it a user cap and a
+  “Google hasn't verified this app” screen.
+- **Calls can be added from the app**, including into the real calendar so that
+  everyone else sees them. While you type the time, the dialog says what is
+  already booked then.
+- **A call agreed during a conversation is offered afterwards.** If the summary
+  says “созвонимся завтра в 15:30”, the card offers to put it in the schedule —
+  and says if that slot is already taken. It only offers: a meeting placed in a
+  calendar on a model's guess is worse than no meeting. No time named, no offer:
+  “let's talk next week” is an intention, not a meeting.
+- **Recording started from an event** takes its title and its attendees, so the
+  names are in “who's on the call” from the first second — and those are the
+  names voice prints are learned by.
+- **Reminders in Telegram and MAX**, half an hour ahead and at the start, plus
+  the decisions and tasks once processing is done. **This is the only place
+  anything leaves the machine**, so it is off until switched on, the settings
+  spell out exactly what goes out, and each part — attendees, summaries — is a
+  separate tick. Setting up asks only for a bot token: *Find it* discovers the
+  chat itself after you message the bot, and *Send a test* proves it arrives.
+  The macOS banner is offered too, with a warning that it comes from Script
+  Editor and can vanish silently, and a button to check whether it works here.
+
 ## [1.7.2] — 2026-08-30
 
 ### Fixed

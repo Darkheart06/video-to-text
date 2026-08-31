@@ -6,7 +6,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="$ROOT/packaging"
-VERSION="1.7.2"
+VERSION="1.8.0"
 VOLNAME="Расшифровка записей"
 APPLET="Установить Расшифровку.app"
 OUT_DIR="${1:-$ROOT/dist}"

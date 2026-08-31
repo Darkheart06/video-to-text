@@ -150,7 +150,7 @@ step_bundle(){
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>Расшифровка записей</string>
   <key>CFBundleIdentifier</key><string>local.videototext.app</string>
-  <key>CFBundleVersion</key><string>1.7.2</string>
+  <key>CFBundleVersion</key><string>1.8.0</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>launcher</string>
@@ -161,6 +161,10 @@ step_bundle(){
   <string>Чтобы записывать ваш голос во время созвона и делать расшифровку.</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>Чтобы записывать голос собеседников во время созвона.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Чтобы показывать ближайшие созвоны и напоминать о них. Календарь читается на вашем компьютере, наружу ничего не уходит.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Чтобы показывать ближайшие созвоны, напоминать о них и заводить новые прямо из приложения. Календарь читается на вашем компьютере, наружу ничего не уходит.</string>
 </dict>
 </plist>
 PLIST

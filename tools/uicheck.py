@@ -275,6 +275,20 @@ EN_PEOPLE = {
 }
 
 BRIDGE = """
+window.__now = Math.floor(Date.now() / 1000);
+window.__agenda = [
+  {id: "sys:1", title: "Планёрка по релизу", start: window.__now + 1500,
+   end: window.__now + 3300, calendar: "Работа", account: "Gmail", source: "system",
+   call: true, allday: false, people: ["Ирина", "Дмитрий"], clash: ["sys:2"],
+   day: "Сегодня", url: "https://meet.google.com/abc"},
+  {id: "sys:2", title: "Разговор с подрядчиком", start: window.__now + 2400,
+   end: window.__now + 4200, calendar: "Личное", account: "Яндекс", source: "system",
+   call: true, allday: false, people: ["Пётр"], clash: ["sys:1"], day: "Сегодня",
+   url: "https://telemost.yandex.ru/x"},
+  {id: "own:a1", title: "Созвон с заказчиком", start: window.__now + 90000,
+   end: window.__now + 91800, calendar: "", source: "own", call: true, allday: false,
+   people: [], clash: [], day: "Завтра"}
+];
 window.__folders = ["Клиенты"];
 window.__shelf = {};
 window.pywebview = {api: {
@@ -335,6 +349,25 @@ window.pywebview = {api: {
     {id: "com.apple.Safari", name: "Safari", kind: "app",
      shot: "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="},
     {id: "com.tinyspeck.slackmacgap", name: "Slack", kind: "app", shot: ""}]}),
+  // Расписание: два события из системного календаря, одно своё, и одно
+  // накладывается на другое — ради этого пересечения всё и затевалось.
+  agenda_list: async () => ({granted: true, writable: true, items: window.__agenda}),
+  agenda_request: async () => ({granted: true, writable: true}),
+  agenda_add: async (title, start, minutes, where, url, toCal) => {
+    const item = {id: "own:new", title: title, start: start, end: start + minutes * 60,
+                  calendar: "", source: "own", call: true, clash: [], day: "Сегодня"};
+    window.__added = {title: title, start: start, toCalendar: !!toCal};
+    window.__agenda = window.__agenda.concat([item]);
+    return {ok: true, item: item, moved: !!toCal, calendar: {calendar: "Работа"}}; },
+  agenda_remove: async id => { window.__agenda = window.__agenda.filter(x => x.id !== id);
+                               return {ok: true}; },
+  agenda_push: async id => { window.__pushed = id; return {ok: true, calendar: "Работа"}; },
+  agenda_busy: async start => ({items: window.__agenda.filter(
+      x => x.start < start + 1800 && start < x.end)}),
+  notify_test: async (where, values) => { window.__tested = {where: where, values: values};
+                                          return {ok: true}; },
+  notify_chat: async where => ({ok: true, chat: where === "max" ? "77" : "12345",
+                                name: "Сергей"}),
   folders: async () => ({items: window.__folders}),
   folder_add: async n => { window.__folders.push(n); return {ok: true, items: window.__folders}; },
   folder_remove: async n => { window.__folders = window.__folders.filter(x => x !== n);
@@ -922,6 +955,27 @@ def main() -> int:
             page.screenshot(path=str(out_dir / f"8-custom-{scheme}.png"))
             page.select_option("#preset-select", "meeting")
             page.wait_for_timeout(120)
+            # Мессенджеры: кнопки «Определить» и «Проверить» должны работать
+            # из формы, не требуя сначала сохранить настройки.
+            page.click('.settab[data-settab="more"]')
+            page.wait_for_timeout(200)
+            page.locator("#tg-token").scroll_into_view_if_needed()
+            page.fill("#tg-token", "123:ABC")
+            page.locator("#btn-tg-chat").scroll_into_view_if_needed()
+            page.click("#btn-tg-chat")
+            page.wait_for_timeout(300)
+            if page.input_value("#tg-chat") != "12345":
+                errors.append(f"{scheme}: чат Telegram не определяется")
+            page.locator("#btn-tg-test").scroll_into_view_if_needed()
+            page.click("#btn-tg-test")
+            page.wait_for_timeout(300)
+            sent = page.evaluate("window.__tested || null")
+            if not sent or sent.get("where") != "telegram":
+                errors.append(f"{scheme}: проверка Telegram не отправляется: {sent}")
+            if (sent or {}).get("values", {}).get("telegram_token") != "123:ABC":
+                errors.append(f"{scheme}: проверка идёт не из формы, а из настроек")
+            if "MAX" not in (page.text_content("#settings-body") or ""):
+                errors.append(f"{scheme}: нет настроек MAX")
             page.click('.settab[data-settab="main"]')
             page.wait_for_timeout(200)
             # --- тема окна: выбор сильнее системы ---
@@ -1094,6 +1148,59 @@ def main() -> int:
             page.wait_for_timeout(250)
             if not page.locator(".tabs-bar .tab-acts [data-copytab]").is_visible():
                 errors.append(f"{scheme}: «копировать» спрятано за прокруткой вкладок")
+
+            # --- расписание ---
+            page.evaluate("closeSettings()")
+            page.wait_for_timeout(200)
+            # Ближайший созвон виден в рабочей области, без открытия расписания.
+            page.evaluate("loadAgenda(true)")
+            page.wait_for_timeout(400)
+            if page.locator("#soon").is_hidden():
+                errors.append(f"{scheme}: ближайший созвон не показан в рабочей области")
+            page.click("#btn-agenda")
+            page.wait_for_timeout(400)
+            rows = page.locator("#agenda-body .ev").count()
+            if rows != 3:
+                errors.append(f"{scheme}: в расписании {rows} событий, ожидалось 3")
+            # Пересечение — главное, ради чего список собран из разных календарей.
+            if page.locator("#agenda-body .ev.clash").count() != 2:
+                errors.append(f"{scheme}: пересечение по времени не помечено")
+            body = page.text_content("#agenda-body") or ""
+            for probe in ("Планёрка по релизу", "Работа", "Личное", "Завтра"):
+                if probe not in body:
+                    errors.append(f"{scheme}: в расписании нет «{probe}»")
+            page.screenshot(path=str(out_dir / f"18-agenda-{scheme}.png"))
+            docs_shot(page, scheme, "light", "agenda.ru.png")
+
+            # Добавление созвона показывает, что уже стоит на это время.
+            page.click("#btn-agenda-new")
+            page.wait_for_timeout(300)
+            page.fill("#ag-title", "Разговор про смету")
+            page.wait_for_timeout(200)
+            if not page.locator("#ag-busy").count():
+                errors.append(f"{scheme}: при добавлении не видно занятости")
+            page.click('[data-agnew="ok"]')
+            page.wait_for_timeout(400)
+            added = page.evaluate("window.__added || null")
+            if not added or added.get("title") != "Разговор про смету":
+                errors.append(f"{scheme}: созвон не добавляется: {added}")
+            if not (added or {}).get("toCalendar"):
+                errors.append(f"{scheme}: событие не уходит в системный календарь")
+            page.click("#btn-agenda-close")
+            page.wait_for_timeout(200)
+
+            # Договорённость о следующем созвоне предлагается прямо в карточке.
+            page.evaluate("""job => {
+              const with_hint = Object.assign({}, job, {next_call: {
+                title: "Созвонимся во вторник в 15:00", start: window.__now + 200000,
+                when: "2026-09-01 15:00", busy: ["Планёрка по релизу"]}});
+              state.jobs.set('demo1234', with_hint); openJob('demo1234');
+            }""", JOB)
+            page.wait_for_timeout(300)
+            if not page.locator(".nextcall [data-agnext]").count():
+                errors.append(f"{scheme}: следующий созвон не предлагается")
+            if "Планёрка" not in (page.text_content(".nextcall") or ""):
+                errors.append(f"{scheme}: не видно, что предложенное время занято")
 
             # --- что писать с экрана ---
             page.evaluate("state.rec=null; renderRec();")

@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from . import (
+    agenda,
     attach,
     diarize,
     edits,
@@ -18,6 +19,7 @@ from . import (
     library,
     llm,
     media,
+    notify,
     people,
     presets,
     record,
@@ -52,6 +54,7 @@ class Api:
         self.runner = Runner(self.settings, listener=lambda job: _push("job", job.snapshot()))
         self.steno = record.Stenographer(self.settings, listener=_push)
         threading.Thread(target=self._watch_for_calls, daemon=True).start()
+        threading.Thread(target=self._watch_agenda, daemon=True).start()
 
     # --- запись созвонов --------------------------------------------------
 
@@ -73,6 +76,116 @@ class Api:
                 _push("call-detected", {})
                 muted_until = time.time() + 900
             was_busy = busy
+
+    def _watch_agenda(self) -> None:
+        """Следит за расписанием и напоминает о ближайшем созвоне.
+
+        Раз в полминуты: событий немного, а системный календарь всё равно
+        опрашивается не чаще, чем раз в полторы минуты.
+        """
+        while True:
+            time.sleep(30)
+            if not self.settings.get("agenda_enabled", True):
+                continue
+            try:
+                soon = agenda.due(int(self.settings.get("agenda_remind_minutes", 30)),
+                                  bool(self.settings.get("agenda_calls_only", True)))
+            except Exception:
+                continue
+            for event in soon:
+                _push("agenda", event)
+                try:
+                    notify.send(self.settings, self._reminder_text(event))
+                except Exception as exc:
+                    record.log(f"напоминание не ушло: {exc!r}")
+
+    def _reminder_text(self, event: dict) -> str:
+        key = "agenda.soon" if event.get("when") == "soon" else "agenda.now"
+        lines = [i18n.t(key, minutes=event.get("minutes", 0), title=event.get("title", ""))]
+        people = event.get("people") or []
+        if people and self.settings.get("notify_people", True):
+            lines.append(i18n.t("agenda.withPeople", people=", ".join(people[:8])))
+        return "\n".join(lines)
+
+    # --- расписание --------------------------------------------------------
+
+    def agenda_list(self, fresh: bool = False) -> dict:
+        try:
+            return agenda.agenda(fresh=bool(fresh))
+        except Exception as exc:
+            return {"items": [], "granted": False, "error": str(exc)}
+
+    def agenda_request(self) -> dict:
+        try:
+            return agenda.request()
+        except Exception as exc:
+            return {"granted": False, "error": str(exc)}
+
+    def agenda_calendars(self) -> dict:
+        try:
+            return {"items": agenda.calendars()}
+        except Exception:
+            return {"items": []}
+
+    def agenda_add(self, title: str, start: float, minutes: int = 30,
+                   where: str = "", url: str = "", to_calendar: bool = False) -> dict:
+        """Заводит созвон. По желанию — сразу в системный календарь."""
+        try:
+            item = agenda.add(str(title or ""), float(start), int(minutes),
+                              str(where or ""), str(url or ""))
+            if to_calendar:
+                answer = agenda.to_calendar(item["id"],
+                                            str(self.settings.get("agenda_calendar") or ""))
+                if not answer.get("ok"):
+                    return {"ok": True, "item": item, "calendar": answer}
+                return {"ok": True, "item": item, "calendar": answer, "moved": True}
+            return {"ok": True, "item": item}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def agenda_push(self, item_id: str) -> dict:
+        """Отправляет своё событие в системный календарь — чтобы увидели все."""
+        try:
+            return agenda.to_calendar(str(item_id or ""),
+                                      str(self.settings.get("agenda_calendar") or ""))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def agenda_remove(self, item_id: str) -> dict:
+        try:
+            return {"ok": agenda.remove(str(item_id or ""))}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def agenda_busy(self, start: float, minutes: int = 30) -> dict:
+        """Что уже стоит на это время — ответ на «а давай в три» прямо на созвоне."""
+        try:
+            return {"items": agenda.free_at(float(start), int(minutes))}
+        except Exception:
+            return {"items": []}
+
+    def notify_test(self, where: str = "telegram", values: dict | None = None) -> dict:
+        """Отправляет проверочное сообщение — чтобы человек увидел, что дошло."""
+        probe = dict(self.settings)
+        probe.update(values or {})
+        try:
+            if where == "max":
+                return notify.to_max(probe, i18n.t("notify.test"))
+            if where == "banner":
+                return {"ok": notify.banner(i18n.t("notify.title"), i18n.t("notify.test"))}
+            return notify.telegram(probe, i18n.t("notify.test"))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def notify_chat(self, where: str = "telegram", values: dict | None = None) -> dict:
+        """Находит чат сам: человек пишет боту, приложение читает обновления."""
+        probe = dict(self.settings)
+        probe.update(values or {})
+        try:
+            return (notify.max_chat(probe) if where == "max"
+                    else notify.telegram_chat(probe))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     def rec_state(self) -> dict | None:
         session = self.steno.session

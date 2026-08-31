@@ -442,6 +442,71 @@ Voices with the same label are folded into one (`_fold_same_names`). Otherwise
 the person appeared twice in the card and their print was learned twice from
 half the lines each.
 
+## The schedule
+
+**The question a schedule must answer is not “what is on today” but “will this
+clash”.** Meetings arrive in different calendars — work Gmail, personal Yandex,
+someone else's Outlook — and while agreeing on a time mid-call nobody remembers
+them all. So the list is assembled from every source at once and overlaps are
+marked (`agenda.mark_overlaps`).
+
+**Events come from the system Calendar, not from the services' APIs**
+(`capture/main.swift`, the `calendar-*` commands over EventKit). Gmail, Outlook
+and Yandex already sync there — the first two natively, Yandex over CalDAV. One
+system permission replaces three integrations, and nothing leaves the machine to
+read a calendar.
+
+The other way would have cost dearly: Google's calendar is a sensitive scope, so
+serving anyone but the author needs domain verification, a privacy policy, a
+demo video and a 3–5 day review, and without it a user cap and a “Google hasn't
+verified this app” screen — plus an Azure registration for Outlook and a
+separate CalDAV path for Yandex.
+
+**Own events live alongside** (`.work/agenda.json`): not every agreement reaches
+a calendar. One button sends such an event into the real calendar so that
+everyone else sees it.
+
+**What counts as a call.** Calendars are full of birthdays and “collect the
+parcel”. The marker is a video link (Meet, Zoom, Teams, Telemost, Kontur Talk,
+Jitsi and the rest) or two attendees and not an all-day event. Reminders default
+to calls only.
+
+**A next call agreed in conversation** is found in the summary
+(`agenda.suggest`) by the same date parsing that dates the tasks: “созвонимся
+завтра в 15:30” becomes a concrete time, and the card offers to add it, saying
+if that slot is already taken. It only offers: a meeting placed in a calendar on
+a model's guess is worse than no meeting. No time named, no offer — “let's talk
+next week” is an intention, not a meeting.
+
+**Recording started from an event** takes its title and attendees. The names go
+straight into “who's on the call” — and those are the names voice prints are
+learned by, so the calendar pays for itself by feeding parts that already exist.
+
+## The only place anything leaves the machine
+
+The whole app promises to work without a network. `app/notify.py` breaks that
+promise — deliberately, on explicit consent, and within very narrow limits.
+
+Messengers are off by default. The settings say exactly what goes out: the time,
+the title and, as separate ticks, the attendees and the summary. No transcripts,
+no audio. Requests are outbound only; the single read is a one-off `getUpdates`
+when the person presses *Find it* so the app can discover their chat — otherwise
+the chat id has to be dug out through third-party bots, which is where this kind
+of setup is usually abandoned.
+
+**The macOS banner is honestly unreliable.** `display notification` via osascript
+appears as Script Editor, and if its notifications are off the message vanishes
+silently with no way to tell from inside. So the in-window banner always works,
+the system one is an extra, and a *Test* button sits beside it so the person can
+see with their own eyes whether it works for them. Telegram solves the same
+problem better — a reminder half an hour ahead is more use on a phone than on
+the Mac.
+
+MAX is written from the documentation (`platform-api2.max.ru`, token in the
+header) and has not been tested against a live bot: there is nowhere to get one
+in the cloud environment. The service's own error is shown to the person as is —
+it says what is wrong with the token or the chat.
+
 ## Two traps in testing this
 
 **Synthetic voices prove nothing.** Both a pitch-shifted TTS voice and three

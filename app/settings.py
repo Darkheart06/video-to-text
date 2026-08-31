@@ -166,6 +166,23 @@ DEFAULTS = {
     # кнопкой. 0 — не выметать никогда.
     "trash_days": 30,
 
+    # --- расписание и напоминания ---
+    "agenda_enabled": True,
+    "agenda_remind_minutes": 30,
+    "agenda_calls_only": True,      # напоминать только о том, что похоже на созвон
+    "agenda_calendar": "",          # куда заводить события: пусто — календарь по умолчанию
+    # Мессенджеры — единственное место, откуда что-то уходит с машины.
+    # Поэтому выключены, пока человек сам не включит.
+    "notify_banner": True,
+    "notify_summary": True,         # присылать решения и задачи после разбора
+    "notify_people": True,          # добавлять к напоминанию список участников
+    "telegram_enabled": False,
+    "telegram_token": "",
+    "telegram_chat": "",
+    "max_enabled": False,
+    "max_token": "",
+    "max_chat": "",
+
     # Прочее
     "output_dir": "",                # пусто = <проект>/output
     "keep_wav": False,

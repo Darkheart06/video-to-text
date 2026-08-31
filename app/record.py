@@ -28,7 +28,21 @@ from typing import Callable
 
 import numpy as np
 
-from . import asr, cleanup, diarize, i18n, llm, media, merge, presets, render, summarize, voices
+from . import agenda as agenda_module
+from . import (
+    asr,
+    cleanup,
+    diarize,
+    i18n,
+    llm,
+    media,
+    merge,
+    notify,
+    presets,
+    render,
+    summarize,
+    voices,
+)
 from . import marks as marks_module
 from .settings import WORK_DIR, Settings
 
@@ -139,6 +153,7 @@ class Session:
     renamed: bool = False    # название уже подобрано по теме разговора
     stalled: str = ""        # какая дорожка встала: «mic», «sys» или никакая
     marks: list = field(default_factory=list)   # метки на записи для плеера
+    next_call: dict | None = None   # договорённость о следующем созвоне из саммари
 
     @property
     def duration(self) -> float:
@@ -169,6 +184,7 @@ class Session:
             ][-tail:],
             "line_count": len(self.lines),
             "marks": list(self.marks),
+            "next_call": self.next_call,
         }
 
 
@@ -1206,6 +1222,26 @@ class Stenographer:
         self._emit()
         return session.snapshot()
 
+    def _tell_outside(self, session: Session, summary) -> None:
+        """Итоги разбора — в мессенджер, если человек это включил.
+
+        Уходит только то, что он выбрал: решения и задачи. Ни расшифровки, ни
+        звука, ни участников без отдельного согласия.
+        """
+        if not (self.settings.get("telegram_enabled") or self.settings.get("max_enabled")):
+            return
+        if not self.settings.get("notify_summary", True):
+            return
+        sections = getattr(summary, "sections", None) or session.summary_sections or {}
+        parts = [session.title]
+        for key in ("decisions", "tasks"):
+            body = str(sections.get(key) or "").strip()
+            if body:
+                parts.append(i18n.d("mark." + key, self.settings.doc_lang) + ":")
+                parts.append(re.sub(r"[|*_`#>]+", " ", body)[:900])
+        if len(parts) > 1:
+            notify.send(self.settings, "\n".join(parts), kind="summary")
+
     def _enrolled(self, session: Session | None = None) -> dict[str, list[tuple[float, float]]]:
         """Отмеченные вручную куски речи, по именам.
 
@@ -1545,6 +1581,18 @@ class Stenographer:
                                          summary, meta, names,
                                          lang=self.settings.doc_lang,
                                          marks=session.marks)
+        # Договорились о следующем созвоне прямо на этом? Предлагаем завести —
+        # но не заводим: встреча в календаре по догадке модели хуже, чем её
+        # отсутствие.
+        try:
+            hint = agenda_module.suggest(summary or {}, session.stamp,
+                                         self.settings.doc_lang)
+            if hint:
+                meta["next_call"] = hint
+                session.next_call = hint
+        except Exception as exc:
+            log(f"следующий созвон не разобрать: {exc!r}")
+
         session.files["audio"] = str(audio_path)
         video = session.directory / "screen.mp4"
         if video.exists():
@@ -1566,6 +1614,10 @@ class Stenographer:
                 video.unlink(missing_ok=True)
         session.state = "done"
         session.message = i18n.t("state.done")
+        try:
+            self._tell_outside(session, summary)
+        except Exception as exc:
+            log(f"итоги не ушли: {exc!r}")
         self._emit(session=session)
         shutil.rmtree(session.directory, ignore_errors=True)
 
