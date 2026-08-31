@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [1.10.1] — 2026-08-31
+
+### Fixed
+
+- `bench.sh` next to `run.sh`, and both READMEs now say to use it. The
+  instructions said `python tools/bench.py`, which fails twice over on macOS:
+  there is no `python` command there, and the system `python3` cannot see
+  mlx-whisper or sherpa-onnx — they live in the app's own environment.
+
 ## [1.10.0] — 2026-08-31
 
 ### Added

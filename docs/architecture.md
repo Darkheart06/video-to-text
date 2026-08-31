@@ -154,7 +154,7 @@ Swapping the model without moving the threshold changes two things at once and
 tells you nothing about either.
 
 So CAM++ stays the default and the choice is handed to a measurement on your own
-recordings (`tools/bench.py`). Changing the model clears the voice memory: prints
+recordings (`./bench.sh`, i.e. `tools/bench.py`). Changing the model clears the voice memory: prints
 taken by different models live in different spaces, and comparing them is like
 comparing height with weight. `voices.json` records which model took the prints,
 and on a mismatch the memory is silently treated as empty.

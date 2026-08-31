@@ -7,11 +7,14 @@
 Разброс между записями больше разброса между моделями, поэтому единственный
 честный ответ получается замером на своём материале.
 
+Запускать через `./bench.sh` из папки проекта: он берёт питон из окружения
+приложения, где стоят mlx-whisper и sherpa-onnx. Системный питон их не видит.
+
 Как пользоваться:
 
 1. Завести эталон из уже разобранной записи:
 
-       python tools/bench.py --new "~/Documents/Расшифровка записей/Созвон 2026-08-27 11-10.wav"
+       ./bench.sh --new "~/Documents/Расшифровка записей/Созвон 2026-08-27 11-10.wav"
 
    Рядом ляжет файл `<запись>.ref.txt` — расшифровка с именами. **Его нужно
    прочитать и поправить руками**: имена спикеров и слова. Это и есть эталон;
@@ -21,9 +24,9 @@
 
 2. Прогнать варианты:
 
-       python tools/bench.py                  # все эталоны, все варианты
-       python tools/bench.py --only turbo,large-v3
-       python tools/bench.py --list
+       ./bench.sh                  # все эталоны, все варианты
+       ./bench.sh --only turbo,large-v3
+       ./bench.sh --list
 
 Что печатается:
 
@@ -204,7 +207,7 @@ def main() -> int:
     refs = refs_in(folder)
     if not refs:
         print(f"В папке {folder} нет ни одного файла *.ref.txt.")
-        print("Сделайте первый:  python tools/bench.py --new <запись.wav>")
+        print("Сделайте первый:  ./bench.sh --new <запись.wav>")
         return 2
 
     picked = [n.strip() for n in args.only.split(",") if n.strip()] or list(VARIANTS)

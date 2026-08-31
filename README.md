@@ -504,10 +504,15 @@ microphones and these people: the spread between recordings is larger than the
 spread between models. So the app measures on your own material.
 
 ```
-python tools/bench.py --new "~/Documents/Расшифровка записей/Созвон 2026-08-27 11-10.wav"
+cd <project folder>
+./bench.sh --new "~/Documents/Расшифровка записей/Созвон 2026-08-27 11-10.wav"
 # correct the names and the words by hand in the .ref.txt that appears
-python tools/bench.py
+./bench.sh
 ```
+
+`bench.sh` uses the Python from the app's own environment — that is where
+mlx-whisper and sherpa-onnx live. The system `python3` cannot see them, and
+there is no `python` command on macOS at all.
 
 It prints two numbers per variant: **WER**, the share of word errors, and
 **WDER**, the share of correctly recognised words signed with the wrong person.
